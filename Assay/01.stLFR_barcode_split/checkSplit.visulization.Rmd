@@ -1,0 +1,85 @@
+---
+title: "Visulization of stLFR_barcode_split"
+output:
+  html_notebook:
+    code_fold: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(plyr)
+# Global variance for write or not
+do.write <- F
+```
+
+# load
+```{r}
+hit.log <- read.csv("Aprl_84L02_1M.clean.debug.hit.csv")
+miss.log <- read.csv("Aprl_84L02_1M.clean.debug.miss.csv")
+```
+
+#Curation
+```{r}
+hitNum <- sum(hit.log$num)
+missNum <- sum(miss.log$num[which(miss.log$offset==0)])
+paste0("barcode detected reads: ",hitNum,"(",round(hitNum/(hitNum+missNum),4)*100,"%)")
+```
+
+**HitCode/missCode explanation**
+
+>         1st 2nd 3rd  # barcodes in each adapter  
+>     Code: 3   3   2  # Score for each barcode, value range: [0-3]  
+> Score value:  
+> [0] missed, no barcode detected.  
+> [1] found matched barcode in Reversed list (include 1 SNP).  
+> [2] found matched barcode with no more than one SNP.  
+> [3] found exactly matched barcode in the original barcode list.  
+
+#visual
+```{r}
+ggplot(hit.log,aes(x=factor(offset),y=num,fill=factor(HitCode))) + 
+  geom_bar(stat="identity",position="dodge") + 
+  facet_grid(factor(HitCode)~factor(offset),scale="free") + theme_bw()
+```
+
+```{r}
+offsetStat <- ddply(hit.log,"offset",summarise,num=sum(num))
+offsetStat <- rbind(offsetStat,data.frame(offset="missed",num=missNum))
+offsetStat$percent <- offsetStat$num/sum(offsetStat$num)
+
+tab <- paste(offsetStat$offset, "(", round(offsetStat$percent * 100, 2), "%)", sep = "")
+ggplot(offsetStat,aes(x="X",fill=factor(offset),y=num)) + 
+  geom_bar(stat="identity") + coord_polar(theta = "y") + 
+  #theme(legend.title = element_blank(), legend.position = "top") + 
+  scale_fill_discrete(labels = tab) + theme_bw()
+```
+
+
+```{r}
+codeStat <- ddply(hit.log[],"HitCode",summarise,num=sum(num)) 
+codeStat$percent <- codeStat$num/sum(codeStat$num)
+tab2 <- paste(codeStat$HitCode, "(", round(codeStat$percent * 100, 2), "%)", sep = "")
+ggplot(codeStat,aes(x="X",fill=factor(HitCode),y=num)) + 
+  geom_bar(stat="identity") + coord_polar(theta = "y") + 
+  #theme(legend.title = element_blank(), legend.position = "top") + 
+  scale_fill_discrete(labels = tab2) + theme_bw()
+```
+
+
+```{r}
+hit.log$grp <- "2 SNP"
+hit.log$grp[hit.log$HitCode=="333"] <- "0 SNP"
+hit.log$grp[hit.log$HitCode=="222"] <- "3 SNP"
+hit.log$grp[hit.log$HitCode%in%c("233","323","332")] <- "1 SNP"
+
+SnpStat <- ddply(hit.log[],"grp",summarise,num=sum(num)) 
+SnpStat$percent <- SnpStat$num/sum(SnpStat$num)
+tab2 <- paste(SnpStat$grp, "(", round(SnpStat$percent * 100, 2), "%)", sep = "")
+ggplot(SnpStat,aes(x="X",fill=factor(grp),y=num)) + 
+  geom_bar(stat="identity") + coord_polar(theta = "y") + 
+  #theme(legend.title = element_blank(), legend.position = "top") + 
+  scale_fill_discrete(labels = tab2) + theme_bw()
+```
+
+
