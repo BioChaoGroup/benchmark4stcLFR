@@ -59,13 +59,13 @@ $mfastp/fastp --stLFR_barcode_file ../../Source/JUNE/barcode.list \
 &> tmp/$iPfx.cp6.log
 ```
 Results: 1M reads cost:
-> python: 52 seconds
-> perl:   40 seconds
-> c++:    28 seconds (-w 1, actually it comsumed 200% cpu)
-> c++:    12 seconds (-w 6, actually it comsumed no more than 600% cpu)
+> python: 52 seconds  
+> perl:   40 seconds  
+> c++:    28 seconds (-w 1, actually it comsumed 200% cpu)  
+> c++:    12 seconds (-w 6, actually it comsumed no more than 600% cpu)  
 
 So we can estimated the time for 600 million reads sequences:
-> python: 8.6 hr
-> perl:   6.7 hr
-> c++:    4.7 hr (-w 1, somehow it comsumed 200% cpu)
-> c++:    2.0 hr (-w 6, somehow it cannot comsumed more than 600% cpu)
+> python: 8.6 hr  
+> perl:   6.7 hr  
+> c++:    4.7 hr  
+> c++:    2.0 hr  
