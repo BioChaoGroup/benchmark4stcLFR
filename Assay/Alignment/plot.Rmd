@@ -13,56 +13,90 @@ knitr::opts_chunk$set(echo = TRUE)
 library(plyr)
 library(ggplot2)
 library(dplyr)
+library(RColorBrewer)
+aln.dir<-"./tmp/"
 ```
 
+**choose tag**  
 ```{r}
 tag <- "0294_1423_1468"
 tag <- "0013_1448_0849"
 tag <- "0049_0802_0050"
+```
+
+# Load data
+```{r}
+
 # 5 genome reference info
-ids <- read.table("REF/ncbi.5Ref.faID",sep="\t")
+ids <- read.table("tmp/ncbi.5Ref.faID",sep="\t")
 colnames(ids) <- c("sName","refName","Tax")
 ids$ref.species <- unlist(lapply(ids$Tax, function(x){paste((strsplit(as.character(x),split = " "))[[1]][1:2],collapse = "_")}))
 # ITS reference info
-its.anno <- read.table("REF/ee_its_database.ids")
+its.anno <- read.table("tmp/ee_its_database.ids")
 colnames(its.anno) <- c("its.species","query","itsID2","source","taxonomy")
-its.map <- read.table("REF/its_to_5Ref.sam.stat")
-colnames(its.map) <- c("query","refName","length","pos")
+its.map <- read.table("tmp/its_to_5Ref.sam.stat",sep=" ")
+colnames(its.map) <- c("query","flag","refName","pos","MAPQ","CIGAR","RNEXT","PNEXT","TLEN","AS","QLEN","XA")
 
-if(!is.null(tag)){
-  # SPAdes assemble aligned to 5 Ref
-  spades.stat <- read.table(paste0("REF/",tag,"/scaffolds.bwa.5Ref.stat"))
-  colnames(spades.stat) <- c("query","seqName","cov","nid","refName","length","pos","mate")
-  
-  # Reads directly aligned to 5Ref
-  reads.5ref.stat <- read.table(paste0("REF/",tag,"/bwa.5Ref.sam.stat"))
-  colnames(reads.5ref.stat) <- c("query","refName","length","pos","mate")
-}else{
-  # SPAdes assemble aligned to 5 Ref
-  spades.stat <- read.table("REF/scaffolds.bwa.5Ref.stat")
-  colnames(spades.stat) <- c("query","seqName","cov","nid","refName","length","pos","mate")
-  
-  # Reads directly aligned to 5Ref
-  reads.5ref.stat <- read.table("REF/bwa.5Ref.sam.stat")
-  colnames(reads.5ref.stat) <- c("query","refName","length","pos","mate")
-}
+# SPAdes assemble aligned to 5 Ref
+spades.stat <- read.table(paste0("tmp/",tag,"/scaffolds.bwa.5Ref.sam.stat"),sep=" ")
+colnames(spades.stat) <- c("query","flag","refName","pos","MAPQ","CIGAR","RNEXT","PNEXT","TLEN","AS","QLEN","XA")
 
+# Reads directly aligned to 5Ref
+reads.5ref.stat <- read.table(paste0("tmp/",tag,"/bwa.5Ref.sam.stat"),sep=" ")
+colnames(reads.5ref.stat) <- c("query","flag","refName","pos","MAPQ","CIGAR","RNEXT","PNEXT","TLEN","AS","QLEN","XA")
+```
 
+**Merge data**
+```{r}
 mdat <- rbind(cbind(level="reads",reads.5ref.stat),
-              cbind(level="scaffolds",spades.stat[,c(1,5:8)]),
-              cbind(level="ITS",its.map,mate="*"))
+              cbind(level="scaffolds",spades.stat),
+              cbind(level="ITS",its.map))
 mdat <- merge(mdat,ids[,c(1,2,4)],by="refName")
 mdat <- merge(mdat,its.anno[,1:2],by="query",all.x=T)
 mdat$query <- as.character(mdat$query)
 mdat$refName <- as.character(mdat$refName)
+mdat$AS <- as.integer(sub("AS:i:","",as.character(mdat$AS),fixed = T))
+mHit.info <- mdat[,c("query","refName","pos","ref.species","XA")]
+mHit.info$XA <- as.character(mHit.info$XA)
+mdat <- mdat[,-which(colnames(mdat)=="XA")]
 ```
 
 
 #curation
+### treat multiply hit
+```{r}
+XAfun <- function(x){
+  if(x[5]==""|is.na(x[5])){
+    group <- "unique"
+  }else{
+    xas <- matrix(unlist(strsplit(unlist(strsplit(sub("XA:Z:","",x[5]),";")),",")),ncol=4,byrow = T)
+    colnames(xas) <- c("refName","pos","CIGAR","NM")
+    xas <- merge(xas,ids[,c(2,4)],by="refName")
+    num <- nrow(xas)
+    same.scalffold <- sum(xas$refName==as.character(x[2]))
+    same.species <- sum(xas$ref.species==as.character(x[4]))
+    if(same.scalffold==num){
+      group <- "same.scaff"
+    }else if(same.species==num){
+      group <- "same.species"
+    }else{
+      group <- 'divergence'
+    }
+  }
+  return(group)
+}
+if(file.exists(paste0(aln.dir,tag,".mHit.info"))){
+  load(paste0(aln.dir,tag,".mHit.info"))
+}else{
+  mHit.info.group <- apply(mHit.info,1,XAfun)
+  save(mHit.info.group,file=paste0(aln.dir,tag,".mHit.info"))
+}
+mdat$XA.grp <- mHit.info.group
+```
 ```{r}
 stack.fun <- function(d){
   d <- d[order(d$pos),]
-  d$end <- d$pos + d$length
+  d$end <- d$pos + d$QLEN
   stack <- 1
   bin.start <- 1
   d$stack <- 1
@@ -88,30 +122,46 @@ stack.fun <- function(d){
   return(d)
 }
 mdat0 <- ddply(mdat,c("level","refName"),stack.fun)
-
 mdat.its.bin <- mdat0%>% filter(level=="ITS"&stack==1)
-mdat <- rbind(mdat0%>% filter(level!="ITS"),
-               mdat.its.bin)
+```
+### Show ITS
+```{r}
+mdat.its <- mdat0%>% filter(level=="ITS")
 
-mdat$bold <- ifelse(mdat$level=="reads",2,4)
-
+ggplot(mdat.its) + facet_grid(level~sName+refName,scales="free",space="free_y") + 
+  geom_segment(aes(x=pos,xend=end,y=stack,yend=stack,color=XA.grp,size=2),alpha=.7) +
+  theme_bw() + scale_y_log10()
 ```
 
 ### Show SPAdes result
 ```{r}
-mdat%>%filter(level=="scaffolds")
+mdat.scaffolds <- mdat0%>%filter(level=="scaffolds")
+mdat.scaffolds
 ```
 
+### Show reads mapping result
+```{r}
+mdat.reads <- mdat0%>%filter(level=="reads")
+err.curve <- data.frame(errP=10^seq(-5,1,1),MAPQ=-10*log10(10^seq(-5,1,1)))
+ggplot(err.curve,aes(x=errP,y=MAPQ)) + geom_line() + scale_x_log10()
+ggplot(mdat.reads,aes(x=MAPQ,fill=XA.grp)) + geom_histogram(position="dodge") 
+ggplot(mdat.reads,aes(x=AS)) + geom_histogram() 
+ggplot(mdat.reads,aes(x=AS,y=MAPQ)) +stat_density2d(aes(fill=..density..),alpha=.5,h=c(20,20),geom="raster",contour=F) +
+  scale_fill_gradientn(colors=rev(brewer.pal(11,"Spectral"))) +  geom_point(alpha=.3)
+
+```
 
 
 ### plot all
 ```{r}
+mdat <- rbind(mdat.reads,mdat.scaffolds,mdat.its.bin)
+mdat$MAPQ.color <- ifelse(mdat$MAPQ==0,"MultiHit","MaybeUniq")
 refName.scaffolds <- unique(mdat$refName[mdat$level=="scaffolds"])
 refName.reads <- unique(mdat$refName[mdat$level=="reads"])
-mdat.hit <- mdat %>% filter(refName%in%c(refName.scaffolds))
+mdat.hit <- mdat %>% filter(refName%in%c(refName.scaffolds,refName.reads))
 
-ggplot(mdat.hit) + facet_grid(level~sName+refName,scales="free",space="free") + 
-  geom_segment(aes(x=pos,xend=pos+length,y=stack,yend=stack,color=mate,size=4),alpha=.7) +
+ggplot(mdat.hit) + facet_grid(level~sName+refName,scales="free",space="free_y") + 
+  geom_segment(aes(x=pos,xend=end,y=stack,yend=stack,color=XA.grp,size=2),alpha=.7) +
   geom_text(data=mdat.hit%>%filter(level=="scaffolds"),aes(x=pos,y=stack,label=query),size=2,hjust=0) +
   theme_bw() + scale_y_log10()
 ```
