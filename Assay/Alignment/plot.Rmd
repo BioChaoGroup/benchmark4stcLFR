@@ -1,0 +1,128 @@
+---
+title: "Alignment of Assemble results"
+output:
+   html_notebook:
+     code_fold: hide
+  
+---
+
+```{r setup,include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load fucntions
+library(plyr)
+library(ggplot2)
+library(dplyr)
+```
+
+```{r}
+tag <- "0294_1423_1468"
+tag <- "0013_1448_0849"
+tag <- "0049_0802_0050"
+# 5 genome reference info
+ids <- read.table("REF/ncbi.5Ref.faID",sep="\t")
+colnames(ids) <- c("sName","refName","Tax")
+ids$ref.species <- unlist(lapply(ids$Tax, function(x){paste((strsplit(as.character(x),split = " "))[[1]][1:2],collapse = "_")}))
+# ITS reference info
+its.anno <- read.table("REF/ee_its_database.ids")
+colnames(its.anno) <- c("its.species","query","itsID2","source","taxonomy")
+its.map <- read.table("REF/its_to_5Ref.sam.stat")
+colnames(its.map) <- c("query","refName","length","pos")
+
+if(!is.null(tag)){
+  # SPAdes assemble aligned to 5 Ref
+  spades.stat <- read.table(paste0("REF/",tag,"/scaffolds.bwa.5Ref.stat"))
+  colnames(spades.stat) <- c("query","seqName","cov","nid","refName","length","pos","mate")
+  
+  # Reads directly aligned to 5Ref
+  reads.5ref.stat <- read.table(paste0("REF/",tag,"/bwa.5Ref.sam.stat"))
+  colnames(reads.5ref.stat) <- c("query","refName","length","pos","mate")
+}else{
+  # SPAdes assemble aligned to 5 Ref
+  spades.stat <- read.table("REF/scaffolds.bwa.5Ref.stat")
+  colnames(spades.stat) <- c("query","seqName","cov","nid","refName","length","pos","mate")
+  
+  # Reads directly aligned to 5Ref
+  reads.5ref.stat <- read.table("REF/bwa.5Ref.sam.stat")
+  colnames(reads.5ref.stat) <- c("query","refName","length","pos","mate")
+}
+
+
+mdat <- rbind(cbind(level="reads",reads.5ref.stat),
+              cbind(level="scaffolds",spades.stat[,c(1,5:8)]),
+              cbind(level="ITS",its.map,mate="*"))
+mdat <- merge(mdat,ids[,c(1,2,4)],by="refName")
+mdat <- merge(mdat,its.anno[,1:2],by="query",all.x=T)
+mdat$query <- as.character(mdat$query)
+mdat$refName <- as.character(mdat$refName)
+```
+
+
+#curation
+```{r}
+stack.fun <- function(d){
+  d <- d[order(d$pos),]
+  d$end <- d$pos + d$length
+  stack <- 1
+  bin.start <- 1
+  d$stack <- 1
+  d$bin.end <- d$end
+  end.prv <- d$end[1]
+  if(nrow(d)>1){
+    for(i in 2:nrow(d)){
+      pos.now <- d$pos[i]
+      if(pos.now < end.prv){
+        stack = stack + 1
+        d$stack[i] <- stack
+        
+      }else{
+        d$bin.end[bin.start:(i-1)] <- end.prv
+        bin.start <- i
+        stack = 1
+        d$stack[i] = 1
+      }
+      end.prv <- d$end[i]
+    }
+    d$bin.end[bin.start:nrow(d)] <- end.prv
+  }
+  return(d)
+}
+mdat0 <- ddply(mdat,c("level","refName"),stack.fun)
+
+mdat.its.bin <- mdat0%>% filter(level=="ITS"&stack==1)
+mdat <- rbind(mdat0%>% filter(level!="ITS"),
+               mdat.its.bin)
+
+mdat$bold <- ifelse(mdat$level=="reads",2,4)
+
+```
+
+### Show SPAdes result
+```{r}
+mdat%>%filter(level=="scaffolds")
+```
+
+
+
+### plot all
+```{r}
+refName.scaffolds <- unique(mdat$refName[mdat$level=="scaffolds"])
+refName.reads <- unique(mdat$refName[mdat$level=="reads"])
+mdat.hit <- mdat %>% filter(refName%in%c(refName.scaffolds))
+
+ggplot(mdat.hit) + facet_grid(level~sName+refName,scales="free",space="free") + 
+  geom_segment(aes(x=pos,xend=pos+length,y=stack,yend=stack,color=mate,size=4),alpha=.7) +
+  geom_text(data=mdat.hit%>%filter(level=="scaffolds"),aes(x=pos,y=stack,label=query),size=2,hjust=0) +
+  theme_bw() + scale_y_log10()
+```
+
+```{r}
+mdat.its.intrest <- mdat0%>% filter(level=="ITS"&refName%in%c(refName.scaffolds,refName.reads)&
+                                      its.species%in%c("Lentinula_edodes","Pleurotus_eryngii"))
+
+ggplot(mdat.its.intrest) + facet_grid(level~sName+refName,scales="free") + 
+  geom_segment(aes(x=pos,xend=pos+length,y=factor(stack),yend=factor(stack),size=4,color=its.species),alpha=.7) +
+  geom_text(aes(x=pos,y=factor(stack),label=its.species),hjust=0) +
+  theme_bw()
+```
+

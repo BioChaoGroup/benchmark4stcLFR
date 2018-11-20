@@ -1,0 +1,57 @@
+---
+title: "stat beads"
+output:
+   html_notebook:
+     code_fold: hide
+  
+---
+
+```{r setup,include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load fucntions
+library(plyr)
+library(ggplot2)
+library(dplyr)
+```
+
+```{r}
+APR842.stat <- read.table("tmp/APR842.code.freq.stat",col.names=c("freq","num"))
+```
+
+#Curation
+```{r}
+APR842.median.rank <- median(1:sum(APR842.stat$freq))
+APR842.stat$cumsum <- cumsum(APR842.stat$freq)
+fake.1 <- 2*APR842.stat$freq[1]
+APR842.stat$prob <- APR842.stat$freq/(sum(APR842.stat$freq) + fake.1)
+which.median <- which(APR842.stat$cumsum>APR842.median.rank)[1]
+APR842.median <- APR842.stat[which.median,]
+```
+
+#Visualization
+```{r}
+# poisson.dat <- as.data.frame(table(rpois(sum(APR842.stat$freq),2)))
+# poisson.dat$Var1 <- as.integer(as.character(poisson.dat$Var1))
+poisson1.dat <- data.frame(num=seq(0,30000),prob=dpois(seq(0,30000),1))
+poisson2.dat <- data.frame(num=seq(0,30000),prob=dpois(seq(0,30000),20))
+k=.1
+poisson.dat <- data.frame(num=seq(0,30000),prob=(1-k)*poisson1.dat$prob+k*poisson2.dat$prob)
+gamma.dat <- data.frame(num=seq(0,30000),prob=dgamma(seq(0,30000),1,0.5))
+
+ggplot(APR842.stat,aes(x=num,y=prob)) + geom_line(size=1) + 
+  geom_line(data=poisson.dat,linetype=2,size=1,color="grey50") +
+  geom_line(data=gamma.dat,linetype=2,size=1,color="blue") +
+  scale_x_log10(limits=c(2,30000)) + ylim(c(0,0.15))#+ scale_y_log10()
+```
+
+```{r}
+ggplot(APR842.stat,aes(x=num,y=freq)) + geom_bar(stat="identity",width=.1,color="red") + 
+  scale_x_log10() + scale_y_log10()
+```
+
+```{r}
+which.2 <- rev(which(APR842.stat$freq==2))[1]
+APR842.stat[which.2,]
+```
+

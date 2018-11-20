@@ -26,6 +26,20 @@
 
 - **Snakemake** - a pythonic workflow system ([bitbucket](https://bitbucket.org/snakemake/snakemake))
 
+### Init this repo
+
+```shell
+export D_fastp="/path/to/fastp/reporsitory"
+export D_metaSeq="/path/to/fastp/repository"
+git clone git@biogit.cn:Fangchao/benchmark4stlfr.git
+cd benchmark4stlfr
+# Find and modifiy the DATA and DB directory according to your repo location.
+ln -s ../../../DATA
+ln -s ../../../DB
+```
+
+
+
 #### Module
 
 **stLFR barcodes split** - [README.md](./)
