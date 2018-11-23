@@ -1,0 +1,284 @@
+---
+title: "Alignment of Assemble results"
+output:
+   html_notebook:
+     code_fold: hide
+  
+---
+
+```{r setup,include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load fucntions
+library(plyr)
+library(ggplot2)
+library(dplyr)
+library(RColorBrewer)
+
+#custom defined function
+stack.fun <- function(d){
+  d <- d[order(d$pos),]
+  d$edge3 <- d$pos + d$QLEN
+  d$start <- ifelse(d$flag==16,d$edge3,d$pos)
+  d$end <- ifelse(d$flag==16,d$pos,d$edge3)
+
+  stack <- 1
+  bin.start <- 1
+  d$stack <- 1
+  d$bin.end <- d$edge3
+  end.prv <- d$edge3[1]
+  if(nrow(d)>1){
+    for(i in 2:nrow(d)){
+      pos.now <- d$pos[i]
+      if(pos.now < end.prv){
+        stack = stack + 1
+        d$stack[i] <- stack
+        
+      }else{
+        d$bin.end[bin.start:(i-1)] <- end.prv
+        bin.start <- i
+        stack = 1
+        d$stack[i] = 1
+      }
+      end.prv <- ifelse(d$edge3[i]>end.prv,d$edge3[i],end.prv)
+    }
+    d$bin.end[bin.start:nrow(d)] <- end.prv
+  }
+  return(d)
+}
+```
+
+# SPAdes assemble mode test  
+  
+### shell
+
+**target**
+```{sh,eval=FALSE}
+sam="APR842"
+cod="0294_1423_1468" # rank  1 : 28432 reads
+cod="0445_1224_1137" # rank 19 : 10170 reads
+cod="0566_1521_1101" # rank 71 :  4999 reads
+cod="0049_0802_0050" # rank 2000 :  1000 reads
+cod="0434_0063_0687" #               600 reads
+cod="0766_1328_1523" #               100 reads
+```
+
+** assemble **
+```{sh,eval=FALSE}
+cd $mSeq # execute on HPC
+pfx="beadPool/$sam/${cod:0:4}/$cod"
+
+spades.py -t 8 -o Assemble/APR842/${cod:0:4}/$cod -1 $pfx.1.fq.gz -2 $pfx.2.fq.gz &
+spades.py --sc -t 8 -o Assemble/APR842/${cod:0:4}/$cod\_sc -1 $pfx.1.fq.gz -2 $pfx.2.fq.gz &
+spades.py --careful -t 8 -o Assemble/APR842/${cod:0:4}/$cod\_careful -1 $pfx.1.fq.gz -2 $pfx.2.fq.gz &
+spades.py --sc --careful -t 8 -o Assemble/APR842/${cod:0:4}/$cod\_sc_careful -1 $pfx.1.fq.gz -2 $pfx.2.fq.gz
+
+##
+spades.py --only-assembler -t 8 -o Assemble/APR842/${cod:0:4}/$cod -1 $pfx.1.fq.gz -2 $pfx.2.fq.gz &
+spades.py --only-assembler --sc -t 8 -o Assemble/APR842/${cod:0:4}/$cod\_sc -1 $pfx.1.fq.gz -2 $pfx.2.fq.gz &
+spades.py --only-assembler --careful -t 8 -o Assemble/APR842/${cod:0:4}/$cod\_careful -1 $pfx.1.fq.gz -2 $pfx.2.fq.gz &
+spades.py --only-assembler --sc --careful -t 8 -o Assemble/APR842/${cod:0:4}/$cod\_sc_careful -1 $pfx.1.fq.gz -2 $pfx.2.fq.gz
+```
+
+** align to GENOME **
+```{sh,eval=FALSE}
+REF_GEN="REF/ncbi.5Ref.fasta"
+pfx="Assemble/$sam/${cod:0:4}/$cod"
+for i in $pfx*/scaffolds.fasta ;do
+  bwa bwasw -t 8 $REF_GEN $i > $i.bwa.GENOME.sam
+  grep -v "@" $i.bwa.GENOME.sam |awk '{for(i=12;i<=NF;i++){if($i ~ /AS\:i\:/){as=$i};if($i~/XA\:Z\:/){xa=$i}};len=length($10);print $1,$2,$3,$4,$5,$6,$7,$8,$9,as,len,xa}' > $i.bwa.GENOME.sam.stat
+done
+```
+
+** align to ITS DB **
+```{sh,eval=FALSE}
+REF_ITS="REF/ee_its_database.fasta"
+pfx="Assemble/$sam/${cod:0:4}/$cod"
+for i in $pfx*/scaffolds.fasta ;do
+  bwa bwasw -t 8 $REF_ITS $i > $i.bwa.ITS.sam
+  grep -v "@" $i.bwa.ITS.sam |awk '{for(i=12;i<=NF;i++){if($i ~ /AS\:i\:/){as=$i};if($i~/XA\:Z\:/){xa=$i}};len=length($10);print $1,$2,$3,$4,$5,$6,$7,$8,$9,as,len,xa}' > $i.bwa.ITS.sam.stat
+done
+```
+
+** download above results **
+```{sh,eval=FALSE}
+# at current dir
+mkdir -p tmp
+for i in {"/","_sc/","_careful/","_sc_careful/"};do
+  mkdir -p tmp/$sam/$cod/$i
+  scp ngb7:$mSeq/instance/Assemble/$sam/${cod:0:4}/$cod$i*stat ./tmp/$sam/$cod/$i/
+done
+```
+
+### Load  
+**annotation and ref alignment**
+```{r}
+sam="APR842"
+cod="0294_1423_1468" # rank    1 : 28432 reads
+cod="0445_1224_1137" # rank   19 : 10170 reads
+cod="0566_1521_1101" # rank   71 :  4999 reads
+cod="0049_0802_0050" # rank 2000 :  1000 reads
+cod="0434_0063_0687" #               600 reads
+cod="0766_1328_1523" #               100 reads
+itsDB="../../DATA/DB/ITS/"
+
+# Load ids
+load("../Alignment/tmp/anno.RData")
+load(paste0(itsDB,"ITSx.RData"))
+its.map <- read.table("../Alignment/tmp/its_to_5Ref.sam.stat",sep=" ")
+colnames(its.map) <- c("query","flag","refName","pos","MAPQ","CIGAR","RNEXT","PNEXT","TLEN","AS","QLEN","XA")
+
+```
+
+**GN alignment**
+```{r}
+scaf.GN.default.stat <- read.table(paste("tmp",sam,cod,"scaffolds.fasta.bwa.GENOME.sam.stat",sep = "/"))
+scaf.GN.sc.stat <- read.table(paste("tmp",sam,cod,"_sc","scaffolds.fasta.bwa.GENOME.sam.stat",sep = "/"))
+scaf.GN.careful.stat <- read.table(paste("tmp",sam,cod,"_careful","scaffolds.fasta.bwa.GENOME.sam.stat",sep = "/"))
+scaf.GN.sc_careful.stat <- read.table(paste("tmp",sam,cod,"_sc_careful","scaffolds.fasta.bwa.GENOME.sam.stat",sep = "/"))
+
+mGN.dat <- rbind(
+  cbind(level="default",scaf.GN.default.stat),
+  cbind(level="sc",scaf.GN.sc.stat),
+  cbind(level="careful",scaf.GN.careful.stat),
+  cbind(level="sc_careful",scaf.GN.sc_careful.stat)
+)
+colnames(mGN.dat) <- c("level","query","flag","refName","pos","MAPQ","CIGAR","RNEXT","PNEXT","TLEN","AS","QLEN")
+mGN.dat <- ddply(mGN.dat,c("level","refName"),stack.fun)
+
+
+mGN.dat <- merge(mGN.dat,ids[,c(2,4)],by="refName")
+```
+
+**GN mapping**
+```{r}
+ggplot(mGN.dat,aes(x=pos,y=stack)) + geom_segment(aes(xend=pos+QLEN,yend=stack),size=4) + 
+  facet_grid(level~ref.species+refName,scale="free_x") + scale_y_continuous(breaks = seq(1,3)) +
+  theme(axis.text = element_text(angle=30,hjust=1))
+```
+
+**ITS alignment**
+```{r}
+scaf.ITS.default.stat <- read.table(paste("tmp",sam,cod,"scaffolds.fasta.bwa.ITS.sam.stat",sep = "/"))
+scaf.ITS.sc.stat <- read.table(paste("tmp",sam,cod,"_sc","scaffolds.fasta.bwa.ITS.sam.stat",sep = "/"))
+scaf.ITS.careful.stat <- read.table(paste("tmp",sam,cod,"_careful","scaffolds.fasta.bwa.ITS.sam.stat",sep = "/"))
+scaf.ITS.sc_careful.stat <- read.table(paste("tmp",sam,cod,"_sc_careful","scaffolds.fasta.bwa.ITS.sam.stat",sep = "/"))
+
+
+mITS.dat <- rbind(
+  cbind(level="default",scaf.ITS.default.stat),
+  cbind(level="sc",scaf.ITS.sc.stat),
+  cbind(level="careful",scaf.ITS.careful.stat),
+  cbind(level="sc_careful",scaf.ITS.sc_careful.stat)
+)
+colnames(mITS.dat) <- c("level","query","flag","refName","pos","MAPQ","CIGAR","RNEXT","PNEXT","TLEN","AS","QLEN")
+
+mITS.dat <- ddply(mITS.dat,c("level","refName"),stack.fun)
+
+its.anno2 <- its.anno[,c(2,1)]
+colnames(its.anno2) <- c("refName","ref.species")
+mITS.dat <- merge(mITS.dat,its.anno2,by="refName")
+```
+
+**ITS mapping**
+```{r}
+ggplot(mITS.dat) + geom_segment(aes(x=start,xend=end,y=stack,yend=stack),size=4) + 
+  facet_grid(level~ref.species+refName,scale="free_x") + scale_y_continuous(breaks = seq(1,3)) +
+  theme(axis.text = element_text(angle=30,hjust=1))
+```
+
+### map its to GENOME
+```{r}
+mITS.dat0 <- mITS.dat
+colnames(mITS.dat0)[c(1,18)] <- c("its.ref","its.species")
+colnames(its.map)[c(1,2,4,11)] <- c("its.ref","its.flag","its.pos","ITSLEN")
+mALL.dat <- merge(mITS.dat0,its.map[,c(1,2,3,4,11)],by="its.ref")
+mALL.dat$pos.global <- mALL.dat$pos+mALL.dat$its.pos
+mALL.dat <- merge(mALL.dat,ids[,c(2,4)],by="refName")
+
+stack.fun2 <- function(d){
+  #d$ITSLEN <- ifelse(d$its.flag==16,-d$ITSLEN,d$ITSLEN)
+  #d$QLEN <- ifelse(d$flag==16,-d$QLEN,d$QLEN)
+  d$pos.global <- d$its.pos + d$pos
+  d$edge3.global <- d$pos.global + d$QLEN
+  d$start.global <- ifelse(d$flag==16,d$edge3,d$pos)
+  d$max.global <- apply(edges,1,max)
+  d <- d[order(d$min.global),]
+  stack <- 1
+  bin.start <- 1
+  d$stack <- 1
+  d$bin.end <- d$end
+  end.prv <- d$max.global[1]
+  if(nrow(d)>1){
+    for(i in 2:nrow(d)){
+      pos.now <- d$min.global[i]
+      if(pos.now < end.prv){
+        stack = stack + 1
+        d$stack[i] <- stack
+      }else{
+        d$bin.end[bin.start:(i-1)] <- end.prv
+        bin.start <- i
+        stack = 1
+        d$stack[i] = 1
+      }
+      end.prv <- ifelse(d$max.global[i]>end.prv,d$max.global[i],end.prv)
+    }
+    d$bin.end[bin.start:nrow(d)] <- end.prv
+  }
+  return(d)
+}
+mALL.dat <- ddply(mALL.dat,c("level","refName"),stack.fun2)
+
+```
+
+**visual**
+```{r}
+arrowFun <- arrow(length = unit(4, "point"),angle=45)
+ggplot(mALL.dat,aes(x=pos.global,y=stack)) + 
+  geom_segment(aes(x=its.pos,xend=its.pos+ITSLEN,y=stack-0.5,yend=stack-0.5,color=its.species),size=2,arrow =arrowFun) + 
+  geom_segment(aes(xend=end.global,yend=stack),size=2,alpha=.5,arrow=arrowFun) + 
+  facet_grid(level~ref.species+refName,scale="free",space="free_y") + 
+  theme(axis.text = element_text(angle=30,hjust=1))
+```
+
+**add GENOME**
+```{r}
+
+mGN.dat0 <- mGN.dat
+mGN.dat0$min.global <- mGN.dat0$min
+mGN.dat0$max.global <- mGN.dat0$max
+mGN.dat0$end.global <- mGN.dat0$end
+mGN.dat0$pos.global <- mGN.dat0$pos
+mAddGN.dat <- rbind(
+  cbind(REF="ITS",offset=.2,mALL.dat),
+  cbind(REF="GEN",offset=-.2,mGN.dat0,its.ref=NA,its.species=NA,its.flag=NA,its.pos=NA,ITSLEN=NA))
+ggplot(mAddGN.dat,aes(x=pos.global,linetype=REF)) + 
+  geom_segment(aes(x=its.pos,xend=its.pos+ITSLEN,y=stack,yend=stack,color=its.species),size=2,arrow =arrowFun) + 
+  geom_segment(aes(xend=end.global,y=stack+offset,yend=stack+offset),size=2,alpha=.5,arrow=arrowFun) + 
+  facet_grid(level~ref.species+refName,scale="free",space="free_y") + scale_y_continuous(breaks=seq(1,10)) +
+  theme(axis.text = element_text(angle=30,hjust=1))
+```
+```{r}
+ggplot(mAddGN.dat%>%filter(refName=="LSDU01000012.1"),aes(x=pos.global,linetype=REF)) + 
+  geom_segment(aes(x=its.pos,xend=its.pos+ITSLEN,y=stack-0.5,yend=stack-0.5,color=its.species),size=2,arrow =arrowFun) + 
+  geom_segment(aes(xend=end.global,y=stack+offset,yend=stack+offset),size=2,alpha=.5,arrow=arrowFun) + 
+  facet_grid(level~ref.species+refName,scale="free",space="free_y") + scale_y_continuous(breaks=seq(1,10))
+```
+
+# Visual with ITS units region (careful mode)
+```{r}
+
+mITS.more <- merge(mITS.dat,its.region,by.x="refName",by.y="ITSID")
+its.include <- unique(mITS.more$refName)
+its.region0 <- its.region%>%filter(ITSID%in%its.include)
+colnames(its.region0)[1:2] <- c("refName","ref.species")
+
+ggplot(mITS.dat) + ggtitle(cod) +
+  geom_segment(data=its.region0,aes(x=start,xend=end,y=0.5,yend=0.5,color=region),size=2,arrow =arrowFun) + 
+  geom_segment(aes(x=start,xend=end,y=stack,yend=stack),size=2,alpha=.5,arrow =arrowFun) + 
+  facet_grid(level~ref.species+refName,scale="free_x") + scale_y_continuous(breaks = seq(1,3)) +
+  theme(axis.text = element_text(angle=30,hjust=1))
+```
+
+
+#FIN.

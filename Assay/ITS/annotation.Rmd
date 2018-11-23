@@ -1,0 +1,116 @@
+---
+title: "Annotating rDNA region of reference"
+output:
+   html_notebook:
+     code_fold: hide
+  
+---
+
+```{r setup,include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load fucntions
+library(plyr)
+library(ggplot2)
+library(dplyr)
+library(RColorBrewer)
+```
+
+# SPAdes assemble mode test  
+  
+### prework
+
+**Predict ITS region @HPC**
+```{sh, eval=FALSE}
+cd $mSeq/instance/REF
+# Predicting ITSs by ITSx tool. It cosum much time
+ITSx -i ee_its_database.fasta -o ITSx/ITSEE -t F --cpu 8
+ITSx -i ncbi.5Ref.fasta -o ITSx/GENOME5 -t F --cpu 24
+# For more info about ITSx: http://microbiology.se/software/itsx/
+
+# Or use the DB conducted by Dr.Song
+ln -s /hwfssz1/ST_META/EE/bin/database EEDB
+```
+
+**download postion file @local**
+```{sh, eval=FALSE}
+cd ../../DATA/DB/ITS/
+target="$mSeq/instance/REF"
+scp ngb7:$target/EEDB/sh_general_release.positions.txt ./
+```
+
+### ENV
+```{r}
+alnDIR="../Alignment/"
+asbDIR="../Assembly/"
+itsDB="../../DATA/DB/ITS/"
+```
+
+### Load  
+**annotation and ref alignment**
+```{r}
+load(paste0(alnDIR,"tmp/anno.RData"))
+its.map <- read.table(paste0(alnDIR,"tmp/its_to_5Ref.sam.stat"),sep=" ")
+colnames(its.map) <- c("query","flag","refName","pos","MAPQ","CIGAR","RNEXT","PNEXT","TLEN","AS","QLEN","XA")
+its.pos <- read.table(paste0(itsDB,"sh_general_release.positions.txt"),sep="\t")
+colnames(its.pos) <- c("annotation","length","SSU","ITS1","5.8S","ITS2","LSU","note")
+its.neg <- cbind(read.table(paste0(itsDB,"sh_general_release_no_detections.txt"),sep="\t"),
+                 NA,"SSU: Not found","ITS1: Not found","5.8S: Not found","ITS2: Not found","LSU: Not found",NA)
+colnames(its.neg) <- c("annotation","length","SSU","ITS1","5.8S","ITS2","LSU","note")
+
+```
+
+# Curation
+```{r}
+if(file.exists(paste0(itsDB,"ITSx.RData"))){
+  load(paste0(itsDB,"ITSx.RData"))
+}else{
+  all.its.info <- rbind(its.pos,its.neg)
+  anno.info <- matrix(unlist(strsplit(as.character(all.its.info$annotation),split = "|",fixed=T)),ncol=5,byrow = T)
+  colnames(anno.info) <- c("name","ITSID","source","srcType","taxonmy")
+  tax.info <- matrix(unlist(strsplit(anno.info[,5],split = ";",fixed=T)),ncol=7,byrow = T)
+  colnames(tax.info)<- c("kingdom","phylum","class","order","family","genus","species")
+  
+  SSU <- matrix(sub("Not|found",NA,unlist(strsplit(as.character(all.its.info$SSU),split=" |-"))),
+                ncol=3,byrow = T,dimname=list(NULL,c("region","start","end")))
+  ITS1 <- matrix(sub("Not|found",NA,unlist(strsplit(as.character(all.its.info$ITS1),split=" |-"))),
+                 ncol=3,byrow = T,dimname=list(NULL,c("region","start","end")))
+  S58 <- matrix(sub("Not|found",NA,unlist(strsplit(as.character(all.its.info$`5.8S`),split=" |-"))),
+                ncol=3,byrow = T,dimname=list(NULL,c("region","start","end")))
+  ITS2 <- matrix(sub("Not|found",NA,unlist(strsplit(as.character(all.its.info$ITS2),split=" |-"))),
+                 ncol=3,byrow = T,dimname=list(NULL,c("region","start","end")))
+  LSU <- matrix(sub("Not|found",NA,unlist(strsplit(as.character(all.its.info$LSU),split=" |-"))),
+                ncol=3,byrow = T,dimname=list(NULL,c("region","start","end")))
+  
+  its.anno <- cbind(anno.info[,1:4],tax.info)
+  its.region <- as.data.frame(rbind(
+    cbind(anno.info[,2:1],SSU), cbind(anno.info[,2:1],ITS1), 
+    cbind(anno.info[,2:1],S58), cbind(anno.info[,2:1],ITS2), cbind(anno.info[,2:1],LSU)
+  ))
+  its.region$region <- factor(sub(":","",as.character(its.region$region)),levels=c("SSU","ITS1","5.8S","ITS2","LSU"))
+  its.region$start <- as.integer(levels(its.region$start)[its.region$start])
+  its.region$end <- as.integer(levels(its.region$end)[its.region$end])
+  
+  save(its.anno,its.region,file=paste0(itsDB,"ITSx.RData"))
+}
+```
+
+** Show region **
+```{r}
+select.name <- c("Pleurotus_eryngii","Hypsizygus_marmoreus","Lentinula_edodes",
+                 "Flammulina_velutipes","Saccharomyces_cerevisiae")
+
+
+arrowFun <- arrow(length = unit(4, "point"),angle=45)
+ggplot(its.region[which(its.region$name%in%select.name),]) + 
+  geom_segment(aes(x=start,xend=end,y="region",yend="region",color=region),size=2,arrow =arrowFun) + 
+  facet_wrap(~name+ITSID,ncol=2,scale="free_y") +
+  theme(axis.text.x = element_text(angle=30,hjust=1))
+```
+
+
+
+
+
+
+#FIN.

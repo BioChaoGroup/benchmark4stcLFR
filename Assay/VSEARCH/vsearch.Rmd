@@ -1,0 +1,164 @@
+---
+title: "VSEARCH evaluation"
+output:
+   html_notebook:
+     code_fold: hide
+  
+---
+
+```{r setup,include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load fucntions
+library(plyr)
+library(ggplot2)
+library(dplyr)
+library(RColorBrewer)
+library(ape)
+library(ggtree)
+# For install ggtree, follow the guide here: https://bioconductor.org/packages/release/bioc/html/ggtree.html
+#custom defined function
+library("data.tree")
+#library(treemap)
+library("networkD3")
+#Learn more: https://cran.r-project.org/web/packages/data.tree/vignettes/data.tree.html#trees-in-r
+
+stack.fun <- function(d){
+  d <- d[order(d$pos),]
+  d$edge3 <- d$pos + d$QLEN
+  d$start <- ifelse(d$flag==16,d$edge3,d$pos)
+  d$end <- ifelse(d$flag==16,d$pos,d$edge3)
+
+  stack <- 1
+  bin.start <- 1
+  d$stack <- 1
+  d$bin.end <- d$edge3
+  end.prv <- d$edge3[1]
+  if(nrow(d)>1){
+    for(i in 2:nrow(d)){
+      pos.now <- d$pos[i]
+      if(pos.now < end.prv){
+        stack = stack + 1
+        d$stack[i] <- stack
+        
+      }else{
+        d$bin.end[bin.start:(i-1)] <- end.prv
+        bin.start <- i
+        stack = 1
+        d$stack[i] = 1
+      }
+      end.prv <- ifelse(d$edge3[i]>end.prv,d$edge3[i],end.prv)
+    }
+    d$bin.end[bin.start:nrow(d)] <- end.prv
+  }
+  return(d)
+}
+```
+
+### set ENV
+```{r,eval=FALSE}
+vsDIR="../../Results/VSEARCH"
+itsDB="../../DATA/DB/ITS/"
+sam="APR842"
+cod="0294_1423_1468" # rank  1 : 28432 reads
+cod="0445_1224_1137" # rank 19 : 10170 reads
+cod="0566_1521_1101" # rank 71 :  4999 reads
+cod="0049_0802_0050" # rank 2000 :  1000 reads
+cod="0434_0063_0687" #               600 reads
+cod="0766_1328_1523" #               100 reads
+```
+
+
+# SPAdes assemble mode test  
+  
+### shell
+** download results **
+```{sh,eval=FALSE}
+# at current dir
+cd $vsDIR
+mkdir -p $sam/$cod/
+scp ngb7:$mSeq/instance/VSEARCH/$sam/${cod:0:4}/$cod/*stat $sam/$cod/
+```
+
+### set ENV & Load  
+**annotation and ref alignment**
+```{r}
+# Load ids
+load("../Alignment/tmp/anno.RData")
+load(paste0(itsDB,"ITSx.RData"))
+its.map <- read.table("../Alignment/tmp/its_to_5Ref.sam.stat",sep=" ")
+colnames(its.map) <- c("query","flag","refName","pos","MAPQ","CIGAR","RNEXT","PNEXT","TLEN","AS","QLEN","XA")
+
+```
+
+**ITSEE results**
+```{r}
+vs.ITS.default.stat <- read.table(
+  paste(vsDIR,sam,cod,"EEITS.merge.derep.nonchimeras.otus.sam.stat",sep = "/"),sep=" ")
+vs.ITS.denovo.stat <- read.table(
+  paste(vsDIR,sam,cod,"EEITS.merge.derep.denovo.nonchimeras.otus.sam.stat",sep = "/"),sep=" ")
+vs.ITS.itsRef.stat <- read.table(
+  paste(vsDIR,sam,cod,"EEITS.merge.derep.ref.nonchimeras.otus.sam.stat",sep = "/"),sep=" ")
+
+
+mITS.dat <- rbind(
+  cbind(level="default",vs.ITS.default.stat),
+  cbind(level="denovo",vs.ITS.denovo.stat),
+  cbind(level="itsRef",vs.ITS.itsRef.stat)
+)
+
+colnames(mITS.dat) <- c("level","query","flag","refName","pos","MAPQ","CIGAR","RNEXT","PNEXT","TLEN","AS","QLEN","AX")
+mITS.dat$size <- as.integer(sub("OTU_(\\d+);size=(\\d+)","\\2",mITS.dat$query))
+mITS.dat <- ddply(mITS.dat,c("level","refName"),stack.fun)
+
+its.anno2 <- its.anno[,c(2,1)]
+colnames(its.anno2) <- c("refName","ref.species")
+mITS.dat <- merge(mITS.dat,its.anno2,by="refName",all.x=T)
+```
+
+**ITS mapping**
+```{r}
+mITS.dat$offset <- (as.numeric(mITS.dat$level)-1)*0.25
+ggplot(mITS.dat) + geom_segment(aes(x=start,xend=end,y=stack+offset,yend=stack+offset,color=ref.species,group=level),size=4) + 
+  facet_wrap(~refName,ncol=6,scale="free_x") + scale_y_continuous(breaks = seq(1,20)) +
+  theme(axis.text = element_text(angle=30,hjust=1))
+```
+
+
+# Visual with ITS units region (careful mode)
+```{r}
+its.region0 <- its.region%>%filter(ITSID%in%its.include)
+colnames(its.region0)[1:2] <- c("refName","ref.species")
+
+arrowFun <- arrow(length = unit(6, "point"),angle=45)
+
+ggplot(mITS.dat) + ggtitle(cod) +
+  geom_segment(data=its.region0,aes(x=start,xend=end,y=0.5,yend=0.5,color=region),size=2,arrow =arrowFun) + 
+  geom_segment(aes(x=start,xend=end,y=stack+offset,yend=stack+offset,linetype=level),size=2,alpha=.5,arrow =arrowFun) + 
+  facet_wrap(~ref.species+refName,ncol=8,scale="free") + scale_y_continuous(breaks = seq(1,3)) +
+  theme(axis.text = element_text(angle=30,hjust=1))
+```
+```{r}
+known5 <- its.region%>%filter(name%in%unique(ids$ref.species)) 
+colnames(known5)[1:2] <- c("refName","ref.species")
+its.region0.more <- merge((rbind(its.region0,known5))%>%filter(region=="ITS1"),its.anno,by.x="refName",by.y="ITSID")
+
+its.region0.more$pathString  <- paste(
+                               its.region0.more$kingdom,
+                               its.region0.more$phylum,
+                               its.region0.more$class,
+                               its.region0.more$order,
+                               its.region0.more$family,
+                               its.region0.more$genus,
+                               its.region0.more$species,
+                               its.region0.more$refName,
+                               sep = "/")
+phyloge <- as.Node(its.region0.more)
+
+#https://christophergandrud.github.io/networkD3/
+useRtreeList <- ToListExplicit(phyloge, unname = TRUE)
+diagonalNetwork( useRtreeList,fontSize = 16,linkColour = "black")
+```
+
+
+#FIN.
