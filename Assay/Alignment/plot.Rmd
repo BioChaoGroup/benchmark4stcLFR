@@ -1,0 +1,324 @@
+---
+title: "Alignment of Assemble results"
+output:
+   html_notebook:
+     code_fold: hide
+  
+---
+
+```{r setup,include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load fucntions
+library(plyr)
+library(ggplot2)
+library(dplyr)
+library(RColorBrewer)
+aln.dir<-"./tmp/"
+```
+
+**pre-download**
+```{sh,eval=FALSE}
+mkdir -p tmp
+rDir="/ldfssz1/ST_META/F16HQSB1SY2636_TumorMeta_ZH/fangchao/metaSeq/instance"
+scp fangchao@ngb7:$rDir/REF/*.stat tmp/
+for i in {0294_1423_1468,0013_1448_0849,0049_0802_0050};
+do
+  scp fangchao@ngb7:$rDir/Assemble/APR842/${i:0:4}/$i/*.stat tmp/$i/
+  scp fangchao@ngb7:$rDir/VSEARCH/APR842/${i:0:4}/$i/*.{blast6,stat} tmp/$i/
+done
+
+```
+
+**choose tag**  
+```{r}
+tag <- "0294_1423_1468"
+tag <- "0013_1448_0849"
+tag <- "0049_0802_0050"
+```
+
+# Load data
+```{r}
+
+# 5 genome reference info
+ids <- read.table("tmp/ncbi.5Ref.faID",sep="\t")
+colnames(ids) <- c("sName","refName","Tax")
+ids$ref.species <- unlist(lapply(ids$Tax, function(x){paste((strsplit(as.character(x),split = " "))[[1]][1:2],collapse = "_")}))
+
+# ITS reference info
+its.anno <- read.table("tmp/ee_its_database.ids")
+colnames(its.anno) <- c("its.species","query","itsID2","source","taxonomy")
+
+save(ids,its.anno,file="tmp/anno.RData")
+#
+its.map <- read.table("tmp/its_to_5Ref.sam.stat",sep=" ")
+colnames(its.map) <- c("query","flag","refName","pos","MAPQ","CIGAR","RNEXT","PNEXT","TLEN","AS","QLEN","XA")
+
+# SPAdes assemble aligned to 5 Ref
+spades.stat <- read.table(paste0("tmp/",tag,"/scaffolds.bwa.5Ref.sam.stat"),sep=" ")
+colnames(spades.stat) <- c("query","flag","refName","pos","MAPQ","CIGAR","RNEXT","PNEXT","TLEN","AS","QLEN","XA")
+
+# Reads directly aligned to 5Ref
+reads.5ref.stat <- read.table(paste0("tmp/",tag,"/bwa.5Ref.sam.stat"),sep=" ")
+colnames(reads.5ref.stat) <- c("query","flag","refName","pos","MAPQ","CIGAR","RNEXT","PNEXT","TLEN","AS","QLEN","XA")
+
+# Vsearch OTU clustered by ITS EE BD while also BWM aligned to GENOME
+vsearch.stat <- read.table(paste0("tmp/",tag,"/EEITS.merge.derep.nonchimeras.otus.GENOME.sam.stat"),sep=" ")
+colnames(vsearch.stat) <- c("query","flag","refName","pos","MAPQ","CIGAR","RNEXT","PNEXT","TLEN","AS","QLEN","XA")
+vsearch.blast <- read.table(paste0("tmp/",tag,"/EEITS.merge.derep.nonchimeras.otus.tax.GENOME.blast6"))
+colnames(vsearch.blast) <- c("query","subject","identity","alnLen","mismatch","gaps","qstart","qend","sstart","send","evalue","bitsocre")
+
+```
+
+**Merge data**
+```{r}
+mdat <- rbind(cbind(level="reads",reads.5ref.stat),
+              cbind(level="scaffolds",spades.stat),
+              cbind(level="ITS",its.map),
+              cbind(level="vsearch",vsearch.stat))
+mdat <- merge(mdat,its.anno[,1:2],by="query",all.x=T)
+mdat <- merge(mdat,ids[,c(1,2,4)],by="refName")
+
+mdat$query <- as.character(mdat$query)
+mdat$refName <- as.character(mdat$refName)
+mdat$AS <- as.integer(sub("AS:i:","",as.character(mdat$AS),fixed = T))
+mHit.info <- mdat[,c("query","refName","pos","ref.species","XA")]
+mHit.info$XA <- as.character(mHit.info$XA)
+mdat <- mdat[,-which(colnames(mdat)=="XA")]
+```
+
+
+#curation
+### treat multiply hit
+```{r}
+XAfun <- function(x){
+  second <- NA
+  query <- as.character(x[1])
+  if(x[5]==""|is.na(x[5])){
+    group <- "unique"
+    ident <- 100
+  }else{
+    xas <- matrix(unlist(strsplit(unlist(strsplit(sub("XA:Z:","",x[5]),";")),",")),ncol=4,byrow = T)
+    colnames(xas) <- c("refName","pos","CIGAR","NM")
+    xas <- merge(xas,ids[,c(2,4)],by="refName")
+    num <- nrow(xas)
+    same.scalffold <- sum(xas$refName==as.character(x[2]))
+    same.species <- sum(xas$ref.species==as.character(x[4]))
+    ident <- round((same.species+1)/(num+1),2) * 100
+    if(same.scalffold==num){
+      group <- "same.scaff"
+    }else if(same.species==num){
+      group <- "same.species"
+    }else{
+      group <- 'divergence'
+      second <- names(rev(sort(table(xas$ref.species[which(xas$ref.species!=as.character(x[4]))]))))[1]
+    }
+  }
+  return(list(query,ident,group,second))
+}
+
+if(file.exists(paste0(aln.dir,tag,".mHit.info"))){
+  load(paste0(aln.dir,tag,".mHit.info"))
+}else{
+  mHit.info.group <- as.data.frame(matrix(unlist(apply(mHit.info,1,XAfun)),ncol=4,byrow = T))
+  colnames(mHit.info.group) <- c("query","spIdentity","XA.grp","XA.2nd")
+  mHit.info.group$spIdentity <- as.numeric(as.character(mHit.info.group$spIdentity))
+  save(mHit.info.group,file=paste0(aln.dir,tag,".mHit.info"))
+}
+mdat<- merge(mdat,mHit.info.group,by="query")
+```
+
+```{r}
+stack.fun <- function(d){
+  d <- d[order(d$pos),]
+  d$end <- d$pos + d$QLEN
+  stack <- 1
+  bin.start <- 1
+  d$stack <- 1
+  d$bin.end <- d$end
+  end.prv <- d$end[1]
+  if(nrow(d)>1){
+    for(i in 2:nrow(d)){
+      pos.now <- d$pos[i]
+      if(pos.now < end.prv){
+        stack = stack + 1
+        d$stack[i] <- stack
+        
+      }else{
+        d$bin.end[bin.start:(i-1)] <- end.prv
+        bin.start <- i
+        stack = 1
+        d$stack[i] = 1
+      }
+      end.prv <- d$end[i]
+    }
+    d$bin.end[bin.start:nrow(d)] <- end.prv
+  }
+  return(d)
+}
+mdat0 <- ddply(mdat,c("level","refName"),stack.fun)
+mdat.its.bin <- mdat0%>% filter(level=="ITS"&stack==1)
+```
+### Show ITS
+```{r}
+mdat.its <- mdat0%>% filter(level=="ITS"&MAPQ>10)
+mdat.its$group <- ifelse(mdat.its$its.species==mdat.its$ref.species,"same","diff")
+table(mdat.its$group,mdat.its$ref.species)
+ggplot(mdat.its) + facet_grid(level~sName+refName,scales="free",space="free_y") + 
+  geom_segment(aes(x=pos,xend=end,y=stack,yend=stack,color=group,size=2),alpha=.3) +
+  theme_bw() + scale_y_log10() + guides(color=NULL)
+```
+### Show vsearch OTU annotation
+```{r}
+mdat.vsearch <- merge(mdat0%>%filter(level=="vsearch"),
+                      vsearch.blast ,by="query",all.x=T)
+mdat.vsearch$ab.97 <- ifelse(mdat.vsearch$identity>=97,"above",ifelse(mdat.vsearch$identity<97,"below",NA))
+ggplot(mdat.vsearch,aes(x=MAPQ,y=AS,color=XA.grp)) + geom_jitter(width=c(.3,.3))
+ggplot(mdat.vsearch,aes(x=XA.2nd,y=AS,fill=XA.grp)) + coord_flip() +
+  geom_boxplot() + geom_jitter() + facet_grid(XA.2nd~ref.species,scale="free")
+
+
+ggplot(mdat.vsearch,aes(x=subject,y=refName)) + geom_tile(alpha=.3) +
+  geom_jitter(aes(color=ab.97),width=c(.3,.3))+ facet_wrap(~ref.species,ncol=1,scale="free_y")
+```
+
+### Show SPAdes result
+```{r}
+mdat.scaffolds <- mdat0%>%filter(level=="scaffolds")
+mdat.scaffolds
+```
+
+### Show reads mapping result
+```{r}
+mdat.reads <- mdat0%>%filter(level=="reads")
+err.curve <- data.frame(errP=10^seq(-5,1,1),MAPQ=-10*log10(10^seq(-5,1,1)))
+ggplot(err.curve,aes(x=errP,y=MAPQ)) + geom_line() + scale_x_log10()
+ggplot(mdat.reads,aes(x=MAPQ,fill=XA.grp)) + geom_histogram(position="dodge") 
+ggplot(mdat.reads,aes(x=AS)) + geom_histogram() 
+ggplot(mdat.reads,aes(x=AS,y=MAPQ)) +stat_density2d(aes(fill=..density..),alpha=.5,h=c(20,20),geom="raster",contour=F) +
+  scale_fill_gradientn(colors=rev(brewer.pal(11,"Spectral"))) +  geom_jitter(width=c(.3,.3),shape=16,alpha=.3)
+
+```
+
+
+### plot all
+```{r}
+mdat <- rbind(mdat.reads,mdat.scaffolds,mdat.its.bin,mdat0%>%filter(level=="vsearch"))
+mdat$MAPQ.color <- ifelse(mdat$MAPQ==0,"MultiHit","MaybeUniq")
+refName.scaffolds <- unique(mdat$refName[mdat$level=="scaffolds"])
+refName.reads <- unique(mdat$refName[mdat$level=="reads"])
+mdat.hit <- mdat %>% filter(refName%in%c(refName.scaffolds,refName.reads))
+
+ggplot(mdat.hit) + facet_grid(level~sName+refName,scales="free",space="free_y") + 
+  geom_segment(aes(x=pos,xend=end,y=stack,yend=stack,color=XA.grp,size=2),alpha=.7) +
+  geom_text(data=mdat.hit%>%filter(level=="scaffolds"),aes(x=pos,y=stack,label=query),size=2,hjust=0) +
+  theme_bw() + scale_y_log10() + theme(axis.text.x=element_text(angle=30,hjust=1))
+
+ggplot(mdat.hit%>%filter(level=="reads"),aes(x=XA.2nd,y=AS,fill=XA.grp)) + coord_flip() +
+  geom_boxplot() + geom_jitter() + facet_grid(level+XA.2nd~ref.species,scale="free")
+```
+
+**stat all**
+```{r}
+stat00 <- ddply(mdat.hit,
+              c("level","XA.grp","ref.species","refName","XA.2nd"),
+              summarise,count=length(query))
+
+ggplot(mdat.hit,aes(x=spIdentity)) + geom_histogram()
+stat60 <- ddply(mdat.hit%>%filter(spIdentity>60),
+              c("level","XA.grp","ref.species","refName","XA.2nd"),
+              summarise,count=length(query))
+```
+
+**Zoom in **
+```{r}
+zdat <- mdat.hit%>%filter(ref.species=="Lentinula_edodes")
+ggplot(zdat) +facet_grid(level~sName+refName,scales="free",space="free_y") + 
+  geom_segment(aes(x=pos,xend=end,y=stack,yend=stack,color=XA.grp,size=2),alpha=.7) +
+  geom_text(data=zdat%>%filter(level=="scaffolds"),aes(x=pos,y=stack,label=query),size=2,hjust=0) +
+  theme_bw() + scale_y_log10()
+```
+
+
+# Multiple VSEARCH annotation
+```{r}
+#clustered by EE then annotated by GENOME
+vsearch.EE2GN.stat <- vsearch.stat
+vsearch.EE2GN.blast <- vsearch.blast
+#clustered by EE then annotated by EE
+vsearch.EE2EE.stat <- read.table(paste0("tmp/",tag,"/EEITS.merge.derep.nonchimeras.otus.sam.stat"),sep=" ")
+colnames(vsearch.EE2EE.stat) <- c("query","flag","refName","pos","MAPQ","CIGAR","RNEXT","PNEXT","TLEN","AS","QLEN","XA")
+vsearch.EE2EE.blast <- read.table(paste0("tmp/",tag,"/merge.drep.denovo.otus.tax.blast6"))
+colnames(vsearch.EE2EE.blast) <- c("query","subject","identity","alnLen","mismatch","gaps","qstart","qend","sstart","send","evalue","bitsocre")
+
+vdat <- rbind(cbind(level="EE2GN",merge(vsearch.EE2GN.stat,vsearch.EE2GN.blast ,by="query",all.x=T)),
+              cbind(level="EE2EE",merge(vsearch.EE2EE.stat,vsearch.EE2EE.blast ,by="query",all.x=T)))
+vdat$AS <- as.integer(sub("AS:i:","",as.character(vdat$AS),fixed = T))
+merge.anno <- its.anno[,1:2]
+colnames(merge.anno) <- c("species","refName")
+tmp <- ids[,c(4,2)]
+colnames(tmp) <- c("species","refName")
+merge.anno <- rbind(merge.anno,tmp)
+
+vdat <- merge(vdat,merge.anno,by="refName")
+size <- as.data.frame(matrix(unlist(strsplit(as.character(vdat$query),";")),ncol=2,byrow = T))
+colnames(size) <- c("OTU","size")
+size$size <- as.numeric(sub("size=","",as.character(size$size)))
+vdat <- cbind(size,vdat)
+
+vdat$ab.97 <- ifelse(vdat$identity>=97,"above",ifelse(vdat$identity<97,"below",NA))
+
+library(reshape2)
+vdat$species <- as.character(vdat$species)
+EE2GN.sp <- vdat[which(vdat$level=="EE2GN"),c(1,2,27)]
+EE2EE.sp <- vdat[which(vdat$level=="EE2EE"),c(1,2,27)]
+
+EE.anno <- merge(EE2GN.sp,EE2EE.sp,by=c("OTU","size"))
+EE.anno[rev(sort(EE.anno$size)),]
+colnames(EE.anno) <- c("OTU","size","EE2GN","EE2EE")
+ggplot(EE.anno,aes(x=EE2EE,y=EE2GN)) + geom_tile(alpha=.3) +
+  geom_jitter(width=c(.3,.3))
+
+```
+
+```{r}
+XAfun2 <- function(x){
+  second <- NA
+  query <- as.character(x[1])
+  if(x[5]==""|is.na(x[5])){
+    group <- "unique"
+    ident <- 100
+  }else{
+    xas <- matrix(unlist(strsplit(unlist(strsplit(sub("XA:Z:","",x[5]),";")),",")),ncol=4,byrow = T)
+    colnames(xas) <- c("refName","pos","CIGAR","NM")
+    xas <- merge(xas,merge.anno,by="refName")
+    num <- nrow(xas)
+    same.scalffold <- sum(xas$refName==as.character(x[2]))
+    same.species <- sum(xas$ref.species==as.character(x[4]))
+    ident <- round((same.species+1)/(num+1),2) * 100
+    if(same.scalffold==num){
+      group <- "same.scaff"
+    }else if(same.species==num){
+      group <- "same.species"
+    }else{
+      group <- 'divergence'
+      second <- names(rev(sort(table(xas$species[which(xas$species!=as.character(x[4]))]))))[1]
+    }
+  }
+  return(list(query,ident,group,second))
+}
+vHit.info <- vdat[,c("query","refName","pos","species","XA")]
+vHit.info$XA <- as.character(vHit.info$XA)
+
+vHit.info.group <- as.data.frame(matrix(unlist(apply(vHit.info,1,XAfun2)),ncol=4,byrow = T))
+colnames(vHit.info.group) <- c("query","spIdentity","XA.grp","XA.2nd")
+vHit.info.group$spIdentity <- as.numeric(as.character(vHit.info.group$spIdentity))
+save(vHit.info.group,file=paste0(aln.dir,tag,".vHit.info"))
+```
+
+```{r}
+vdat2 <- merge(vdat[,-which(colnames(vdat)=="XA")],vHit.info.group,by="query")
+ggplot(vdat2,aes(x=XA.2nd,y=AS,fill=level)) + coord_flip() +
+  geom_boxplot() + geom_jitter() + facet_grid(XA.2nd~species,scale="free")
+```
+
