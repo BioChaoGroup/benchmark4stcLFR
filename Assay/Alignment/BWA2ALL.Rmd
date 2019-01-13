@@ -1,0 +1,171 @@
+---
+title: "Alignment visualization"
+output:
+  html_notebook:
+    code_fold: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Global variance for write or not
+do.write <- F
+# Outpu dir
+inDir <- "E:/Users/Scelta/Downloads/metaSeq/metaSeq2/instance/APR842_00"
+outdir <- "./"
+
+library(plyr)
+library(dplyr)
+library(ggplot2)
+source("./alignments.R")
+```
+
+#load
+```{r}
+seqs <- read.table(paste0(inDir,"/Mapping/all/seqs.tsv"),col.names = c("REF","length"))
+link <- read.table(paste0(inDir,"/Mapping/all/link.tsv"),col.names = c("type","REF1","dir1","REF2","dir2","score"))
+node <- read.table(paste0(inDir,"/Mapping/all/node.tsv"),col.names = c("type","NODE","REFs","commit"))
+sam  <- read.table(paste0(inDir,"/Mapping/all/bwa.sort.tsv"),
+                   col.names = c("seqID","barcode","flag","REF","POS","MAPQ","CIGAR","RNEXT","PNEXT","TLEN"))
+```
+
+# Curation
+```{r}
+seqs <- seqs[rev(order(seqs$length)),]
+sam0 <- sam[which(sam$flag<100),]
+sam1 <- sam[grep("0000",sam$barcode,invert=T),]
+multiBarcode <- names(which(table(sam1$barcode)>1))
+sam2 <- sam1[which(sam1$barcode%in%multiBarcode),]
+```
+
+#Visual
+```{r}
+target <- "12108417"
+tdat <- sam0[which(sam0$REF==target),]
+bpos <- data.frame(b=unique(as.character(tdat$barcode)),bstack=0)
+tstat <- stack.fun(tdat)
+```
+
+
+```{r}
+tstat$offset <- 0
+ggplot(tstat) + geom_segment(aes(x=start,xend=end,y=stack+offset,yend=stack+offset)) + 
+  theme(axis.text = element_text(angle=30,hjust=1))
+```
+```{r}
+tdepth <- data.frame(POS=0:seqs$length[seqs$REF==target]+1,depth=0)
+for(i in 1:nrow(tstat)){
+  p5<-as.numeric(tstat[i,11]);
+  p3<-as.numeric(tstat[i,12]);
+  tdepth$depth[p5:p3]<-tdepth$depth[p5:p3]+1
+}
+
+ggplot(tdepth,aes(x=POS,y=depth)) + geom_line()
+```
+
+```{r}
+tstat <- ddply(tstat,"barcode",transform,codeType=ifelse(length(barcode)>1,"multiple","unique"))
+tstat$codeType[grep("0000",tstat$barcode)] <- "unidentified"
+tstat$barcode<- as.character(tstat$barcode)
+ggplot(tstat) + geom_segment(aes(x=start,xend=end,y=bstack,yend=bstack,color=codeType),size=1) + 
+  theme(axis.text = element_text(angle=30,hjust=1))
+```
+
+```{r}
+bname <- names(which(table(tstat$barcode[which(tstat$bstack>0)])>1))
+ggplot(tstat%>%filter(barcode%in%bname)) + geom_segment(aes(x=start,xend=end,y=bstack,yend=bstack)) + 
+  theme(axis.text = element_text(angle=30,hjust=1))
+```
+
+# Check node with multiple contigs
+```{r}
+all.ref <- unique(unique(sam$REF),as.numeric(grep("=",levels(sam$RNEXT),value = T,invert = T)))
+all.link <- link%>%filter(REF1%in%all.ref & REF2%in%all.ref)
+
+targets <- c(8020943, 8064517, 8064539, 8042245, 8064635)
+targets <- c(12108417, 12108563, 8542900, 12108559, 12160687, 8584603)
+
+t2dat <- sam2[which(sam2$REF%in%targets),]
+bpos <- data.frame(b=unique(as.character(t2dat$barcode)),bstack=0)
+t2stat <- ddply(t2dat,"REF",stack.pair)
+
+ggplot(t2stat) + 
+  geom_segment(aes(x=start,xend=end,y=factor(bstack),yend=factor(bstack)),size=1.5,alpha=.1) + 
+  scale_x_continuous(breaks=seq(-5000,5000,200)) + theme_bw() +
+  theme(axis.text = element_text(angle=30,hjust=1)) + facet_grid(.~REF,scale="free",space ="free")
+```
+
+```{r}
+m2dat <- t2stat%>%filter(RNEXT!="=")
+pID <- as.numeric(names(which(table(m2dat$seqID)>1)))
+m2dat <- m2dat%>%filter(seqID%in%pID)
+bpos <- data.frame(b=unique(as.character(m2dat$barcode)),bstack=0)
+m2stat <- ddply(m2dat,"REF",stack.fun)
+
+m2stat$rd <- ifelse(m2stat$flag<100,1,2)
+m2stat$barcode <- droplevels(m2stat$barcode)
+ggplot(m2stat) + 
+  geom_segment(aes(x=POS,xend=POS+100,y=bstack,yend=bstack,color=factor(rd)),size=1) +  ylim(c(0,10)) +
+  theme(axis.text = element_text(angle=30,hjust=1)) + facet_grid(.~REF,scale="free",space ="free") 
+```
+```{r}
+tbarcode <- rev(sort(table(m2stat$barcode)))
+m2statTop <- m2stat%>%filter(barcode %in% names(tbarcode)[1:20])
+#m2statTop$POS[which(m2statTop$REF==8042245)] <- -m2statTop$POS[which(m2statTop$REF==8042245)] - 100
+
+m2statTop$order <- factor(m2statTop$REF,levels=targets)
+ggplot(m2statTop) + 
+  geom_segment(aes(x=POS,xend=POS+100,y=barcode,yend=barcode,color=factor(seqID),linetype=factor(rd)),alpha=.5,size=2) +  
+  scale_x_continuous(breaks=seq(-4000,4000,100)) +
+  geom_text(aes(x=POS,y=barcode,label=seqID),hjust=0,vjust=1) +
+  theme(axis.text = element_text(angle=30,hjust=1)) + facet_grid(.~order,scale="free",space ="free") + guides(color=F)
+```
+
+```{r}
+
+m2statTopUniq.1 <- ddply(m2statTop%>%filter(rd==1),colnames(m2statTop)[2:19],summarise,seqID=min(seqID))
+m2statTopUniq.2 <- m2statTop%>%filter(seqID%in%m2statTopUniq.1$seqID)
+m2statTopUniq <- unique(m2statTop[,2:19])
+m2statTopUniq$seqID <- rownames(m2statTopUniq)
+ggplot(m2statTopUniq) + 
+  geom_segment(aes(x=POS,xend=POS+100,y=barcode,yend=barcode,color=factor(seqID),linetype=factor(rd)),alpha=.5,size=2) +  
+  scale_x_continuous(breaks=seq(-4000,4000,100)) +
+  theme(axis.text = element_text(angle=30,hjust=1)) + facet_grid(.~order,scale="free",space ="free") + guides(color=F)
+```
+
+
+```{r}
+tmp <- m2statTop%>%filter(barcode%in%c("0614_0085_1126","0527_1491_0498","0385_1240_0773","0296_1227_1186"))
+tmp[order(tmp$seqID),]
+```
+
+
+```{r}
+stat.link.L1 <- read.table(paste0(inDir,"/Mapping/all/bwa.sort.stat.L1"),col.names = c("rod1","rod2","barcodes","support","subtotal"))
+all.link2 <- all.link
+all.link2$rod1 <- ifelse(all.link$REF1<all.link$REF2,all.link$REF1,all.link$REF2)
+all.link2$rod2 <- ifelse(all.link$REF1>all.link$REF2,all.link$REF1,all.link$REF2)
+
+mSL1 <- merge(all.link2,stat.link.L1,by=c("rod1","rod2"),all=T)
+
+mSL1.tmp <- mSL1%>%filter(support>quantile(support,.5))
+mSL1.tmp <- mSL1.tmp[rev(order(mSL1.tmp$support)),]
+mSL1.tmp$rod1 <- as.factor(mSL1.tmp$rod1)
+mSL1.tmp$rod2 <- as.factor(mSL1.tmp$rod2)
+
+mSL1.tmp$rod1 <- reorder(mSL1.tmp$rod1,mSL1.tmp$support,sum)
+ggplot(mSL1.tmp, aes(x=rod2,fill=rod2,y=barcodes)) + 
+  geom_bar(stat="identity",position="dodge") + scale_y_log10() + 
+  geom_text(aes(label=rod2),angle=90) + facet_grid(.~rod1,scale="free")
+```
+
+```{r}
+target <- c(8542900, 8584603, 12108417, 12108559, 12108563, 12160687)
+tmSL1 <- mSL1%>%filter(rod1%in%target & rod2%in%target)
+tmSL1 <- tmSL1[rev(order(tmSL1$support)),]
+tmSL1$rod1 <- as.factor(tmSL1$rod1)
+tmSL1$rod2 <- as.factor(tmSL1$rod2)
+ggplot(tmSL1, aes(x=rod2,fill=rod2,y=barcodes)) + 
+  geom_bar(stat="identity",position="dodge") + scale_y_log10() + theme_bw() +
+  facet_grid(.~rod1,scale="free",space="free") + guides(fill=F)
+```
+

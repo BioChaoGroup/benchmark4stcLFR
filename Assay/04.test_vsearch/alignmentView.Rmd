@@ -1,0 +1,162 @@
+---
+title: "VSEARCH evaluation"
+output:
+   html_notebook:
+     code_fold: hide
+  
+---
+
+```{r setup,include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load fucntions
+library(plyr)
+library(ggplot2)
+library(dplyr)
+library(RColorBrewer)
+library(ape)
+library(ggtree)
+# For install ggtree, follow the guide here: https://bioconductor.org/packages/release/bioc/html/ggtree.html
+#custom defined function
+library("data.tree")
+#library(treemap)
+library("networkD3")
+#Learn more: https://cran.r-project.org/web/packages/data.tree/vignettes/data.tree.html#trees-in-r
+
+stack.fun <- function(d){
+  d <- d[order(d$pos),]
+  d$edge3 <- d$pos + d$QLEN
+  d$start <- ifelse(d$flag==16,d$edge3,d$pos)
+  d$end <- ifelse(d$flag==16,d$pos,d$edge3)
+
+  stack <- 1
+  bin.start <- 1
+  d$stack <- 1
+  d$bin.end <- d$edge3
+  end.prv <- d$edge3[1]
+  if(nrow(d)>1){
+    for(i in 2:nrow(d)){
+      pos.now <- d$pos[i]
+      if(pos.now < end.prv){
+        stack = stack + 1
+        d$stack[i] <- stack
+        
+      }else{
+        d$bin.end[bin.start:(i-1)] <- end.prv
+        bin.start <- i
+        stack = 1
+        d$stack[i] = 1
+      }
+      end.prv <- ifelse(d$edge3[i]>end.prv,d$edge3[i],end.prv)
+    }
+    d$bin.end[bin.start:nrow(d)] <- end.prv
+  }
+  return(d)
+}
+```
+
+### set ENV
+```{r,eval=FALSE}
+samDIR="E:/Users/Scelta/Downloads/metaSeq/metaSeq2/instance/DEC560_d10_00/"
+
+```
+
+
+# SPAdes assemble mode test  
+  
+### shell
+** download results **
+```{sh,eval=FALSE}
+# at current dir
+cd Assemble_Lv4/BC00071
+samtools view APR842_00/athena/align-reads.metaspades-contigs.bam NODE_1_length_4291_cov_101.638574 \
+> APR842_00/athena/align-reads.metaspades-contigs.NODE1.sam
+```
+
+### Load  
+**annotation and ref alignment**
+```{r}
+# Load ids
+node1 <- read.table(paste0(samDIR,"/athena/align-reads.metaspades-contigs.NODE1.tsv"),sep="\t",header=T)
+
+```
+
+**stat depth **
+```{r ,warning=FALSE}
+depth <- data.frame(POS=seq(1,5000),count=0,uniqCount=0)
+node1$dup <- F
+layer=1
+QL=1
+BClayer <- data.frame(BC=node1$BC[1],layer=layer)
+QNlayer <- data.frame(QN=node1$QNAME[1],QL=QL)
+node1$layer <- layer
+node1$QL <- QL
+for(i in 2:nrow(node1)){
+  range <- seq(node1$POS[i],length.out=abs(node1$TLEN[i]))
+  depth$count[range] <- depth$count[range] + 1
+  if(node1$SEQ[i] == node1$SEQ[i-1] && node1$BC[i] == node1$BC[i-1]){
+    node1$dup[i] <- T
+  }else{
+    depth$uniqCount[range] <- depth$uniqCount[range] + 1
+  }
+
+  if(length(grep(node1$BC[i],BClayer$BC))){
+    node1$layer[i] <- BClayer$layer[which(BClayer$BC==node1$BC[i])]
+  }else{
+    layer = layer + 1
+    node1$layer[i]  <- layer
+    BClayer <- rbind(BClayer,data.frame(BC=node1$BC[i],layer=layer))
+  }
+  if(length(grep(node1$BC[i],QNlayer$SEQ))){
+    node1$QL[i] <- QNlayer$QL[which(SQlayer$QN==node1$QNAME[i])]
+  }else{
+    QL = QL + 1
+    node1$QL[i]  <- QL
+    QNlayer <- rbind(QNlayer,data.frame(QN=node1$BC[i],QL=QL))
+  }
+}
+
+```
+
+**mapping depth**
+```{r}
+ggplot(depth,aes(x=POS,y=count)) + geom_line()+ 
+  scale_x_continuous(breaks=seq(0,10000,200))
+```
+**mapping depth without duplication**
+```{r}
+ggplot(depth,aes(x=POS,y=uniqCount)) + geom_line()+ 
+  scale_x_continuous(breaks=seq(0,10000,200))
+```
+
+# barcode stat
+```{r}
+ggplot(node1%>%filter(dup==FALSE)) + geom_segment(aes(x=POS,xend=POS+abs(TLEN),y=layer,yend=layer),alpha=.1)
+```
+
+**longest barcode**
+```{r}
+bcName <- names(rev(sort(table(node1$BC[which(node1$dup==FALSE)]))))[1]
+tdat<- node1%>%filter(dup==FALSE&BC==bcName&TLEN>0)
+tdat$stack <- 0
+tdat$QL <- rank(tdat$QL)
+right = 0
+seqName <- NULL
+for(i in 1:nrow(tdat)){
+  if(tdat$POS[i]<=right){
+    tdat$stack[i] <- tdat$stack[i-1] + 1
+  }else{
+    tdat$stack[i] <- 0
+  }
+  if(right<tdat$POS[i]+abs(tdat$TLEN[i])){
+    right <- tdat$POS[i]+abs(tdat$TLEN[i])
+  }
+}
+ggplot(tdat) + geom_segment(aes(x=POS,xend=POS+abs(TLEN),y=QL,yend=QL),size=2,alpha=.5) + 
+  scale_x_continuous(breaks=seq(0,10000,200))
+
+```
+Because 5.8S, SSU, LSU are more conserved, they may tend to
+be assembled together!
+
+#FIN.
