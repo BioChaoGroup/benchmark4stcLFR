@@ -11,7 +11,7 @@ library(dplyr)
 library(plyr)
 library(ggplot2)
 library(scales)
-
+library(reshape2)
 do.write <- F
 ```
 
@@ -47,6 +47,10 @@ curatAnno <- function(anno,type){
 
 # Prepare
 ```{r}
+Rtag <- "F"
+iDir <- "../../Results/instance/APR842_00"
+oDir <- "../../Results/instance/APR842_00"
+
 iDir <- "../../Results/instance/DEC560_d10_00"
 oDir <- "../../Results/instance/DEC560_d10_00"
 ```
@@ -55,13 +59,13 @@ oDir <- "../../Results/instance/DEC560_d10_00"
 
 ```{r}
 taxAnno <- read.table(
-  paste0(iDir,"/Assemble_Lv4/scaffolds.B.BLAST.tax_90.blast6.anno"),
+  paste0(iDir,"/Assemble_Lv4/scaffolds.",Rtag,".BLAST.tax_90.blast6.anno"),
   header=F,row.names=NULL,comment.char="",quote="",
   col.names=c("BC","qseqid","sseqid","pident","length","mismatch","gapopen",
               "qstart","qend","sstart","send","evalue","bitscore","anno",
               "ID1","ID2","type","detail"))
 uniteAnno <- read.table(
-  paste0(iDir,"/Assemble_Lv4/scaffolds.B.BLAST.units.blast6.anno"),
+  paste0(iDir,"/Assemble_Lv4/scaffolds.",Rtag,".BLAST.units.blast6.anno"),
   header=F,row.names=NULL,comment.char="",quote="",
   col.names=c("BC","qseqid","sseqid","pident","length","mismatch","gapopen",
               "qstart","qend","sstart","send","evalue","bitscore","anno",
@@ -83,15 +87,18 @@ bestAnno <- function(d){
   d0top <- d0[which(d0$pident==max(d0$pident))[1],]
   return(d0top)
 }
-if(file.exists(paste0(oDir,"/Assemble_Lv4/scaffolds.B.BLAST.best.RData"))){
-  load(paste0(oDir,"/Assemble_Lv4/scaffolds.B.BLAST.best.RData"))
+
+if(file.exists(paste0(oDir,"/Assemble_Lv4/scaffolds.",Rtag,".BLAST.best.RData"))){
+  load(paste0(oDir,"/Assemble_Lv4/scaffolds.",Rtag,".BLAST.best.RData"))
 }else{
   taxTop <- ddply(tAnno,colnames(tAnno)[1:5],bestAnno)
   taxTop$species <- droplevels(taxTop$species)
   
   untTop <- ddply(uAnno,colnames(uAnno)[1:7],bestAnno)
-
-  save(taxTop,untTop,file = paste0(oDir,"/scaffolds.B.BLAST.best.RData"))
+  untTop$species <- droplevels(untTop$species)
+  save(taxTop,untTop,file = paste0(oDir,"/Assemble_Lv4/scaffolds.",Rtag,".BLAST.best.RData"))
+  write.table(taxTop,paste0(oDir,"/Assemble_Lv4/scaffolds.",Rtag,".BLAST.best.tax.blast6.anno"),sep="\t",row.names = F,quote=F)
+  write.table(untTop,paste0(oDir,"/Assemble_Lv4/scaffolds.",Rtag,".BLAST.best.unite.blast6.anno"),sep="\t",row.names = F,quote=F)
 }
 
 taxTop$partialPct <- taxTop$length/taxTop$QLEN
@@ -129,6 +136,7 @@ ggplot(taxTop,aes(x=length,y=partialPct)) + geom_point(shape=16,alpha=.1) + them
 **filter length > 50 bp **
 ```{r}
 taxTopFilter <- taxTop%>%filter(length>50)
+taxTopFilter$completness <- taxTopFilter$length/taxTopFilter$QLEN
 filterRate <- nrow(taxTopFilter)/nrow(taxTop)
 filterRate
 ```
@@ -136,15 +144,83 @@ filterRate
 ```{r}
 BCFdat <- ddply(taxTopFilter,"BC",summarise,
                 scafs=length(qseqid), QLEN=median(QLEN), coverage=median(coverage),
-                length=median(length),pident=median(pident),
-                species=length(unique(species)))
+                length=median(length),pident=median(pident), completeness=sum(length)/sum(QLEN),
+                species=length(unique(species)),genus=length(unique(genus)),
+                family=length(unique(family)),order=length(unique(order)),
+                class=length(unique(class)),phylum=length(unique(phylum)),
+                kindom=length(unique(kindom)))
 ggplot(BCFdat%>%filter(scafs<250),aes(x=scafs,y=species)) + geom_point()+ theme_bw() +
   stat_density2d() +
   scale_x_log10(breaks=trans_breaks("log10",function(x) 10^x,2),
                 labels=trans_format("log10",math_format(10^.x))) +
   scale_y_continuous(breaks=seq(0,20,2))
 
-ggplot(BCFdat%>%filter(species==2),aes(x=QLEN,y=scafs)) + geom_point()
+ggplot(BCFdat,aes(x=completeness,y=species)) + geom_point()
+```
+
+```{r}
+BCFmdat <- melt(BCFdat,id.vars =colnames(BCFdat)[1:7],variable.name = "level",value.name = "diversity")
+
+ggplot(BCFmdat,aes(x=diversity,fill=level)) + geom_histogram(position="dodge") + scale_x_log10(breaks=c(1,2,3,5,7,10,30))
+ggplot(BCFmdat,aes(x=diversity,color=level)) + geom_density() + scale_x_log10(breaks=c(1,2,3,5,7,10,30))
+```
+
+**Exclude Mitochrome(For bacteria data)**
+```{r,eval=FALSE}
+BCFdat2 <- ddply(taxTopFilter%>%filter(kindom!="Eukaryota"),"BC",summarise,
+                scafs=length(qseqid), QLEN=median(QLEN), coverage=median(coverage),
+                length=median(length),pident=median(pident), completeness=sum(length)/sum(QLEN),
+                species=length(unique(species)),genus=length(unique(genus)),
+                family=length(unique(family)),order=length(unique(order)),
+                class=length(unique(class)),phylum=length(unique(phylum)),
+                kindom=length(unique(kindom)))
+BCFmdat2 <- melt(BCFdat2,id.vars =colnames(BCFdat2)[1:7],variable.name = "level",value.name = "diversity")
+
+ggplot(BCFmdat2,aes(x=diversity,fill=level)) + geom_histogram(position="dodge") + scale_x_log10(breaks=c(1,2,3,5,7,10,30))
+ggplot(BCFmdat2,aes(x=diversity,color=level)) + geom_density() + scale_x_log10(breaks=c(1,2,3,5,7,10,30))
+```
+
+***Relationship of diversity to the duplicates rate**
+```{r}
+load(paste0(iDir,"/VSEARCH/read.merge.derep.bead.uc.S.sum.RData"))
+map <- read.table(paste0(iDir,"/VSEARCH/read.merge.derep.2T.bc.cluster_Lv4.main"),
+                  col.names = c("BC","BB"))
+mSumBB <- merge(sumBC,map,by="BB")
+mSumBB$BC <- paste0("BC",formatC(mSumBB$BC,width=5,flag=0))
+mSumBC <- ddply(mSumBB,"BC",summarise,BBs=length(BB),dup=sum(dup),count=sum(count),RR=sum(count)/length(BB),DRR=sum(dup)/length(BB))
+mSumBCanno <- merge(BCFmdat,mSumBC,by="BC")
+mSumBCanno$tooMuch <- ifelse(mSumBCanno$diversity>5,T,F)
+```
+```{r}
+ggplot(mSumBCanno,aes(x=length,y=BBs)) + geom_point(aes(size=diversity,color=tooMuch),shape=16,alpha=.3) + 
+  facet_wrap(~level,ncol=3) + theme_bw() + geom_hline(yintercept = c(50,100),linetype=2,alpha-.5) +
+  scale_y_log10(breaks=c(1,2,3,5,10,30,50,100,300))
+```
+```{r}
+ggplot(mSumBCanno,aes(x=length,y=BBs)) + geom_point(aes(size=diversity,color=tooMuch),shape=16,alpha=.3) + 
+  facet_wrap(~level,ncol=3) + theme_bw() + geom_hline(yintercept = c(50,100),linetype=2,alpha-.5) +
+  scale_y_log10(breaks=c(1,2,3,5,10,30,50,100,300))
+```
+
+**Exclude BBs>50**
+```{r,eval=FALSE}
+select.BC <- mSumBC$BC[which(mSumBC$BBs<=50)]
+BCFdat2 <- ddply(taxTopFilter%>%filter(BC%in%select.BC),"BC",summarise,
+                scafs=length(qseqid), QLEN=median(QLEN), coverage=median(coverage),
+                length=median(length),pident=median(pident), completeness=sum(length)/sum(QLEN),
+                species=length(unique(species)),genus=length(unique(genus)),
+                family=length(unique(family)),order=length(unique(order)),
+                class=length(unique(class)),phylum=length(unique(phylum)),
+                kindom=length(unique(kindom)))
+BCFmdat2 <- melt(BCFdat2,id.vars =colnames(BCFdat2)[1:7],variable.name = "level",value.name = "diversity")
+
+ggplot(BCFmdat2,aes(x=diversity,fill=level)) + geom_histogram(position="dodge") + scale_x_log10(breaks=c(1,2,3,5,7,10,30))
+ggplot(BCFmdat2,aes(x=diversity,color=level)) + geom_density() + scale_x_log10(breaks=c(1,2,3,5,7,10,30))
+
+mSumBCanno2 <- merge(BCFmdat2,mSumBC,by="BC")
+
+ggplot(mSumBCanno2,aes(x=BBs,y=diversity)) + geom_point(aes(size=completeness),shape=16,alpha=.1) + 
+  facet_wrap(~level,ncol=3) + theme_bw()
 ```
 
 

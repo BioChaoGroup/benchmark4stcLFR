@@ -69,8 +69,10 @@ samDIR="E:/Users/Scelta/Downloads/metaSeq/metaSeq2/instance/DEC560_d10_00/"
 ```{sh,eval=FALSE}
 # at current dir
 cd Assemble_Lv4/BC00071
-samtools view APR842_00/athena/align-reads.metaspades-contigs.bam NODE_1_length_4291_cov_101.638574 \
-> APR842_00/athena/align-reads.metaspades-contigs.NODE1.sam
+bwa index scaffolds.fasta
+bwa mem scaffolds.fasta sort.1.fq sort.2.fq -o scaffolds.bwa.sam
+
+
 ```
 
 ### Load  

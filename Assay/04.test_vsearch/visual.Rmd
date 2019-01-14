@@ -16,8 +16,10 @@ do.write <- F
 
 # Prepare
 ```{r}
-iDir <- "../../Results/instance/APR842_00"
-oDir <- "../../Results/instance/APR842_00/stat"
+tag <- "DEC560_d10_00"
+tag <- "APR842_00"
+iDir <- paste0("../../Results/instance/",tag)
+oDir <- paste0("../../Results/instance/",tag,"/stat")
 ```
 
 
@@ -47,13 +49,45 @@ bball$cumsum <- cumsum(bball$count)
 bball$pct <- bball$cumsum/sum(bball$count)
 ggplot(bball,aes(x=reads,y=pct)) + geom_line() + geom_point() +
   scale_x_log10() + theme_bw() + geom_vline(xintercept = 15)
+
+bb00 <- bb00[order(bb00$reads),]
+bb00$cumsum <- cumsum(bb00$count)
+bb00$pct <- bb00$cumsum/sum(bb00$count)
+ggplot(bb00,aes(x=reads,y=pct)) + geom_line() + geom_point() +
+  scale_x_log10() + theme_bw() + geom_vline(xintercept = 15)
 ```
 
 
-
+**Deprecate test**
 ```{r}
-sbb <- bball[order(bball$reads),]
+beadCentroids <- read.table(paste0(iDir,"/VSEARCH/read.merge.derep.bead.uc.S"),header=F,row.names=NULL,
+                       col.names=c("Type","Cluster","length","similarity","orientation","star1","star2","CIGAR","query","dups"))
 ```
+```{r}
+tmp <- matrix(unlist(lapply(beadCentroids$query, function(x){
+  (strsplit(as.character(x),split = "/",fixed = T))[[1]]})),
+              ncol=3,byrow = T)
+beadCentroids$BB <- as.factor(tmp[,2])
+beadCentroids$BB[grep("0000",beadCentroids$BB)] <- "0000_0000_0000"
+beadCentroids$count <- 1
+sumBC <- ddply(beadCentroids,"BB",summarise,dup=sum(dups),count=sum(count))
+save(sumBC,file=paste0(iDir,"/VSEARCH/read.merge.derep.bead.uc.S.sum.RData"))
+```
+```{r}
+sumBC$tmp <- 1
+sumBCC <- ddply(sumBC,"count",summarise,counts=sum(tmp))
+sumBCC$cumsum <- cumsum(sumBCC$counts)
+sumBCC$cumpct <- sumBCC$cumsum/sum(sumBCC$counts)
+sumBCD <- ddply(sumBC,"dup",summarise,counts=sum(tmp))
+sumBCD$cumsum <- cumsum(sumBCD$count)
+sumBCD$cumpct <- sumBCD$cumsum/sum(sumBCD$counts)
+
+ggplot(sumBCC,aes(x=count,y=cumpct)) + 
+  geom_line() + geom_point() + geom_vline(xintercept = 15,linetype=2) + 
+  geom_line(data=sumBCD,aes(x=dup),color="red") +  geom_point(data=sumBCD,aes(x=dup),color="red") +
+  scale_x_log10(breaks=10^c(0,2,4,6)) + scale_y_continuous(breaks=seq(0,1,0.2),limits=c(0,1))
+```
+
 
 ### The beads cluster information by 'dereplicate' process of VSEARCH
 ```{r}
