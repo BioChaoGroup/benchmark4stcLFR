@@ -1,4 +1,4 @@
-# Outline and Technical Note
+# Technical Note
 
 ### Landscape
 
@@ -18,6 +18,17 @@ For Fungus, we prepared a mock sample, which is evenly mixtured by
 - *Pleurotus eryngii* - Pe (Xing Bao Gu), 
 - *Lentinula edodes* - Le (Xiang Gu, Shiitake), 
 - *Flammulina velutipes* - Fv (Jin Zhen Gu), 
-- *Hypsizygus marmoreus* - Hm (Xie Wei Gu, this fungus has very low PCR efficiency). 
+- *Hypsizygus marmoreus* - Hm (Xie Wei Gu, this fungus has very low PCR efficiency).  
 
-For Bacteria, 
+For Bacteria, a soil sample collected from XXX were tested.
+
+**Sequencing** was performed by BGISEQ500(?)
+
+**Quality control** was implented in a modified **[fastp](https://github.com/Scelta/fastp)**, along with the function to detect bead barcodes.
+
+**VSEARCH** was used to compute duplicates and reads pre-clusters.
+
+Codes and pipelines are availiable by accessing the project **metaseq**.
+
+### Results
+
