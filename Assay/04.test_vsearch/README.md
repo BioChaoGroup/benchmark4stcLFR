@@ -21,9 +21,10 @@ read.merge.derep.preclustered.uc.bc -v
 cat read.merge.derep.uc read.merge.derep.preclustered.uc| perl beadStat.pl -m uc -ident 100 -match 50 -o read.merge.derep.2.bc -v
 
 #If it's too huge to run at once:
-perl -e '{open I1,"<read.merge.derep.uc.bc.v2";open I2,"<read.merge.derep.preclustered.uc.bc"}'
+#perl -e '{open I1,"<read.merge.derep.uc.bc.v2";open I2,"<read.merge.derep.preclustered.uc.bc"}'
 #cat read.merge.derep.uc read.merge.derep.preclustered.uc| perl beadStat.pl -m uc -o read.merge.derep.2.bc -v
-awk '$4>1{print $0}' read.merge.derep.2.bc | sort -nrk4,4 > read.merge.derep.2T.bc.s4
+#awk '$4>1{print $0}' read.merge.derep.2.bc | sort -nrk4,4 > read.merge.derep.2T.bc.s4  |    |   |
+perl  beadStat.pl -m merge -i read.merge.derep.uc.bc,read.merge.derep.preclustered.uc.bc -o read.merge.derep.2.bc -v
 ```
 
 prepare clean reads
@@ -83,4 +84,19 @@ zcat source/SILVA_132_LSURef_tax_silva.fasta.gz|grep "^>"|awk -F ';' '{sub(">","
 
 zcat source/SILVA_132_SSURef_Nr99_tax_silva.fasta.gz|grep "^>"|awk -F ';' '{sub(">","");split($1,a," ");gsub(" ","_");if($7==""){$7="unidentified"};print $7"\t"a[1]"\tSSU\tRef\tK__"a[2]";p__"$2";c__"$3";o__"$4";f__"$5";g__"$6";s__"$7}' > SILVA_132_SSURef_Nr99_tax_silva.fasta.ids
 
+
+cd REF/silva132
+zcat source/SILVA_132_LSURef_tax_silva.fasta.gz|grep "^>"|awk -F ';' '{sub(">","");split($1,a," ");gsub(" ","_");if($NF==""){$NF="unidentified"};print $NF"\t"a[1]"\tLSU\tRef\t"a[2]";"$2";"$3";"$4";"$5";"$6";"$7}' > SILVA_132_LSURef_tax_silva.fasta.ids
+
+zcat source/SILVA_132_SSURef_Nr99_tax_silva.fasta.gz|grep "^>"|awk -F ';' '{sub(">","");split($1,a," ");gsub(" ","_");gsub(" ","_");if($NF==""){$NF="unidentified"};print $NF"\t"a[1]"\tSSU\tRef\t"a[2]";"$2";"$3";"$4";"$5";"$6";"$7}' > SILVA_132_SSURef_Nr99_tax_silva.fasta.ids
+```
+
+# blast
+```
+awk '$0!~/^>/{gsub("A","T");gsub("U","A");gsub("C","X");gsub("G","C");gsub("X","G")}{print $0}' SILVA_132_LSU_SSU_tax_RNA.fasta > SILVA_132_LSU_SSU_tax_DNA.fasta
+
+makeblastdb -in  132_LSU_SSU_tax_DNA.fasta -input_type fasta -dbtype nucl -title Os_protein -parse_seqids -out 132_LSU_SSU_tax_DNA.blast
+
+#go to sub dir
+blastn -db ../../../REF/silva132/SILVA_132_SSURef_Nr99_tax_RNA.fasta -query scaffolds.fasta -out scaffolds.blast6 -outfmt 6
 ```
