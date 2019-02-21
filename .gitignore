@@ -3,3 +3,6 @@ Results/
 *tmp*
 DATA 
 DB
+.snakemake
+nohup.out
+Source
