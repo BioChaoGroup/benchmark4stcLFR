@@ -88,3 +88,7 @@ q5/     # Copy number of PCR product and umi is 1:5
 
 **stLFR barcodes split** - [README.md](./)
 
+#### Technical Note
+
+[REAMDME.md](./Assay/README.md)
+

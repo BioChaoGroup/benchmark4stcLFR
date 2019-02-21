@@ -1,0 +1,312 @@
+---
+title: "Statistics of Bead Cluster method"
+output:
+  html_notebook:
+    code_fold: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(plyr)
+library(ggplot2)
+
+do.write <- F
+```
+
+# Prepare
+```{r}
+tag <- "DEC560_d10_00"
+tag <- "APR842_00"
+iDir <- paste0("../../Results/instance/",tag)
+oDir <- paste0("../../Results/instance/",tag,"/stat")
+```
+
+
+
+
+
+#BB distribution
+
+```{r}
+bball <- read.table(paste0(iDir,"/clean/APR842.code.freq.stat.tsv"),header=F,row.names=NULL,
+                       col.names=c("count","reads"))
+bb00 <- read.table(paste0(iDir,"/clean/APR842_00.code.freq.stat.tsv"),header=F,row.names=NULL,
+                       col.names=c("count","reads"))
+```
+
+```{r}
+ggplot(bball,aes(x=reads,y=count)) + geom_line() + geom_point() +
+  scale_x_log10() + theme_bw()
+ggplot(bb00,aes(x=reads,y=count)) + geom_line() + geom_point() +
+  scale_x_log10() + theme_bw()
+```
+
+*Accumulated proportion*
+```{r}
+bball <- bball[order(bball$reads),]
+bball$cumsum <- cumsum(bball$count)
+bball$pct <- bball$cumsum/sum(bball$count)
+ggplot(bball,aes(x=reads,y=pct)) + geom_line() + geom_point() +
+  scale_x_log10() + theme_bw() + geom_vline(xintercept = 15)
+
+bb00 <- bb00[order(bb00$reads),]
+bb00$cumsum <- cumsum(bb00$count)
+bb00$pct <- bb00$cumsum/sum(bb00$count)
+ggplot(bb00,aes(x=reads,y=pct)) + geom_line() + geom_point() +
+  scale_x_log10() + theme_bw() + geom_vline(xintercept = 15)
+```
+
+
+**Deprecate test**
+```{r}
+beadCentroids <- read.table(paste0(iDir,"/VSEARCH/read.merge.derep.bead.uc.S"),header=F,row.names=NULL,
+                       col.names=c("Type","Cluster","length","similarity","orientation","star1","star2","CIGAR","query","dups"))
+```
+```{r}
+tmp <- matrix(unlist(lapply(beadCentroids$query, function(x){
+  (strsplit(as.character(x),split = "/",fixed = T))[[1]]})),
+              ncol=3,byrow = T)
+beadCentroids$BB <- as.factor(tmp[,2])
+beadCentroids$BB[grep("0000",beadCentroids$BB)] <- "0000_0000_0000"
+beadCentroids$count <- 1
+sumBC <- ddply(beadCentroids,"BB",summarise,dup=sum(dups),count=sum(count))
+save(sumBC,file=paste0(iDir,"/VSEARCH/read.merge.derep.bead.uc.S.sum.RData"))
+```
+```{r}
+sumBC$tmp <- 1
+sumBCC <- ddply(sumBC,"count",summarise,counts=sum(tmp))
+sumBCC$cumsum <- cumsum(sumBCC$counts)
+sumBCC$cumpct <- sumBCC$cumsum/sum(sumBCC$counts)
+sumBCD <- ddply(sumBC,"dup",summarise,counts=sum(tmp))
+sumBCD$cumsum <- cumsum(sumBCD$count)
+sumBCD$cumpct <- sumBCD$cumsum/sum(sumBCD$counts)
+
+ggplot(sumBCC,aes(x=count,y=cumpct)) + 
+  geom_line() + geom_point() + geom_vline(xintercept = 15,linetype=2) + 
+  geom_line(data=sumBCD,aes(x=dup),color="red") +  geom_point(data=sumBCD,aes(x=dup),color="red") +
+  scale_x_log10(breaks=10^c(0,2,4,6)) + scale_y_continuous(breaks=seq(0,1,0.2),limits=c(0,1))
+```
+
+
+### The beads cluster information by 'dereplicate' process of VSEARCH
+```{r}
+derep.all <- read.table(paste0(iDir,"/VSEARCH/read.merge.derep.uc.bc.old"),header=F,row.names=NULL,
+                       col.names=c("Type","BB1","BB2","count","length"))
+derep.count <- read.table(paste0(iDir,"/VSEARCH/read.merge.derep.uc.bc.s4"),header=F,row.names=NULL,
+                       col.names=c("Type","BB1","BB2","count","length"))
+preclu.count <- read.table(paste0(iDir,"/VSEARCH/read.merge.derep.preclustered.uc.bc.s4"),header=F,row.names=NULL,
+                       col.names=c("Type","BB1","BB2","count","length"))
+```
+
+
+
+
+# Scales
+```{r}
+ddply(derep.all,"Type",summarise,edges=length(BB1),count=sum(count))
+```
+
+
+
+
+```{r}
+ggplot(derep.count,aes(x=count)) + geom_histogram(binwidth=1) + theme_bw() #+ scale_x_log10()
+ggplot(derep.count,aes(x=length)) + geom_histogram(binwidth=1) + theme_bw()
+length(unique(c(levels(derep.count$BB1),levels(derep.count$BB2))))
+
+ggplot(preclu.count,aes(x=count)) + geom_histogram(binwidth=1) + theme_bw() #+ scale_x_log10()
+ggplot(preclu.count,aes(x=length)) + geom_histogram(binwidth=1) + theme_bw()
+length(unique(c(levels(preclu.count$BB1),levels(preclu.count$BB2))))
+
+```
+
+# community
+```{r}
+count.lv0 <- read.table(paste0(iDir,"/VSEARCH/read.merge.derep.2T.bc.cluster_Lv0.count"),header=F,row.names=NULL,
+                       col.names=c("CID","BB","reads"))
+count.lv1 <- read.table(paste0(iDir,"/VSEARCH/read.merge.derep.2T.bc.cluster_Lv1.count"),header=F,row.names=NULL,
+                       col.names=c("CID","BB","reads"))
+count.lv2 <- read.table(paste0(iDir,"/VSEARCH/read.merge.derep.2T.bc.cluster_Lv2.count"),header=F,row.names=NULL,
+                       col.names=c("CID","BB","reads"))
+count.lv3 <- read.table(paste0(iDir,"/VSEARCH/read.merge.derep.2T.bc.cluster_Lv3.count"),header=F,row.names=NULL,
+                       col.names=c("CID","BB","reads"))
+count.lv4 <- read.table(paste0(iDir,"/VSEARCH/read.merge.derep.2T.bc.cluster_Lv4.count"),header=F,row.names=NULL,
+                       col.names=c("CID","BB","reads"))
+
+commMdat <- rbind(
+  data.frame(lv=0,count.lv0),
+  data.frame(lv=1,count.lv1),
+  data.frame(lv=2,count.lv2),
+  data.frame(lv=3,count.lv3),
+  data.frame(lv=4,count.lv4)
+)
+```
+
+*stat*
+```{r}
+library(scales)
+ggplot(commMdat,aes(x=BB,color=factor(lv))) + geom_density(size=1) + 
+  annotation_logticks() + scale_x_log10() + theme_bw()
+
+ggplot(commMdat,aes(x=reads,color=factor(lv))) + geom_density(size=1) + 
+  annotation_logticks() + scale_x_log10() + theme_bw()
+```
+
+
+# BC case
+```{r}
+BCID.lst <- c(3,4,10,13,143,167,187,261,294,446,488,641,671,1672,3222)
+anno.list <- list()
+anno.mdat <- NULL
+for (i in 1:length(BCID.lst)){
+  BCID <- formatC(BCID.lst[i],width=5,flag=0)
+  anno.list[[i]] <- read.table(
+    paste0(iDir,"/Assemble_Lv1/BC",BCID,"/scaffolds.F.BLAST.tax.blast6.anno"),
+    header=F,row.names=NULL,col.names=c("qseqid","sseqid","pident","length","mismatch","gapopen",
+                                        "qstart","qend","sstart","send","evalue","bitscore","anno",
+                                        "ID1","ID2","type","detail")
+  )
+  names(anno.list)[i] <- BCID
+  anno.mdat <- rbind(anno.mdat,data.frame(BCID=BCID,anno.list[[i]]))
+}
+
+tmp <- matrix(as.numeric(unlist(lapply(anno.mdat$qseqid, function(x){
+  (strsplit(as.character(x),split = "_"))[[1]][c(2,4,6)]}))),
+              ncol=3,byrow = T)
+colnames(tmp) <- c("node","QLEN","coverage")
+anno.mdat.nodes <- cbind(anno.mdat,tmp)
+
+```
+
+**node sum**
+
+```{r}
+n50 <- function(len){
+  sl <- rev(sort(len))
+  cs <- cumsum(sl)
+  half <- sum(sl)/2
+  ind <- which(cs>=half)[1]
+  return(sl[ind])
+}
+nodeSum <- unique(anno.mdat.nodes[,c("BCID","qseqid","node","QLEN","coverage")])
+ddply(nodeSum,"BCID",summarise,N50=n50(QLEN),meanCov=median(coverage))
+```
+**anno**
+```{r}
+tmp <- matrix(unlist(lapply(anno.mdat$detail, function(x){
+  (strsplit(as.character(x),split = ";"))[[1]]})),
+              ncol=7,byrow = T)
+colnames(tmp) <- c("kindom","phylum","class","order","family","genus","species")
+anno.mdat.more <- cbind(anno.mdat.nodes,tmp)
+```
+
+```{r}
+annoDiversity <- ddply(anno.mdat.more,c("BCID"),summarise,
+      kindom=length(unique(kindom)),
+      phylum=length(unique(phylum)),
+      class=length(unique(class)),
+      order=length(unique(order)),
+      family=length(unique(family)),
+      genus=length(unique(genus)),
+      species=length(unique(species)))
+annoDiversity
+```
+```{r}
+topE <- function(d){
+  d <- d[which(d$evalue==max(d$evalue)),]
+  return(d)
+}
+anno.mdat.top <- ddply(anno.mdat.more,c("BCID","qseqid"),topE)
+top.annoDiversity <- ddply(anno.mdat.top,c("BCID"),summarise,
+      kindom=length(unique(kindom)),
+      phylum=length(unique(phylum)),
+      class=length(unique(class)),
+      order=length(unique(order)),
+      family=length(unique(family)),
+      genus=length(unique(genus)),
+      species=length(unique(species)))
+top.annoDiversity
+```
+
+
+```{r}
+topEL <- function(d){
+  d <- d[which(d$evalue==max(d$evalue)),]
+  d <- d[which(d$length==max(d$length)),]
+  return(d)
+}
+anno.mdat.topEL <- ddply(anno.mdat.more,c("BCID","qseqid"),topEL)
+topEL.annoDiversity <- ddply(anno.mdat.topEL,c("BCID"),summarise,
+      kindom=length(unique(kindom)),
+      phylum=length(unique(phylum)),
+      class=length(unique(class)),
+      order=length(unique(order)),
+      family=length(unique(family)),
+      genus=length(unique(genus)),
+      species=length(unique(species)))
+topEL.annoDiversity
+```
+
+```{r}
+topLE <- function(d){
+  d <- d[which(d$length==max(d$length)),]
+  d <- d[which(d$evalue==max(d$evalue)),]
+  return(d)
+}
+anno.mdat.topLE <- ddply(anno.mdat.more%>%filter(pident>=97&length>=100),c("BCID","qseqid"),topLE)
+topLE.annoDiversity <- ddply(anno.mdat.topLE,c("BCID"),summarise,
+      kindom=length(unique(kindom)),
+      phylum=length(unique(phylum)),
+      class=length(unique(class)),
+      order=length(unique(order)),
+      family=length(unique(family)),
+      genus=length(unique(genus)),
+      species=length(unique(species)))
+topLE.annoDiversity
+```
+```{r}
+topLE_known <- function(d){
+  ind <- grep("_sp$",d$anno,invert = T)
+  if(length(ind)==0){
+    return(NULL)
+  }
+  d <- d[grep("_sp$",d$anno,invert = T),]
+  d <- d[which(d$length==max(d$length)),]
+  d <- d[which(d$evalue==max(d$evalue)),]
+  return(d)
+}
+anno.mdat.topLE_known <- ddply(anno.mdat.more%>%filter(pident>=97&length>=100),c("BCID","qseqid"),topLE_known)
+topLE_known.annoDiversity <- ddply(anno.mdat.topLE_known,c("BCID"),summarise,
+      kindom=length(unique(kindom)),
+      phylum=length(unique(phylum)),
+      class=length(unique(class)),
+      order=length(unique(order)),
+      family=length(unique(family)),
+      genus=length(unique(genus)),
+      species=length(unique(species)))
+topLE_known.annoDiversity
+```
+
+```{r}
+demo97 <- anno.mdat.topLE_known%>%filter(BCID=="00488")
+```
+
+
+```{r}
+topAnno <- function(d){
+  annos <- rev(sort(table(as.character(d$anno))))
+  pct <- annos[1]/sum(annos)
+  d$top <- names(annos[1])
+  d$topPct <- pct
+  return(d[1,])
+}
+annotop <- ddply(anno.mdat.topLE_known,c("BCID"),topAnno)
+annotop[,c("BCID","top","topPct")]
+```
+
+
+
+
+
+#Fin.

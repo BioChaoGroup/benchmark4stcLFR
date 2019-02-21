@@ -1,0 +1,344 @@
+---
+title: "Statistics of annotation"
+output:
+  html_notebook:
+    code_fold: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(plyr)
+library(ggplot2)
+library(scales)
+library(reshape2)
+do.write <- F
+```
+
+#Function
+```{r}
+ccuratAnno <- function(anno,type){
+  iDt <- which(colnames(anno)=="detail")
+  tmp <- sub(";$",";NA",anno$detail)
+  tmpTree <- matrix(unlist(lapply(tmp, function(x){
+    (strsplit(as.character(x),split = ";"))[[1]]})),ncol=7,byrow = T)
+  colnames(tmpTree) <- c("kindom","phylum","class","order","family","genus","species")
+  tmpTree[which(!is.na(tmpTree[,7])),7] <- as.character(anno$anno[which(!is.na(tmpTree[,7]))])
+  if(type=="unite"){
+      tmp <- matrix(unlist(lapply(anno$qseqid, function(x){
+        (strsplit(as.character(x),split = "|",fixed = T))[[1]]})),
+        ncol=3,byrow = T)
+      tmp2 <- matrix(as.numeric(unlist(lapply(tmp[,1], function(x){
+        (strsplit(as.character(x),split = "_"))[[1]][c(2,4,6)]}))),ncol=3,byrow = T)
+      colnames(tmp2) <- c("node","QLEN","coverage")
+      
+      colnames(tmp)[2:3] <- c("DB","unit")
+      tmpSeq <- cbind(as.data.frame(tmp2),tmp[,2:3])
+
+  }else{
+      tmpSeq <- matrix(as.numeric(unlist(lapply(anno$qseqid, function(x){
+        (strsplit(as.character(x),split = "_"))[[1]][c(2,4,6)]}))),ncol=3,byrow = T)
+      colnames(tmpSeq) <- c("node","QLEN","coverage")
+  }
+  res <- cbind(cbind(tmpSeq,anno[,-iDt]),tmpTree)
+  return(res)
+}
+```
+
+# Prepare
+```{r}
+Rtag <- "F"
+asmLv <- "Lv1"
+iDir <- "../../Results/instance/APR842_00"
+oDir <- "../../Results/instance/APR842_00"
+
+iDir <- "../../Results/instance/DEC560_d10_00"
+oDir <- "../../Results/instance/DEC560_d10_00"
+```
+
+#directly annotation
+
+```{r}
+taxAnno <- read.table(
+  paste0(iDir,"/Assemble_",asmLv,"/scaffolds.",Rtag,".BLAST.tax.blast6.best"),
+  header=F,row.names=NULL,comment.char="",quote="",
+  col.names=c("BC","qseqid","sseqid","pident","length","mismatch","gapopen",
+              "qstart","qend","sstart","send","evalue","bitscore","anno",
+              "ID1","ID2","type","detail"))
+uniteAnno <- read.table(
+  paste0(iDir,"/Assemble_",asmLv,"/scaffolds.",Rtag,".BLAST.units.blast6.best"),
+  header=F,row.names=NULL,comment.char="",quote="",
+  col.names=c("BC","qseqid","sseqid","pident","length","mismatch","gapopen",
+              "qstart","qend","sstart","send","evalue","bitscore","anno",
+              "ID1","ID2","type","detail"))
+
+```
+
+
+# Extend table 
+```{r}
+tAnno <- curatAnno(taxAnno,"tax")
+uAnno <- curatAnno(uniteAnno,"unite")
+levels(uAnno$unit) <- c("SSU","LSU","5.8S","5.8S","ITS1","ITS2","LSU","SSU")
+
+```
+
+# stat
+
+```{r}
+tAnno$offset <- ifelse(tAnno$sstart<tAnno$send,tAnno$sstart-tAnno$qstart,tAnno$send-tAnno$qstart)
+tAnno$BCNODE <- paste(tAnno$BC,tAnno$node,sep = "_")
+multiBCN <- table(tAnno$BCNODE)
+multiBCN <- names(rev(sort(multiBCN)))[1:20]
+tAnnoSpDiv <- ddply(tAnno,"BC",summarise,sp=length(unique(anno)))
+
+selectAnno <- tAnno%>%filter(BCNODE%in%multiBCN)
+ggplot(selectAnno) + facet_wrap(~BC+node,ncol=4,scale="free") + theme_bw() +
+  geom_segment(aes(x=0,xend=QLEN,y="ASM",yend="ASM"),size=2,alpha=.5) +
+  geom_segment(aes(x=sstart-offset,xend=send-offset,y="REF",yend="REF",color=anno),size=2,alpha=.5) +
+  geom_segment(aes(x=qstart,xend=sstart-offset,y="ASM",yend="REF"),linetype=2) +
+  geom_segment(aes(x=qend,xend=send-offset,y="ASM",yend="REF"),linetype=2) + 
+  geom_text(aes(x=(sstart+send)/2-offset,y="REF",label=pident),hjust=0.5)
+  
+anntable <- table(selectAnno$anno)
+multiAnno <- names(anntable)[which(anntable>1)]
+ggplot(selectAnno%>%filter(anno%in%multiAnno)) + 
+  facet_wrap(~anno,ncol=2,scale="free") + theme_bw() +
+  geom_segment(aes(x=sstart,xend=send,y=ID1,yend=ID1),size=2,alpha=.5) +
+  geom_segment(aes(x=offset,xend=offset+QLEN,y=factor(node),yend=factor(node)),size=2,alpha=.5) +
+  geom_segment(aes(x=offset+qstart,xend=sstart,y=factor(node),yend=ID1),linetype=2) +
+  geom_segment(aes(x=offset+qend,xend=send,y=factor(node),yend=ID1),linetype=2) + 
+  geom_text(aes(x=QLEN/2+offset,y=factor(node),label=pident),hjust=0.5)
+ 
+
+tAnntable <- table(tAnno$anno[which(tAnno$pident>97)])
+tmultiAnno <- names(rev(sort(tAnntable)))[1:12]
+ggplot(tAnno%>%filter(pident>97&anno%in%tmultiAnno)) + 
+  facet_wrap(~anno,ncol=3,scale="free") + theme_bw() +
+  geom_segment(aes(x=sstart,xend=send,y=ID1,yend=ID1),size=2,alpha=.5) +
+  geom_segment(aes(x=offset,xend=offset+QLEN,y=BC,yend=BC,color=factor(node)),size=2,alpha=.5) +
+  geom_segment(aes(x=offset+qstart,xend=sstart,y=BC,yend=ID1,color=factor(node)),linetype=2) +
+  geom_segment(aes(x=offset+qend,xend=send,y=BC,yend=ID1,color=factor(node)),linetype=2)
+  #geom_text(aes(x=QLEN/2+offset,y=BC,label=pident),hjust=0.5)
+```
+
+```{r}
+uAnno$offset <- ifelse(uAnno$sstart<uAnno$send,uAnno$sstart-uAnno$qstart,uAnno$send-uAnno$qstart)
+
+selecuAnno <- uAnno%>%filter(BC=="BC00450")
+ggplot(selecuAnno) + facet_wrap(~node,ncol=4,scale="free") + theme_bw() +
+  geom_segment(aes(x=0,xend=qend,y="ASM",yend="ASM"),size=2,alpha=.5) +
+  geom_segment(aes(x=sstart-offset,xend=send-offset,y="REF",yend="REF",color=anno),size=2,alpha=.5) +
+  geom_segment(aes(x=qstart,xend=sstart-offset,y="ASM",yend="REF"),linetype=2) +
+  geom_segment(aes(x=qend,xend=send-offset,y="ASM",yend="REF"),linetype=2) + 
+  geom_text(aes(x=(sstart+send)/2-offset,y="REF",label=pident),hjust=0.5)
+  
+anntable <- table(selecuAnno$anno)
+multiAnno <- names(anntable)[which(anntable>1)]
+ggplot(selecuAnno%>%filter(anno%in%multiAnno)) + 
+  facet_wrap(~anno+DB,ncol=2,scale="free") + theme_bw() +
+  geom_segment(aes(x=sstart,xend=send,y=ID1,yend=ID1),size=2,alpha=.5) +
+  geom_segment(aes(x=offset,xend=offset+qend,y=unit,yend=unit),size=2,alpha=.3) +
+  geom_segment(aes(x=offset+qstart,xend=offset+qend,y=unit,yend=unit,color=unit),size=2,alpha=.5) +
+  geom_segment(aes(x=offset+qstart,xend=sstart,y=unit,yend=ID1,color=unit),linetype=2) +
+  geom_segment(aes(x=offset+qend,xend=send,y=unit,yend=ID1,color=unit),linetype=2) + 
+  geom_text(aes(x=(qstart+qend)/2+offset,y=unit,label=pident),hjust=0.5)
+
+ggplot(selecuAnno) + 
+  facet_wrap(~anno+DB,ncol=4,scale="free") + theme_bw() +
+  geom_segment(aes(x=sstart,xend=send,y=ID1,yend=ID1),size=2,alpha=.5) +
+  geom_segment(aes(x=offset,xend=offset+QLEN,y=factor(node),yend=factor(node)),size=2,alpha=.3) +
+  geom_segment(aes(x=offset+qstart,xend=offset+qend,y=factor(node),yend=factor(node),color=unit),size=2,alpha=.5) +
+  geom_segment(aes(x=offset+qstart,xend=sstart,y=factor(node),yend=ID1,color=unit),linetype=2) +
+  geom_segment(aes(x=offset+qend,xend=send,y=factor(node),yend=ID1,color=unit),linetype=2)  +
+  geom_text(aes(x=(qstart+qend)/2+offset,y=factor(node),label=pident),hjust=0.5)
+
+
+tAnntable <- table(uAnno$anno[which(uAnno$pident>97)])
+tmultiAnno <- names(rev(sort(tAnntable)))[1:12]
+ggplot(uAnno%>%filter(pident>97&anno%in%tmultiAnno)) + 
+  facet_wrap(~anno,ncol=3,scale="free") + theme_bw() +
+  geom_segment(aes(x=sstart,xend=send,y=ID1,yend=ID1),size=2,alpha=.5) +
+  geom_segment(aes(x=offset,xend=offset+QLEN,y=BC,yend=BC),size=2,alpha=.3) +
+  geom_segment(aes(x=offset+qstart,xend=offset+qend,y=BC,yend=BC,color=unit),size=2,alpha=.5) +
+  geom_segment(aes(x=offset+qstart,xend=sstart,y=BC,yend=ID1,color=unit),linetype=2) +
+  geom_segment(aes(x=offset+qend,xend=send,y=BC,yend=ID1,color=unit),linetype=2) 
+  #geom_text(aes(x=QLEN/2+offset,y=BC,label=pident),hjust=0.5)
+```
+
+
+
+
+
+#top tax (TODO)
+```{r}
+spDiver <- ddply(tAnno,c("BC","node"),num=length(uniq(anno)))
+taxTop <- tAnno
+taxTop$partialPct <- taxTop$length/taxTop$QLEN
+```
+
+#visual
+
+**length & identity**
+```{r}
+ggplot(taxTop,aes(x=pident)) + geom_histogram(binwidth = 1)
+ggplot(taxTop,aes(x=length)) + geom_histogram()
+ggplot(taxTop,aes(x=length,y=pident)) + geom_point(shape=16,alpha=.5) + 
+  annotation_logticks() + theme_bw() +
+  scale_x_log10(breaks=trans_breaks("log10",function(x) 10^x),
+                labels=trans_format("log10",math_format(10^.x)))
+
+ggplot(taxTop,aes(x=length,y=pident)) + geom_point(shape=16,alpha=.1) + 
+  stat_density2d() +
+  annotation_logticks() + theme_bw() + ylim(c(90,100)) +
+  scale_x_log10(breaks=trans_breaks("log10",function(x) 10^x),
+                labels=trans_format("log10",math_format(10^.x)))
+  
+ggplot(taxTop,aes(x=QLEN,y=length)) + geom_point(shape=16,alpha=.1) + theme_bw() +
+  annotation_logticks() + theme_bw() +
+  scale_x_log10(breaks=trans_breaks("log10",function(x) 10^x,2),
+                labels=trans_format("log10",math_format(10^.x))) +
+  scale_y_log10(breaks=trans_breaks("log10",function(x) 10^x,2),
+                labels=trans_format("log10",math_format(10^.x)))
+
+
+ggplot(taxTop,aes(x=length,y=partialPct)) + geom_point(shape=16,alpha=.1) + theme_bw() +
+  scale_x_continuous(breaks=seq(0,2000,200)) + scale_y_continuous(breaks=seq(0,1,0.1))
+```
+
+**filter length > 50 bp **
+```{r}
+taxTopFilter <- taxTop%>%filter(length>50)
+taxTopFilter$completness <- taxTopFilter$length/taxTopFilter$QLEN
+filterRate <- nrow(taxTopFilter)/nrow(taxTop)
+filterRate
+```
+
+```{r}
+BCFdat <- ddply(taxTopFilter,"BC",summarise,
+                scafs=length(qseqid), QLEN=median(QLEN), coverage=median(coverage),
+                length=median(length),pident=median(pident), completeness=sum(length)/sum(QLEN),
+                species=length(unique(species)),genus=length(unique(genus)),
+                family=length(unique(family)),order=length(unique(order)),
+                class=length(unique(class)),phylum=length(unique(phylum)),
+                kindom=length(unique(kindom)))
+ggplot(BCFdat%>%filter(scafs<250),aes(x=scafs,y=species)) + geom_point()+ theme_bw() +
+  stat_density2d() +
+  scale_x_log10(breaks=trans_breaks("log10",function(x) 10^x,2),
+                labels=trans_format("log10",math_format(10^.x))) +
+  scale_y_continuous(breaks=seq(0,20,2))
+
+ggplot(BCFdat,aes(x=completeness,y=species)) + geom_point()
+```
+
+```{r}
+BCFmdat <- melt(BCFdat,id.vars =colnames(BCFdat)[1:7],variable.name = "level",value.name = "diversity")
+
+ggplot(BCFmdat,aes(x=diversity,fill=level)) + geom_histogram(position="dodge") + scale_x_log10(breaks=c(1,2,3,5,7,10,30))
+ggplot(BCFmdat,aes(x=diversity,color=level)) + geom_density() + scale_x_log10(breaks=c(1,2,3,5,7,10,30))
+```
+
+**Exclude Mitochrome(For bacteria data)**
+```{r,eval=FALSE}
+BCFdat2 <- ddply(taxTopFilter%>%filter(kindom!="Eukaryota"),"BC",summarise,
+                scafs=length(qseqid), QLEN=median(QLEN), coverage=median(coverage),
+                length=median(length),pident=median(pident), completeness=sum(length)/sum(QLEN),
+                species=length(unique(species)),genus=length(unique(genus)),
+                family=length(unique(family)),order=length(unique(order)),
+                class=length(unique(class)),phylum=length(unique(phylum)),
+                kindom=length(unique(kindom)))
+BCFmdat2 <- melt(BCFdat2,id.vars =colnames(BCFdat2)[1:7],variable.name = "level",value.name = "diversity")
+
+ggplot(BCFmdat2,aes(x=diversity,fill=level)) + geom_histogram(position="dodge") + scale_x_log10(breaks=c(1,2,3,5,7,10,30))
+ggplot(BCFmdat2,aes(x=diversity,color=level)) + geom_density() + scale_x_log10(breaks=c(1,2,3,5,7,10,30))
+```
+
+***Relationship of diversity to the duplicates rate**
+```{r}
+load(paste0(iDir,"/VSEARCH/read.merge.derep.bead.uc.S.sum.RData"))
+map <- read.table(paste0(iDir,"/VSEARCH/read.merge.derep.2T.bc.cluster_Lv4.main"),
+                  col.names = c("BC","BB"))
+mSumBB <- merge(sumBC,map,by="BB")
+mSumBB$BC <- paste0("BC",formatC(mSumBB$BC,width=5,flag=0))
+mSumBC <- ddply(mSumBB,"BC",summarise,BBs=length(BB),dup=sum(dup),count=sum(count),RR=sum(count)/length(BB),DRR=sum(dup)/length(BB))
+mSumBCanno <- merge(BCFmdat,mSumBC,by="BC")
+mSumBCanno$tooMuch <- ifelse(mSumBCanno$diversity>5,T,F)
+```
+```{r}
+ggplot(mSumBCanno,aes(x=length,y=BBs)) + geom_point(aes(size=diversity,color=tooMuch),shape=16,alpha=.3) + 
+  facet_wrap(~level,ncol=3) + theme_bw() + geom_hline(yintercept = c(50,100),linetype=2,alpha-.5) +
+  scale_y_log10(breaks=c(1,2,3,5,10,30,50,100,300))
+```
+```{r}
+ggplot(mSumBCanno,aes(x=length,y=BBs)) + geom_point(aes(size=diversity,color=tooMuch),shape=16,alpha=.3) + 
+  facet_wrap(~level,ncol=3) + theme_bw() + geom_hline(yintercept = c(50,100),linetype=2,alpha-.5) +
+  scale_y_log10(breaks=c(1,2,3,5,10,30,50,100,300))
+```
+
+**Exclude BBs>50**
+```{r,eval=FALSE}
+select.BC <- mSumBC$BC[which(mSumBC$BBs<=50)]
+BCFdat2 <- ddply(taxTopFilter%>%filter(BC%in%select.BC),"BC",summarise,
+                scafs=length(qseqid), QLEN=median(QLEN), coverage=median(coverage),
+                length=median(length),pident=median(pident), completeness=sum(length)/sum(QLEN),
+                species=length(unique(species)),genus=length(unique(genus)),
+                family=length(unique(family)),order=length(unique(order)),
+                class=length(unique(class)),phylum=length(unique(phylum)),
+                kindom=length(unique(kindom)))
+BCFmdat2 <- melt(BCFdat2,id.vars =colnames(BCFdat2)[1:7],variable.name = "level",value.name = "diversity")
+
+ggplot(BCFmdat2,aes(x=diversity,fill=level)) + geom_histogram(position="dodge") + scale_x_log10(breaks=c(1,2,3,5,7,10,30))
+ggplot(BCFmdat2,aes(x=diversity,color=level)) + geom_density() + scale_x_log10(breaks=c(1,2,3,5,7,10,30))
+
+mSumBCanno2 <- merge(BCFmdat2,mSumBC,by="BC")
+
+ggplot(mSumBCanno2,aes(x=BBs,y=diversity)) + geom_point(aes(size=completeness),shape=16,alpha=.1) + 
+  facet_wrap(~level,ncol=3) + theme_bw()
+```
+
+
+```{r}
+taxTopFilter$count <- 1
+
+sumSp <- ddply(taxTopFilter,"species",summarise,count=sum(count))
+sumSp$species <- reorder(sumSp$species,sumSp$count,mean)
+
+ggplot(sumSp) + geom_segment(aes(x=0,xend=count,y=species,yend=species),size=1) +
+  scale_x_log10() + theme_bw()
+
+
+sumPy <- ddply(taxTopFilter,"phylum",summarise,count=sum(count))
+sumPy$phylum <- reorder(sumPy$phylum,sumPy$count,mean)
+
+ggplot(sumPy) + geom_segment(aes(x=0,xend=count,y=phylum,yend=phylum),size=4) +
+  scale_x_log10() + theme_bw()
+
+sumFm <- ddply(taxTopFilter,"family",summarise,count=sum(count))
+sumFm$family <- reorder(sumFm$family,sumFm$count,mean)
+
+ggplot(sumFm) + geom_segment(aes(x=0,xend=count,y=family,yend=family),size=2) +
+  scale_x_log10() + theme_bw()
+```
+
+
+**Duplication rate**
+```{r}
+L=2500
+w=100
+modeDat <- data.frame(num=2^seq(2,15))
+modeDat$Cn <- choose(modeDat$num, 2)
+modeDat$p <- modeDat$Cn*(1/(L-w)^2)
+ggplot(modeDat,aes(x=num,y=p)) + geom_line() + geom_point() + theme_bw() + 
+  scale_x_log10() + scale_y_log10()
+```
+
+
+**BC00071 (4 scaffolds; 2 species)** 
+
+
+
+
+
+
+
+#Fin.

@@ -80,7 +80,7 @@ mkdir -p $sam/$cod/
 scp ngb7:$mSeq/instance/VSEARCH/$sam/${cod:0:4}/$cod/*stat $sam/$cod/
 ```
 
-### set ENV & Load  
+### Load  
 **annotation and ref alignment**
 ```{r}
 # Load ids
@@ -127,6 +127,7 @@ ggplot(mITS.dat) + geom_segment(aes(x=start,xend=end,y=stack+offset,yend=stack+o
 
 # Visual with ITS units region (careful mode)
 ```{r}
+its.include <- unique(mITS.dat$refName)
 its.region0 <- its.region%>%filter(ITSID%in%its.include)
 colnames(its.region0)[1:2] <- c("refName","ref.species")
 

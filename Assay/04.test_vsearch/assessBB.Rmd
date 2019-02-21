@@ -1,0 +1,112 @@
+---
+title: "Statistics of Bead Cluster method"
+output:
+  html_notebook:
+    code_fold: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(plyr)
+library(ggplot2)
+library(reshape2)
+library(pheatmap)
+do.write <- F
+```
+
+# Prepare
+```{r}
+iDir <- "../../Results/instance/APR842_00"
+oDir <- "../../Results/instance/APR842_00/stat"
+```
+
+
+
+
+
+#BB distribution
+
+```{r}
+bbSep <- read.table(paste0(iDir,"/clean/APR842.code.sep.freq.tsv"),header=F,row.names=NULL,
+                       col.names=c("B1","B2","B3","reads","index"))
+```
+
+```{r}
+bbSep$count <- 1
+sumB1 <- ddply(bbSep,"B1",summarise,count=sum(count),reads=sum(reads))
+sumB2 <- ddply(bbSep,"B2",summarise,count=sum(count),reads=sum(reads))
+sumB3 <- ddply(bbSep,"B3",summarise,count=sum(count),reads=sum(reads))
+
+```
+
+
+```{r}
+ggplot(sumB1,aes(x=B1,y=count)) + geom_point() + 
+  scale_y_log10() + scale_x_continuous(breaks=seq(0,1600,200))
+```
+
+
+```{r}
+sumBB <- rbind(data.frame(pos="B1",BB=sumB1$B1,sumB1[,2:3]),
+               data.frame(pos="B2",BB=sumB2$B2,sumB2[,2:3]),
+               data.frame(pos="B3",BB=sumB3$B3,sumB3[,2:3]))
+
+ggplot(sumBB,aes(x=BB,y=count,color=pos)) + geom_point(alpha=.3) + 
+  scale_y_log10() + scale_x_continuous(breaks=seq(0,1600,200)) + theme_bw()
+ggplot(sumBB,aes(x=BB,y=reads,color=pos)) + geom_point(alpha=.3) + 
+  scale_y_log10() + scale_x_continuous(breaks=seq(0,1600,200)) + theme_bw()
+```
+
+
+
+```{r}
+BBLIST <- read.table("../../Results/01.stLFR_barcode_split/barcode.list",
+                     col.names = c("SEQ","ID"))
+```
+
+```{r}
+# ACGT => 1234
+bMat <- matrix(as.numeric(as.factor(unlist(lapply(BBLIST$SEQ, function(x){
+    (strsplit(as.character(x),split = ""))[[1]]})))),ncol=10,byrow = T)
+rownames(bMat) <- BBLIST$ID
+colnames(bMat) <- seq(0,9)
+
+simMat <- matrix(0,nrow=nrow(bMat),ncol=nrow(bMat))
+simDf <- NULL
+for(i in 2:nrow(bMat) - 1 ){
+  for(j in (i+1):nrow(bMat)){
+    simN <- length(which(bMat[i,]==bMat[j,]))
+    simMat[i,j] <- simN
+    simMat[j,i] <- simN
+    # simDf <- rbind(simDf,
+    #                data.frame(i=i,j=j,similar=simN))
+
+  }
+  #warning(paste0("pass: ",i,"\n"))
+}
+colnames(simMat) <- BBLIST$ID
+rownames(simMat) <- BBLIST$ID
+tmp <- as.data.frame(simMat)
+tmp$ID1 <- BBLIST$ID
+mTmp <- melt(tmp,id.vars = "ID1",variable.name = "ID2",value.name = "sScore")
+mTmp$ID2 <- as.numeric(mTmp$ID2)
+simDf <- mTmp[which(mTmp$ID1<mTmp$ID2),]
+ggplot(simDf,aes(x=sScore)) + geom_histogram()
+```
+
+```{r}
+
+sim5Df <- simDf%>%filter(sScore>=5)
+ggplot(sim5Df,aes(x=ID1,y=ID2)) + geom_point(aes(color=factor(sScore)),alpha=.1,size=.1) + stat_density2d()
+
+tab5 <- rev(sort(table(c(sim5Df$ID1,sim5Df$ID2))))
+tab5ID <- data.frame(ID=c(sim5Df$ID1,sim5Df$ID2))
+ggplot(tab5ID,aes(x=ID)) + geom_histogram(binwidth=1)
+```
+
+
+
+
+
+#Fin.
