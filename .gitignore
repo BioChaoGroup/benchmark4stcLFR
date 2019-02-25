@@ -6,3 +6,4 @@ DB
 .snakemake
 nohup.out
 Source
+*.png
