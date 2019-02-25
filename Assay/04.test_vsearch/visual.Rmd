@@ -64,6 +64,7 @@ beadCentroids <- read.table(paste0(iDir,"/VSEARCH/read.merge.derep.bead.uc.S"),h
                        col.names=c("Type","Cluster","length","similarity","orientation","star1","star2","CIGAR","query","dups"))
 ```
 ```{r}
+load(paste0(iDir,"/VSEARCH/read.merge.derep.bead.uc.S.sum.RData"))
 tmp <- matrix(unlist(lapply(beadCentroids$query, function(x){
   (strsplit(as.character(x),split = "/",fixed = T))[[1]]})),
               ncol=3,byrow = T)
@@ -82,10 +83,12 @@ sumBCD <- ddply(sumBC,"dup",summarise,counts=sum(tmp))
 sumBCD$cumsum <- cumsum(sumBCD$count)
 sumBCD$cumpct <- sumBCD$cumsum/sum(sumBCD$counts)
 
-ggplot(sumBCC,aes(x=count,y=cumpct)) + 
-  geom_line() + geom_point() + geom_vline(xintercept = 15,linetype=2) + 
-  geom_line(data=sumBCD,aes(x=dup),color="red") +  geom_point(data=sumBCD,aes(x=dup),color="red") +
-  scale_x_log10(breaks=10^c(0,2,4,6)) + scale_y_continuous(breaks=seq(0,1,0.2),limits=c(0,1))
+ggplot(sumBCC,aes(x=count,y=cumpct)) + theme_bw() +
+  geom_line(color="coral3") + geom_point(color="coral3") + geom_vline(xintercept = 15,linetype=2) + 
+  geom_line(data=sumBCD,aes(x=dup),color="grey30") +  geom_point(data=sumBCD,aes(x=dup),color="grey30") +
+  scale_x_log10(breaks=10^c(0,2,4,6)) + scale_y_continuous(breaks=seq(0,1,0.2),limits=c(0,1)) + 
+  xlab("# of reads attached to a specific bead barcodes") + ylab("Cumulated percentage")
+ggsave("./BBwithReadsin.png",width=8,height=4)
 ```
 
 
@@ -148,9 +151,10 @@ commMdat <- rbind(
 library(scales)
 ggplot(commMdat,aes(x=BB,color=factor(lv))) + geom_density(size=1) + 
   annotation_logticks() + scale_x_log10() + theme_bw()
-
+ggsave("./BCdistofBBs.png",width=8,height=4)
 ggplot(commMdat,aes(x=reads,color=factor(lv))) + geom_density(size=1) + 
   annotation_logticks() + scale_x_log10() + theme_bw()
+ggsave("./BCdistofReads.png",width=8,height=4)
 ```
 
 
