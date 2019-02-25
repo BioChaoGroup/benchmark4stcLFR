@@ -17,7 +17,7 @@ do.write <- F
 
 #Function
 ```{r}
-ccuratAnno <- function(anno,type){
+curatAnno <- function(anno,type){
   iDt <- which(colnames(anno)=="detail")
   tmp <- sub(";$",";NA",anno$detail)
   tmpTree <- matrix(unlist(lapply(tmp, function(x){
@@ -52,8 +52,8 @@ asmLv <- "Lv1"
 iDir <- "../../Results/instance/APR842_00"
 oDir <- "../../Results/instance/APR842_00"
 
-iDir <- "../../Results/instance/DEC560_d10_00"
-oDir <- "../../Results/instance/DEC560_d10_00"
+# iDir <- "../../Results/instance/DEC560_d10_00"
+# oDir <- "../../Results/instance/DEC560_d10_00"
 ```
 
 #directly annotation
@@ -71,16 +71,36 @@ uniteAnno <- read.table(
   col.names=c("BC","qseqid","sseqid","pident","length","mismatch","gapopen",
               "qstart","qend","sstart","send","evalue","bitscore","anno",
               "ID1","ID2","type","detail"))
-
 ```
 
+**prepare ref ITS**
+```{sh, eval=FALSE}
+awk -F "\t" 'BEGIN{print "ID1\tSLEN\tSSU\tITS1\t5.8S\tITS2\tLSU"}{
+gsub("Not found","NA");gsub("No end","NA");gsub("No start","NA");split($1,a,"|");
+sub(/ bp./,"",$2);sub(/SSU: /,"",$3);sub(/ITS1: /,"",$4);
+sub(/5.8S: /,"",$5);sub(/ITS2: /,"",$6);sub(/LSU: /,"",$7);
+print a[2]"\t"$2"\t"$3"\t"$4"\t"$5"\t"$6"\t"$7}' ../../REF/ee_its_database.ITSx.anno > ../../REF/ee_its_database.ITSx.simple
+```
+
+```{r}
+ref.ITS.pos <- read.table("../../Results/REF/ee_its_database.ITSx.simple",header=T,sep="\t")
+ref.ITS.melt <- melt(ref.ITS.pos,id.vars = c("ID1","SLEN"),variable.name = "unit",value.name = "pos")
+levels(ref.ITS.melt$unit)[3] <- "5.8S"
+ref.ITS.melt <- ref.ITS.melt%>%filter(!is.na(pos)&!is.na(SLEN))
+pos <- matrix(unlist(lapply(ref.ITS.melt$pos, function(x){
+        (strsplit(as.character(x),split = "-",fixed = T))[[1]]})),
+        ncol=2,byrow = T)
+ref.ITS.melt$ustart <- as.numeric(pos[,1])
+ref.ITS.melt$uend <- as.numeric(pos[,2])
+```
 
 # Extend table 
 ```{r}
 tAnno <- curatAnno(taxAnno,"tax")
+tAnno <- merge(ref.ITS.pos[,1:2],tAnno,by="ID1",all.y=T)
+
 uAnno <- curatAnno(uniteAnno,"unite")
 levels(uAnno$unit) <- c("SSU","LSU","5.8S","5.8S","ITS1","ITS2","LSU","SSU")
-
 ```
 
 # stat
@@ -102,13 +122,16 @@ ggplot(selectAnno) + facet_wrap(~BC+node,ncol=4,scale="free") + theme_bw() +
   
 anntable <- table(selectAnno$anno)
 multiAnno <- names(anntable)[which(anntable>1)]
-ggplot(selectAnno%>%filter(anno%in%multiAnno)) + 
-  facet_wrap(~anno,ncol=2,scale="free") + theme_bw() +
-  geom_segment(aes(x=sstart,xend=send,y=ID1,yend=ID1),size=2,alpha=.5) +
-  geom_segment(aes(x=offset,xend=offset+QLEN,y=factor(node),yend=factor(node)),size=2,alpha=.5) +
-  geom_segment(aes(x=offset+qstart,xend=sstart,y=factor(node),yend=ID1),linetype=2) +
-  geom_segment(aes(x=offset+qend,xend=send,y=factor(node),yend=ID1),linetype=2) + 
-  geom_text(aes(x=QLEN/2+offset,y=factor(node),label=pident),hjust=0.5)
+thisAnno <- selectAnno%>%filter(anno%in%multiAnno)
+thisRefITS <- ref.ITS.melt%>%filter(ID1%in%thisAnno$ID1)
+ggplot(thisAnno) + 
+  facet_wrap(~ID1,ncol=4,scale="free") + theme_bw() +
+  geom_segment(aes(x=0,xend=SLEN,y=ID1,yend=ID1),size=2,alpha=.3) +
+  geom_segment(data=thisRefITS,aes(x=ustart,xend=uend,y=ID1,yend=ID1,color=unit),size=2,alpha=.5) +
+  geom_segment(aes(x=offset,xend=offset+QLEN,y=BC,yend=BC),size=2,alpha=.5) +
+  geom_segment(aes(x=offset+qstart,xend=sstart,y=BC,yend=ID1),linetype=2) +
+  geom_segment(aes(x=offset+qend,xend=send,y=BC,yend=ID1),linetype=2) + 
+  geom_text(aes(x=QLEN/2+offset,y=BC,label=pident),hjust=0.5)
  
 
 tAnntable <- table(tAnno$anno[which(tAnno$pident>97)])
@@ -171,8 +194,8 @@ ggplot(uAnno%>%filter(pident>97&anno%in%tmultiAnno)) +
 
 
 #top tax (TODO)
-```{r}
-spDiver <- ddply(tAnno,c("BC","node"),num=length(uniq(anno)))
+```{r,eval=FALSE}
+#spDiver <- ddply(tAnno,c("BC","node"),num=length(uniq(anno)))
 taxTop <- tAnno
 taxTop$partialPct <- taxTop$length/taxTop$QLEN
 ```
@@ -208,7 +231,8 @@ ggplot(taxTop,aes(x=length,y=partialPct)) + geom_point(shape=16,alpha=.1) + them
 
 **filter length > 50 bp **
 ```{r}
-taxTopFilter <- taxTop%>%filter(length>50)
+taxTopFilter <- taxTop%>%filter(length>=50)
+taxTopFilter <- taxTop%>%filter(length>=50&pident>=97)
 taxTopFilter$completness <- taxTopFilter$length/taxTopFilter$QLEN
 filterRate <- nrow(taxTopFilter)/nrow(taxTop)
 filterRate
@@ -234,8 +258,16 @@ ggplot(BCFdat,aes(x=completeness,y=species)) + geom_point()
 ```{r}
 BCFmdat <- melt(BCFdat,id.vars =colnames(BCFdat)[1:7],variable.name = "level",value.name = "diversity")
 
-ggplot(BCFmdat,aes(x=diversity,fill=level)) + geom_histogram(position="dodge") + scale_x_log10(breaks=c(1,2,3,5,7,10,30))
+ggplot(BCFmdat,aes(x=diversity,fill=level)) + geom_histogram(position="dodge") + scale_x_log10(breaks=seq(0,10))
 ggplot(BCFmdat,aes(x=diversity,color=level)) + geom_density() + scale_x_log10(breaks=c(1,2,3,5,7,10,30))
+ggplot(BCFmdat,aes(x=diversity,fill=level)) + geom_bar(position="dodge") + scale_x_continuous(breaks=seq(0,8,1)) + theme_bw()
+ggsave("./AllAnnoStat.png",width=8,height=4)
+```
+```{r}
+taxtb <- table(BCFmdat$diversity,BCFmdat$level)
+rbind(taxtb,Pct1=taxtb[1,]/colSums(taxtb))
+taxtb/colSums(taxtb)
+
 ```
 
 **Exclude Mitochrome(For bacteria data)**
@@ -250,7 +282,8 @@ BCFdat2 <- ddply(taxTopFilter%>%filter(kindom!="Eukaryota"),"BC",summarise,
 BCFmdat2 <- melt(BCFdat2,id.vars =colnames(BCFdat2)[1:7],variable.name = "level",value.name = "diversity")
 
 ggplot(BCFmdat2,aes(x=diversity,fill=level)) + geom_histogram(position="dodge") + scale_x_log10(breaks=c(1,2,3,5,7,10,30))
-ggplot(BCFmdat2,aes(x=diversity,color=level)) + geom_density() + scale_x_log10(breaks=c(1,2,3,5,7,10,30))
+ggplot(BCFmdat2,aes(x=diversity,color=level)) + geom_density() + scale_x_log10(breaks=c(1,2,3,5,7,10,30)) + theme_bw()
+ggsave("./annoNumber")
 ```
 
 ***Relationship of diversity to the duplicates rate**
@@ -262,7 +295,9 @@ mSumBB <- merge(sumBC,map,by="BB")
 mSumBB$BC <- paste0("BC",formatC(mSumBB$BC,width=5,flag=0))
 mSumBC <- ddply(mSumBB,"BC",summarise,BBs=length(BB),dup=sum(dup),count=sum(count),RR=sum(count)/length(BB),DRR=sum(dup)/length(BB))
 mSumBCanno <- merge(BCFmdat,mSumBC,by="BC")
-mSumBCanno$tooMuch <- ifelse(mSumBCanno$diversity>5,T,F)
+mSumBCanno$tooMuch <- ifelse(mSumBCanno$diversity>4,T,F)
+mSumBCanno$dup <- ifelse(mSumBCanno$diversity>4,T,F)
+
 ```
 ```{r}
 ggplot(mSumBCanno,aes(x=length,y=BBs)) + geom_point(aes(size=diversity,color=tooMuch),shape=16,alpha=.3) + 
@@ -270,9 +305,10 @@ ggplot(mSumBCanno,aes(x=length,y=BBs)) + geom_point(aes(size=diversity,color=too
   scale_y_log10(breaks=c(1,2,3,5,10,30,50,100,300))
 ```
 ```{r}
-ggplot(mSumBCanno,aes(x=length,y=BBs)) + geom_point(aes(size=diversity,color=tooMuch),shape=16,alpha=.3) + 
+ggplot(mSumBCanno%>%filter(level!="kindom"),aes(x=pident,y=BBs)) + geom_point(aes(size=diversity,color=tooMuch),shape=16,alpha=.3) + 
   facet_wrap(~level,ncol=3) + theme_bw() + geom_hline(yintercept = c(50,100),linetype=2,alpha-.5) +
   scale_y_log10(breaks=c(1,2,3,5,10,30,50,100,300))
+ggsave("./trueAnnoRange.png",width=8,height=4)
 ```
 
 **Exclude BBs>50**

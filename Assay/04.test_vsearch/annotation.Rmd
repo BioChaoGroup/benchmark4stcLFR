@@ -197,7 +197,7 @@ ggplot(mSumBCanno,aes(x=length,y=BBs)) + geom_point(aes(size=diversity,color=too
   scale_y_log10(breaks=c(1,2,3,5,10,30,50,100,300))
 ```
 ```{r}
-ggplot(mSumBCanno,aes(x=length,y=BBs)) + geom_point(aes(size=diversity,color=tooMuch),shape=16,alpha=.3) + 
+ggplot(mSumBCanno%>%filter(level!="kindom"),aes(x=length,y=BBs)) + geom_point(aes(size=diversity,color=tooMuch),shape=16,alpha=.3) + 
   facet_wrap(~level,ncol=3) + theme_bw() + geom_hline(yintercept = c(50,100),linetype=2,alpha-.5) +
   scale_y_log10(breaks=c(1,2,3,5,10,30,50,100,300))
 ```
