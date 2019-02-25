@@ -59,13 +59,46 @@ $mfastp/fastp --stLFR_barcode_file ../../Source/JUNE/barcode.list \
 &> tmp/$iPfx.cp6.log
 ```
 Results: 1M reads cost:
-> python: 52 seconds  
-> perl:   40 seconds  
-> c++:    28 seconds (-w 1, actually it comsumed 200% cpu)  
-> c++:    12 seconds (-w 6, actually it comsumed no more than 600% cpu)  
+> python: 52 seconds
+> perl:   40 seconds
+> c++:    28 seconds (-w 1, actually it comsumed 200% cpu)
+> c++:    12 seconds (-w 6, actually it comsumed no more than 600% cpu)
 
 So we can estimated the time for 600 million reads sequences:
-> python: 8.6 hr  
-> perl:   6.7 hr  
-> c++:    4.7 hr  
-> c++:    2.0 hr  
+> python: 8.6 hr
+> perl:   6.7 hr
+> c++:    4.7 hr
+> c++:    2.0 hr
+
+# RCA test
+
+sample info:
+> RCA14  3h  100pg
+
+```bash
+SRC14=/path/to/RCA14/rawdata
+mkdir -p ../../Results/RCA14/clean
+ln -s ../../Results/RCA14
+
+#prep fq
+cd RCA14/clean
+mkdir tmp
+pigz -p 8 -dc $SRC14/split_read.1.fq.gz | perl -e 'while(<>){
+  if($.%4==1){@a=split /#|\//;$a[1]=~/(\d+)_(\d+)_(\d+)/;
+  $b1 = sprintf("%04d",$1);$b2 = sprintf("%04d",$2);$b3 = sprintf("%04d",$3);
+  print "$a[0]/$b1\_$b2\_$b3/1\n"}else{print $_}}' | paste - - - - | \
+  sort -T ./tmp -k2,2 -t "/" | tr "\t" "\n" > fastp.sort.1.fq &
+
+pigz -p 8 -dc $SRC14/split_read.2.fq.gz | perl -e 'while(<>){
+  if($.%4==1){@a=split /#|\//;$a[1]=~/(\d+)_(\d+)_(\d+)/;
+  $b1 = sprintf("%04d",$1);$b2 = sprintf("%04d",$2);$b3 = sprintf("%04d",$3);
+  print "$a[0]/$b1\_$b2\_$b3/2\n"}else{print $_}}' | paste - - - - | \
+  sort -T ./tmp -k2,2 -t "/" | tr "\t" "\n" > fastp.sort.2.fq &
+wait
+metabbq randomlyPick.pl -i fastp.sort.1.fq -o fastp.sort.1 -n 10 -m 3 -s 14 -t 16 &
+metabbq randomlyPick.pl -i fastp.sort.2.fq -o fastp.sort.2 -n 10 -m 3 -s 14 -t 16 -v
+cd ../../
+mkdir -p RCA_00/clean
+ln -s ../../RCA14/clean/fastp.sort.1_00.fq RCA_00/clean/fastp.sort.1.fq
+ln -s ../../RCA14/clean/fastp.sort.2_00.fq RCA_00/clean/fastp.sort.2.fq
+```
