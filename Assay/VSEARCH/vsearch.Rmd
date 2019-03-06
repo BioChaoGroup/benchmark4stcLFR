@@ -15,12 +15,12 @@ library(ggplot2)
 library(dplyr)
 library(RColorBrewer)
 library(ape)
-library(ggtree)
+#library(ggtree)
 # For install ggtree, follow the guide here: https://bioconductor.org/packages/release/bioc/html/ggtree.html
 #custom defined function
-library("data.tree")
+#library("data.tree")
 #library(treemap)
-library("networkD3")
+#library("networkD3")
 #Learn more: https://cran.r-project.org/web/packages/data.tree/vignettes/data.tree.html#trees-in-r
 
 stack.fun <- function(d){
