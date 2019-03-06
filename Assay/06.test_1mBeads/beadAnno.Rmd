@@ -1,0 +1,65 @@
+---
+title: "Beads annoatation assessment"
+output:
+  html_notebook:
+    code_fold: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(plyr)
+library(ggplot2)
+library(RColorBrewer)
+```
+
+# Prepare
+1. Align fastq to reference by `bwa`.  
+2. stat unique annotation.
+```{bash}
+SAM0=APR842_00
+mkdir -p $SAM0/beadsAnno
+bwa mem -t 48 -o $SAM0/beadsAnno/bwa.sam REF/fungal5REF.fa $SAM0/clean/fastp.sort.{1,2}.fq
+perl -e 'while(<>){@a=split;next if $a[4]<60 || $a[1] > 1024;@b=split("/",$a[0]);if($b[1]=~/0000/){$b[1]="0000_0000_0000"};$HS{$b[1]}{$a[2]}++};print "Bead\tSaccharomyces_cerevisiae\tPleurotus_eryngii\tLentinula_edodes\tHypsizygus_marmoreus\tFlammulina_velutipes\n";foreach $b (sort keys %HS){print "$b\t$HS{$b}{Saccharomyces_cerevisiae}\t$HS{$b}{Pleurotus_eryngii}\t$HS{$b}{Lentinula_edodes}\t$HS{$b}{Hypsizygus_marmoreus}\t$HS{$b}{Flammulina_velutipes}\n"}' < $SAM0/beadsAnno/bwa.sam > $SAM0/beadsAnno/bwa.uniq.anno.count
+
+perl -e '$once=1;while(<>){@a=split;if($a[0]=~/0000/){$b+=($a[2]-$a[1]+1)/4;next}elsif($once){print "0000_0000_0000\t$b\n";$once--};$b=($a[2]-$a[1]+1)/4;print "$a[0]\t$b\n"}' < $SAM0/clean/fastp.sort.1.fq.idx > $SAM0/beadsAnno/beads.num.count
+
+perl -e '@names=("Saccharomyces_cerevisiae","Pleurotus_eryngii","Lentinula_edodes","Hypsizygus_marmoreus","Flammulina_velutipes"); open I,"<'$SAM0'/beadsAnno/beads.num.count"; while(<I>){@a=split;$HS{$a[0]}=$a[1]}; printf("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", "Bead","mainTax","mainPct","uniqPct","uniq","reads",@names);while(<>){next if $_ =~ /^Bead/; chomp; @a=split /\t/; $bb=shift @a; $sum=$a[1]+$a[2]+$a[3]+$a[4]+$a[0]; @b=sort {$a<=>$b} @a; if($b[-1] == $b[-2]){$maxTax="NA"}else{for($i=0;$i<5;$i++){$maxTax=$names[$i] if $a[$i]==$b[-1]}; printf("%s\t%s\t%.4f\t%.4f\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",$bb,$maxTax,$b[-1]/$sum,$sum/($HS{$bb}*2),$sum,$HS{$bb}*2,$a[0],$a[1],$a[2],$a[3],$a[4])}}' $SAM0/beadsAnno/bwa.uniq.anno.count > $SAM0/beadsAnno/bwa.uniq.anno.stat
+```
+
+
+# Loading
+```{r}
+bwa.uniq.anno.stat <- read.table("APR842_00/beadsAnno/bwa.uniq.anno.stat",
+                                 header=T,sep="\t")
+cluster.2r20.0d04 <- read.table("APR842_00/TT1M/SUB_2R20_0D04.mash/bMin2.bc.tree.target.cluster",
+                                col.names = c("cluster","Bead"))
+```
+
+# Distribution
+```{r}
+bwa.uniq.curate <- filter(bwa.uniq.anno.stat[-1,],reads>2)
+ggplot(bwa.uniq.curate,aes(x=log10(mainPct),y=log10(reads))) + 
+  geom_point(alpha=.1) + annotation_logticks() +
+  stat_density_2d(h=c(0.3,1)) + facet_wrap(~mainTax,ncol=3)
+```
+
+# Add cluster community
+```{r}
+cluster.merge <- merge(cluster.2r20.0d04,bwa.uniq.curate,by="Bead")
+ggplot(cluster.merge,aes(x=mainPct,y=reads,color=mainTax)) + 
+  geom_point(alpha=.1) +
+  facet_wrap(~cluster,ncol=5)
+```
+
+# stat hybridization
+```{r}
+shFun <- function(d){
+  
+}
+```
+
+
+
+
+
+#FIN.
