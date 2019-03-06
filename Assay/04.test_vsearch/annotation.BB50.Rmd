@@ -17,7 +17,7 @@ do.write <- F
 
 #Function
 ```{r}
-ccuratAnno <- function(anno,type){
+curatAnno <- function(anno,type){
   iDt <- which(colnames(anno)=="detail")
   tmp <- sub(";$",";NA",anno$detail)
   tmpTree <- matrix(unlist(lapply(tmp, function(x){
