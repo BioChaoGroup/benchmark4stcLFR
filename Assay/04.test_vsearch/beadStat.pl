@@ -69,7 +69,7 @@ sub BC2Num {
 
 sub run_uc {
   &verbose("[log] Mode [UC] start ... \n");
-  my(%HASH,%CLUST,$clusterCount,$linkCount);
+  my(%HASH,%CLUST,%STAT,$clusterCount,$linkCount);
   #Here is the shorts for each column. Find more detail in VSEARCH manual.
   ##   0         1       2            3            4  5  6      7     8        9##
   ##Type  #Cluster  length  similarity%  orientation  *  *  CIGAR query centroid##
@@ -83,7 +83,7 @@ sub run_uc {
     chomp;
     my @info = split(/\t/,$_);
     my $iMatch = ($info[7] =~ /(\d+)M/)?$1:$info[2];
-    next if $iMatch < $match || $info[3] < $ident;  #Skip when identity or length less than cutoff;
+    $STAT{'O'} ++ && next if $iMatch < $match || $info[3] < $ident;  #Skip when identity or length less than cutoff;
 
     my ($BC0,$BC1,$BC8,$BC9,$s0,$s8,$s9) = (); #init
     unless (%CLUST){
@@ -91,16 +91,17 @@ sub run_uc {
       $CLUST{$BC9} = 1 if $s9 eq "T";
     }
     ($BC8,$s8) = &BC2Num($info[8]);
-    next if $s8 eq "F";
+    $STAT{'F'} ++ && next if $s8 eq "F";
 
     foreach my $BC9 (keys %CLUST){
-      next if $BC8 eq $BC9 || $BC9 eq "";
+      $STAT{'S'} ++ && next if $BC8 eq $BC9 || $BC9 eq "";
       $BC0 = ($BC8 lt $BC9)?$BC8:$BC9;
       $BC1 = ($BC8 lt $BC9)?$BC9:$BC8;
       $linkCount ++ unless defined $HASH{$BC0}{$BC1}{'count'};
       #$HASH{$BC0}{$BC1}{'status'} = ($BC0 eq $BC1)?"S":"T" unless defined $HASH{$BC0}{$BC1}{'status'};
       $HASH{$BC0}{$BC1}{'count'} ++;
       $HASH{$BC0}{$BC1}{'length'} += $info[2];
+      $STAT{'T'} ++;
     }
     $CLUST{$BC8} = 1;
   }
@@ -118,6 +119,10 @@ sub run_uc {
     }
   }
   close OUT;
+  &verbose(sprintf("[log] DUPLICATES SUMMARY:\n\nclusters\tedges\n%d\t%d\n",
+  $clusterCount,$linkCount));
+  &verbose(sprintf("[log] READS PAIR SUMMARY:\n\nFAIL\tSELF\tKEPT\n%d\t%d\t%d\n\n",
+  $STAT{F},$STAT{S},$STAT{T}));
   &verbose("[log] Mode [UC] done ... \n");
 }
 
