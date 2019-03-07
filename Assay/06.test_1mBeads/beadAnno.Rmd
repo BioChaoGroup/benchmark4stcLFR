@@ -7,14 +7,19 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
 library(plyr)
 library(ggplot2)
 library(RColorBrewer)
 ```
+# Questions to answer
+1. What taxonomy are these beads belonging?
+2. When will the beads tend to be hybridization?
+3. What index dose the hybridization related with? Is it possible to filter and control in de novo stage?
 
 # Prepare
-1. Align fastq to reference by `bwa`.  
-2. stat unique annotation.
+1. Align the barcode identified fastq to reference via `bwa`.  
+2. stat unique mapped annotation.
 ```{bash}
 SAM0=APR842_00
 mkdir -p $SAM0/beadsAnno
@@ -26,8 +31,7 @@ perl -e '$once=1;while(<>){@a=split;if($a[0]=~/0000/){$b+=($a[2]-$a[1]+1)/4;next
 perl -e '@names=("Saccharomyces_cerevisiae","Pleurotus_eryngii","Lentinula_edodes","Hypsizygus_marmoreus","Flammulina_velutipes"); open I,"<'$SAM0'/beadsAnno/beads.num.count"; while(<I>){@a=split;$HS{$a[0]}=$a[1]}; printf("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", "Bead","mainTax","mainPct","uniqPct","uniq","reads",@names);while(<>){next if $_ =~ /^Bead/; chomp; @a=split /\t/; $bb=shift @a; $sum=$a[1]+$a[2]+$a[3]+$a[4]+$a[0]; @b=sort {$a<=>$b} @a; if($b[-1] == $b[-2]){$maxTax="NA"}else{for($i=0;$i<5;$i++){$maxTax=$names[$i] if $a[$i]==$b[-1]}; printf("%s\t%s\t%.4f\t%.4f\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",$bb,$maxTax,$b[-1]/$sum,$sum/($HS{$bb}*2),$sum,$HS{$bb}*2,$a[0],$a[1],$a[2],$a[3],$a[4])}}' $SAM0/beadsAnno/bwa.uniq.anno.count > $SAM0/beadsAnno/bwa.uniq.anno.stat
 ```
 
-
-# Loading
+# Loading the stat results
 ```{r}
 bwa.uniq.anno.stat <- read.table("APR842_00/beadsAnno/bwa.uniq.anno.stat",
                                  header=T,sep="\t")
@@ -35,31 +39,94 @@ cluster.2r20.0d04 <- read.table("APR842_00/TT1M/SUB_2R20_0D04.mash/bMin2.bc.tree
                                 col.names = c("cluster","Bead"))
 ```
 
-# Distribution
+# First glance
 ```{r}
 bwa.uniq.curate <- filter(bwa.uniq.anno.stat[-1,],reads>2)
-ggplot(bwa.uniq.curate,aes(x=log10(mainPct),y=log10(reads))) + 
-  geom_point(alpha=.1) + annotation_logticks() +
-  stat_density_2d(h=c(0.3,1)) + facet_wrap(~mainTax,ncol=3)
+ggplot(bwa.uniq.curate,aes(x=log10(reads),y=mainPct*100)) + 
+  geom_point(alpha=.1) + annotation_logticks(sides = "b") +
+  geom_vline(xintercept = log10(c(100)),linetype=2) +
+  stat_density_2d(h=c(1,50)) + facet_wrap(~mainTax,ncol=3)
 ```
+Each point indicats a bead with its belonging reads in x-axis (lg scale) and the percentage of the most abundant taxonomy annotation (mainPct) in y-axis, e.g, 100% mainPct of *Flammulina velutipes* means that all of the reads belonging to this bead are uniquely hitted this species. Otherwise, the bead may contained DNA source comming from other species, as known as the `hybridized bead`.  
 
-# Add cluster community
+Among all of these beads, those with 100% `mainPct` have:
+```{r}
+length(which(bwa.uniq.curate$mainPct==1))/nrow(bwa.uniq.curate)
+```
+Above result shows that **most (83.4%) of the beads** got unique annotation(100% mainPct), which indicating that the hybridization are actually not as common as we think previously.  
+Besides, lower `mainPct` enriched in the area **when # reads(per bead) larger than 100 (right side of dash line)**.
+
+**uniqPct**  
+`uniqPct` means the percentage of reads uniquely mapping to the reference, without alternative hit position. The multi-position hitting happens when the references of different species shared homologous sequence. In this case, only **uniquely hitted recorded** are included to assess the hybridize degree.  
+The distribution of `uniqPct` are shown below:
+```{r}
+ggplot(bwa.uniq.curate,aes(x=log10(reads),y=uniqPct*100)) + 
+  geom_point(alpha=.1) + annotation_logticks(sides = "b") +
+  stat_density_2d(h=c(1,50)) + facet_wrap(~mainTax,ncol=3)
+```
+From above figure I guess that *Le* and *Pe* may be homologous in many ITS sequence region with each other, as their `uniqPct` both enriched at 50% in y-axis. While *Sc* or *Fv* maybe much more specific in sequence as most of their belonging beads got highly unique percentage. *Hm* is just at low content with weak signal.
+
+
+**Exclue beads with 100% `mainPct`:**
+```{r}
+ggplot(bwa.uniq.curate%>%filter(mainPct<1),aes(x=log10(reads),y=uniqPct*100)) + 
+  geom_point(alpha=.1) + annotation_logticks(sides = "b") +
+  stat_density_2d(h=c(1,30),alpha=.5) + facet_wrap(~mainTax,ncol=3)
+```
+After remove those 100% `mainPct` beads, we can see that the "potential hybrid" beads also enriched at relatively lower `uniqPct` (from 50% to 75%).
+
+Anyway, it is impossible to know the `mainPct` or `uniqPct` previously in de novo stage, without mapping to the right reference. So the # reads per bead should be the important index to control the hybrid degree, such as discard beads with #reads more than 100. And cautions that the threshold maybe differed in different samples.
+
+# merge cluster community
+Since I've done the "beads cluster" process as I addressed in `clusterMethod.md`, it is possible to stat the performance of these communities.  
+Here I test the communities clustered by rpb(reads per bead) between 2 to 20 and mash distance from 0 to 0.02 (boundary not included):
 ```{r}
 cluster.merge <- merge(cluster.2r20.0d04,bwa.uniq.curate,by="Bead")
-ggplot(cluster.merge,aes(x=mainPct,y=reads,color=mainTax)) + 
-  geom_point(alpha=.1) +
+ggplot(cluster.merge,aes(y=mainPct,x=reads/2,color=mainTax,size=1/uniqPct)) + 
+  geom_point(alpha=.1) + xlab("#reads/bead") +
   facet_wrap(~cluster,ncol=5)
 ```
+Most of the abundant communities are belonging to a single specific species, which is good.    
+Hybridization beads may included in the communities as you can see those colorful points distributed in the central area.
+
+**Show only hybridized beads:**
+```{r}
+ggplot(cluster.merge%>%filter(mainPct<1),
+       aes(y=mainPct,x=reads,color=mainTax,size=1/uniqPct)) + 
+  geom_point(alpha=.3) +
+  facet_wrap(~cluster,ncol=4)
+```
+Haven't found a clearly pattern here.
 
 # stat hybridization
 ```{r}
 shFun <- function(d){
-  
+  sp <- table(d$mainTax)
+  iMax <- (rev(order(sp)))[1]
+  i2nd <- (rev(order(sp)))[2]
+  c.mainTax <- names(sp)[iMax]
+  c.2ndTax <- names(sp)[i2nd]
+  c.mainPct <- sp[iMax]/sum(sp)
+  c.2ndPct <- sp[i2nd]/sum(sp)
+  mainPct.100Pct <- length(which(d$mainPct==1))/nrow(d)
+  return(data.frame(cluster=d[1,2],beadNum=nrow(d),main100Pct=mainPct.100Pct,
+                    mainTax=c.mainTax,mainPct=c.mainPct,
+                    m2ndTax=c.2ndTax,m2ndPct=c.2ndPct))
 }
+cluster.merge.stat <- ddply(cluster.merge,"cluster",shFun)
+ggplot(cluster.merge.stat,aes(x=beadNum,color=mainTax),alpha=.3) + 
+  geom_point(aes(y=mainPct),shape=19) + geom_point(aes(y=main100Pct),shape=4) +
+  theme_bw()
+```
+###### Each point indicates a cluster with the most abundant annotation colored. The cross indicate the percentage of beads with 100 `mainPct`.
+
+This figure pointed that when #beads per cluster were too small, it's almost impossible to get a good enough scaffolds with unique annotation. 3 or 4 cluster are seeem hybridized and all of them are mixed by *Fv* and *Le* (see below table). So my previous guess are totally worong :/  
+It seems that the hybridization didn't occure randomly, but happened bewteen specific species?
+```{r}
+cluster.merge.stat%>%filter(beadNum>100&mainPct<0.85)
 ```
 
 
 
 
-
-#FIN.
+###### #TO BE CONTINUED
