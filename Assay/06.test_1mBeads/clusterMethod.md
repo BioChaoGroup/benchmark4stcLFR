@@ -13,7 +13,7 @@ ln -s $mSeq2/instance/REF
 ```
 Specify data source to test:
 ```bash
-SAM=APR831  # processing now
+#SAM=APR831 # processing now
 #SAM=APR832 # Haven't been tested
 #SAM=APR841 # Needs update
 #SAM=APR842 # Needs update
@@ -88,4 +88,32 @@ mv $SAM0/TT1M/{Assemble_mashBC,$rTag.Assemble_mashBC}
 # print annotation
 for i in `ls -d $SAM0/TT1M/$rTag.Assemble_mashBC/*`;do echo $i;awk '$4>999{print}'t $i/scaffolds.F.BLAST.tax.blast6.anno.best|column -t;done
 ```
-Though long scaffolds increased, the hybridization also increased. 
+Though long scaffolds increased, the hybridization also increased.
+
+### Run 03
+Test the distance range `(0,0.1)` and rpb up to 100.
+Key params: `p_dist_max: 0.1` & `p_cluster_maxR: 100`.  
+Optional params: none.
+```bash
+#results tag
+rTag=SUB_2R100_0D10
+# link previously results
+# main
+snakemake -s test.smk --config p_dist_max=0.1 p_cluster_maxR=100  -j -np $SAM0/TT1M/mash/bMin2.bc.tree.target.cluster.main
+# post
+mv $SAM0/TT1M/{mash,$rTag.mash}
+```
+
+### Run 03.1
+Re-filter the distance range `(0,0.2)` from distance in #Run03.
+```bash
+#results tag
+rTag=SUB_2R100_0D20
+# link previously results
+mkdir $SAM0/TT1M/mash
+ln -s ../SUB_2R100_0D10.mash/bMin2.raw.dist $SAM0/TT1M/mash/
+# main
+snakemake -s test.smk --config p_dist_max=0.2 p_cluster_maxR=100  -j -np $SAM0/TT1M/mash/bMin2.bc.tree.target.cluster.main
+# post
+mv $SAM0/TT1M/{mash,$rTag.mash}
+```

@@ -29,20 +29,31 @@ perl -e 'while(<>){@a=split;next if $a[4]<60 || $a[1] > 1024;@b=split("/",$a[0])
 perl -e '$once=1;while(<>){@a=split;if($a[0]=~/0000/){$b+=($a[2]-$a[1]+1)/4;next}elsif($once){print "0000_0000_0000\t$b\n";$once--};$b=($a[2]-$a[1]+1)/4;print "$a[0]\t$b\n"}' < $SAM0/clean/fastp.sort.1.fq.idx > $SAM0/beadsAnno/beads.num.count
 
 perl -e '@names=("Saccharomyces_cerevisiae","Pleurotus_eryngii","Lentinula_edodes","Hypsizygus_marmoreus","Flammulina_velutipes"); open I,"<'$SAM0'/beadsAnno/beads.num.count"; while(<I>){@a=split;$HS{$a[0]}=$a[1]}; printf("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", "Bead","mainTax","mainPct","uniqPct","uniq","reads",@names);while(<>){next if $_ =~ /^Bead/; chomp; @a=split /\t/; $bb=shift @a; $sum=$a[1]+$a[2]+$a[3]+$a[4]+$a[0]; @b=sort {$a<=>$b} @a; if($b[-1] == $b[-2]){$maxTax="NA"}else{for($i=0;$i<5;$i++){$maxTax=$names[$i] if $a[$i]==$b[-1]}; printf("%s\t%s\t%.4f\t%.4f\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",$bb,$maxTax,$b[-1]/$sum,$sum/($HS{$bb}*2),$sum,$HS{$bb}*2,$a[0],$a[1],$a[2],$a[3],$a[4])}}' $SAM0/beadsAnno/bwa.uniq.anno.count > $SAM0/beadsAnno/bwa.uniq.anno.stat
+
+perl -e 'open I,"<'$SAM0'/beadsAnno/bwa.uniq.anno.stat"; <I>;<I>;
+while(<I>){@a=split; next if $a[4]==2;
+  $HS{$a[0]}{tax}=$a[1];$HS{$a[0]}{pct}=$a[2];
+};while(<>){@a=split; next if $a[0]==$a[1]; @b=sort ($HS{$a[0]}{tax},$HS{$a[1]}{tax});
+  $min=($HS{$a[0]}{pct}<$HS{$a[1]}{pct})?$HS{$a[0]}{pct}:$HS{$a[1]}{pct};
+  $HS2{$b[0]}{$b[1]}{sprintf("%.2f",$min)}{sprintf("%.2f",$a[2])} ++;
+};print "tax1\ttax2\tmainPct\tdistance\tcount\n";
+foreach $t1 (sort keys %HS2){foreach $t2 (sort keys %{$HS2{$t1}}){
+    foreach $pct (sort keys %{$HS2{$t1}{$t2}}){
+      foreach $dst (sort keys %{$HS2{$t1}{$t2}{$pct}}){
+        printf("%s\t%s\t%f\t%f\t%d\n",$t1,$t2,$pct,$dst,$HS2{$t1}{$t2}{$pct}{$dst})
+}}}}' < $SAM0/TT1M/mash/bMin2.raw.dist > $SAM0/TT1M/mash/bMin2.raw.dist.anno.stat
 ```
 
 # Loading the stat results
 ```{r}
 bwa.uniq.anno.stat <- read.table("APR842_00/beadsAnno/bwa.uniq.anno.stat",
                                  header=T,sep="\t")
-cluster.2r20.0d04 <- read.table("APR842_00/TT1M/SUB_2R20_0D04.mash/bMin2.bc.tree.target.cluster",
-                                col.names = c("cluster","Bead"))
 ```
 
 # First glance
 ```{r}
 bwa.uniq.curate <- filter(bwa.uniq.anno.stat[-1,],reads>2)
-ggplot(bwa.uniq.curate,aes(x=log10(reads),y=mainPct*100)) + 
+ggplot(bwa.uniq.curate,aes(x=log10(reads),y=mainPct*100)) +
   geom_point(alpha=.1) + annotation_logticks(sides = "b") +
   geom_vline(xintercept = log10(c(100)),linetype=2) +
   stat_density_2d(h=c(1,50)) + facet_wrap(~mainTax,ncol=3)
@@ -60,7 +71,7 @@ Besides, lower `mainPct` enriched in the area **when # reads(per bead) larger th
 `uniqPct` means the percentage of reads uniquely mapping to the reference, without alternative hit position. The multi-position hitting happens when the references of different species shared homologous sequence. In this case, only **uniquely hitted recorded** are included to assess the hybridize degree.  
 The distribution of `uniqPct` are shown below:
 ```{r}
-ggplot(bwa.uniq.curate,aes(x=log10(reads),y=uniqPct*100)) + 
+ggplot(bwa.uniq.curate,aes(x=log10(reads),y=uniqPct*100)) +
   geom_point(alpha=.1) + annotation_logticks(sides = "b") +
   stat_density_2d(h=c(1,50)) + facet_wrap(~mainTax,ncol=3)
 ```
@@ -69,7 +80,7 @@ From above figure I guess that *Le* and *Pe* may be homologous in many ITS seque
 
 **Exclue beads with 100% `mainPct`:**
 ```{r}
-ggplot(bwa.uniq.curate%>%filter(mainPct<1),aes(x=log10(reads),y=uniqPct*100)) + 
+ggplot(bwa.uniq.curate%>%filter(mainPct<1),aes(x=log10(reads),y=uniqPct*100)) +
   geom_point(alpha=.1) + annotation_logticks(sides = "b") +
   stat_density_2d(h=c(1,30),alpha=.5) + facet_wrap(~mainTax,ncol=3)
 ```
@@ -79,10 +90,25 @@ Anyway, it is impossible to know the `mainPct` or `uniqPct` previously in de nov
 
 # merge cluster community
 Since I've done the "beads cluster" process as I addressed in `clusterMethod.md`, it is possible to stat the performance of these communities.  
-Here I test the communities clustered by rpb(reads per bead) between 2 to 20 and mash distance from 0 to 0.02 (boundary not included):
+Here I test the communities clustered by rpb(reads per bead) between 2 to 100 and mash distance from 0 to 0.04 (boundary not included):
+
+**Select the tag to read:**
 ```{r}
-cluster.merge <- merge(cluster.2r20.0d04,bwa.uniq.curate,by="Bead")
-ggplot(cluster.merge,aes(y=mainPct,x=reads/2,color=mainTax,size=1/uniqPct)) + 
+tag="SUB_2R20_0D04"  # 1st test
+tag="SUB_2R100_0D10" # 2nd test
+cluster.select <- read.table(
+  paste0("APR842_00/TT1M/",tag,".mash/bMin2.bc.tree.target.cluster.main"),
+  col.names = c("cluster","Bead"))
+bMin2.raw.dist.stat <- read.table(
+  paste0("APR842_00/TT1M/",tag,".mash/bMin2.raw.dist.anno.stat"),sep="\t",header=T)
+
+bMin2.831.dist.stat <- read.table(
+  paste0("APR831_00/TT1M/","SUB_2R20_0D10",".mash/bMin2.raw.dist.anno.stat"),sep="\t",header=T)
+```
+
+```{r}
+cluster.merge <- merge(cluster.select,bwa.uniq.curate,by="Bead")
+ggplot(cluster.merge,aes(y=mainPct,x=reads/2,color=mainTax,size=1/uniqPct)) +
   geom_point(alpha=.1) + xlab("#reads/bead") +
   facet_wrap(~cluster,ncol=5)
 ```
@@ -92,7 +118,7 @@ Hybridization beads may included in the communities as you can see those colorfu
 **Show only hybridized beads:**
 ```{r}
 ggplot(cluster.merge%>%filter(mainPct<1),
-       aes(y=mainPct,x=reads,color=mainTax,size=1/uniqPct)) + 
+       aes(y=mainPct,x=reads,color=mainTax,size=1/uniqPct)) +
   geom_point(alpha=.3) +
   facet_wrap(~cluster,ncol=4)
 ```
@@ -114,19 +140,36 @@ shFun <- function(d){
                     m2ndTax=c.2ndTax,m2ndPct=c.2ndPct))
 }
 cluster.merge.stat <- ddply(cluster.merge,"cluster",shFun)
-ggplot(cluster.merge.stat,aes(x=beadNum,color=mainTax),alpha=.3) + 
+ggplot(cluster.merge.stat,aes(x=beadNum,color=mainTax),alpha=.3) +
   geom_point(aes(y=mainPct),shape=19) + geom_point(aes(y=main100Pct),shape=4) +
   theme_bw()
 ```
 ###### Each point indicates a cluster with the most abundant annotation colored. The cross indicate the percentage of beads with 100 `mainPct`.
 
-This figure pointed that when #beads per cluster were too small, it's almost impossible to get a good enough scaffolds with unique annotation. 3 or 4 cluster are seeem hybridized and all of them are mixed by *Fv* and *Le* (see below table). So my previous guess are totally worong :/  
+This figure pointed that when #beads per cluster were too small, it's almost impossible to get a good enough scaffolds with unique annotation. 3 or 4 cluster are seeemed hybridized and all of them are mixed by *Fv* and *Le* (see below table). So my previous guess are totally worong :/  
 It seems that the hybridization didn't occure randomly, but happened bewteen specific species?
 ```{r}
 cluster.merge.stat%>%filter(beadNum>100&mainPct<0.85)
 ```
 
+# Distance assessment
+```{r}
+dist.stat <- bMin2.raw.dist.stat%>%filter(tax1!=""&tax2!="")
+dist.stat.sum <- ddply(dist.stat,c("tax1","tax2","distance"),summarise,count=sum(count))
+dist.stat.sum$group <-ifelse(dist.stat.sum$tax1==dist.stat.sum$tax2,"same","diff")
+ggplot(dist.stat.sum,aes(x=distance,y=count,color=interaction(tax1,tax2),linetype=group)) + 
+  geom_line()
+```
+The mash distance between beads from the same species are distributed with their peak smaller than 0.1, while that from different species, the distance peak are larger than 0.1. Thus we can use 0.1 as the threshold to filter distance list in this dataset.
 
-
+**APR831**
+```{r}
+dist.831.stat <- bMin2.831.dist.stat%>%filter(tax1!=""&tax2!="")
+dist.831.stat.sum <- ddply(dist.831.stat,c("tax1","tax2","distance"),summarise,count=sum(count))
+dist.831.stat.sum$group <-ifelse(dist.831.stat.sum$tax1==dist.831.stat.sum$tax2,"same","diff")
+ggplot(dist.831.stat.sum,aes(x=distance,y=count,color=interaction(tax1,tax2),linetype=group)) + 
+  geom_line()
+```
+In this dataset, the peak of distance within the same species are less than 0.05, while others still larger than (or close to) 0.1, which indicated the better performance when using the distance range (0,0.04) for cluster.
 
 ###### #TO BE CONTINUED
