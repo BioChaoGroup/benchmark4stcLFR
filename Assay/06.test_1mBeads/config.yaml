@@ -42,8 +42,9 @@ p_cluster_ranP: 0
 p_dist_min: 0
 p_dist_max: 0.04
 
-#reads per cluster threashold
+#reads/beads per cluster threashold
 p_rpc_min: 0
+p_bpc_min: 0
 
 ######################
 

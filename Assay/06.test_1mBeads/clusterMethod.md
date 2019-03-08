@@ -100,6 +100,7 @@ rTag=SUB_2R100_0D10
 # link previously results
 # main
 snakemake -s test.smk --config p_dist_max=0.1 p_cluster_maxR=100  -j -np $SAM0/TT1M/mash/bMin2.bc.tree.target.cluster.main
+snakemake -s test.smk --config p_dist_max=0.1 p_cluster_maxR=100  -j -np $SAM0/TT1M/batch.assemble.BC.sh
 # post
 mv $SAM0/TT1M/{mash,$rTag.mash}
 ```
@@ -117,3 +118,4 @@ snakemake -s test.smk --config p_dist_max=0.2 p_cluster_maxR=100  -j -np $SAM0/T
 # post
 mv $SAM0/TT1M/{mash,$rTag.mash}
 ```
+distance above 0.1 will increase hybridized clusters. Not recommand.

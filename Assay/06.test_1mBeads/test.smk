@@ -95,9 +95,11 @@ rule TT1M_7_main:
     output:
         count   = "{sample}/TT1M/mash/bMin2.bc.tree.target.cluster.count.main",
         cluster = "{sample}/TT1M/mash/bMin2.bc.tree.target.cluster.main"
-    params: config["p_rpc_min"]
+    params: 
+		rpc = config["p_rpc_min"],
+		bpc = config["p_bpc_min"]
     shell:
-        "awk '($3>={params}){{print}}' {input.count} | sort -k1,1n > {output.count}\n"
+        "awk '($2>={params.bpc}&$3>={params.rpc}){{print}}' {input.count} | sort -k1,1n > {output.count}\n"
         "perl -e 'open IN,\"sort -k1,1n {output.count}|\";"
         "while(<IN>){{@a=split(/\\t/,$_);push @ids, $a[0]}}; $tag= shift @ids;"
         "while(<>){{@a=split /\\t/, $_; if($a[0] < $tag){{next}}elsif($a[0] == $tag){{"
