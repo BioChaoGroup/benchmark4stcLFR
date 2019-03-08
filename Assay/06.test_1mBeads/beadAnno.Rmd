@@ -20,7 +20,7 @@ library(RColorBrewer)
 # Prepare
 1. Align the barcode identified fastq to reference via `bwa`.  
 2. stat unique mapped annotation.
-```{bash}
+```{bash eval=FALSE}
 SAM0=APR842_00
 mkdir -p $SAM0/beadsAnno
 bwa mem -t 48 -o $SAM0/beadsAnno/bwa.sam REF/fungal5REF.fa $SAM0/clean/fastp.sort.{1,2}.fq
