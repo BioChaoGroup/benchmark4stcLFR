@@ -95,9 +95,9 @@ rule TT1M_7_main:
     output:
         count   = "{sample}/TT1M/mash/bMin2.bc.tree.target.cluster.count.main",
         cluster = "{sample}/TT1M/mash/bMin2.bc.tree.target.cluster.main"
-    params: 
-		rpc = config["p_rpc_min"],
-		bpc = config["p_bpc_min"]
+    params:
+        rpc = config["p_rpc_min"],
+        bpc = config["p_bpc_min"]
     shell:
         "awk '($2>={params.bpc}&$3>={params.rpc}){{print}}' {input.count} | sort -k1,1n > {output.count}\n"
         "perl -e 'open IN,\"sort -k1,1n {output.count}|\";"
