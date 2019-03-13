@@ -103,6 +103,7 @@ snakemake -s test.smk --config p_dist_max=0.1 p_cluster_maxR=100  -j -np $SAM0/T
 snakemake -s test.smk --config p_dist_max=0.1 p_cluster_maxR=100  -j -np $SAM0/TT1M/batch.assemble.BC.sh
 # post
 mv $SAM0/TT1M/{mash,$rTag.mash}
+mv $SAM0/TT1M/{Assemble_mashBC,$rTag.Assemble_mashBC}
 ```
 
 ### Run 03.1
@@ -119,3 +120,20 @@ snakemake -s test.smk --config p_dist_max=0.2 p_cluster_maxR=100  -j -np $SAM0/T
 mv $SAM0/TT1M/{mash,$rTag.mash}
 ```
 distance above 0.1 will increase hybridized clusters. Not recommand.
+
+### Run 03.2
+Re-filter the distance range `(0,0.05)` from distance in #Run03.
+```bash
+#results tag
+rTag=SUB_2R100_0D05
+# link previously results
+mkdir $SAM0/TT1M/mash
+ln -s ../SUB_2R100_0D10.mash/bMin2.raw.dist $SAM0/TT1M/mash/
+# main
+snakemake -s test.smk --config p_dist_max=0.05 p_cluster_maxR=100 p_bpc_min=100  -j -np $SAM0/TT1M/batch.assemble.BC.sh
+snakemake -s test.smk -j -np $SAM0/TT1M/batch.circos.BC.sh
+# post
+mv $SAM0/TT1M/{mash,$rTag.mash}
+mv $SAM0/TT1M/{Assemble_mashBC,$rTag.Assemble_mashBC}
+
+```

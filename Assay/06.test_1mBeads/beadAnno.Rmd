@@ -9,6 +9,7 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
 library(plyr)
+library(reshape2)
 library(ggplot2)
 library(RColorBrewer)
 ```
@@ -51,6 +52,40 @@ bwa.uniq.anno.stat <- read.table("APR842_00/beadsAnno/bwa.uniq.anno.stat",
 ```
 
 # First glance
+```{r}
+colSums(bwa.uniq.anno.stat[,5:11])
+```
+From all testing 8 million reads, 4.7m can uniquely hit a specific species, and the proportion of each species shows below:
+```{r}
+colSums(bwa.uniq.anno.stat[,7:11])/sum(colSums(bwa.uniq.anno.stat[,7:11]))
+```
+
+```{r}
+sum.uniq.anno <- ddply(bwa.uniq.anno.stat,c("reads"),summarise,
+                       uniq=sum(uniq),sumReads=sum(reads)/2,
+                       Sc=sum(Saccharomyces_cerevisiae)/sum(uniq),
+                       Pe=sum(Pleurotus_eryngii)/sum(uniq),
+                       Le=sum(Lentinula_edodes)/sum(uniq),
+                       Hm=sum(Hypsizygus_marmoreus)/sum(uniq),
+                       Fv=sum(Flammulina_velutipes)/sum(uniq))
+sum.uniq.anno$reads[nrow(sum.uniq.anno)] <- 0.2
+sum.uniq.anno$reads <- sum.uniq.anno$reads/2
+sum.uniq.anno$beads <- sum.uniq.anno$sumReads/sum.uniq.anno$reads
+sum.uniq.anno2 <- melt(sum.uniq.anno,id.vars = c("uniq","reads","sumReads","beads"),
+                       variable.name = "taxonomy", value.name = "ratio")
+sum.uniq.anno2$sRp <- sum.uniq.anno2$sumReads/sum.uniq.anno2$sumReads[nrow(sum.uniq.anno)]
+sum.uniq.anno2$sBp <- sum.uniq.anno2$beads/sum.uniq.anno2$beads[1]
+ggplot(sum.uniq.anno2,aes(x=reads,y=ratio,color=taxonomy),alpha=.1) + 
+  geom_point(size=1,alpha=.5) + geom_line(linetype=1,alpha=.3) + 
+  geom_line(aes(y=sBp),color="grey50",linetype=2) +
+  xlab("reads per bead") + annotation_logticks(sides = "b") + 
+  scale_x_log10(limits=c(0.1,1000)) + scale_y_continuous(breaks=seq(0,1,.2),limits=c(0,1))
+```
+Above figure shows the taxonomy abundance distribution over the layers of reads per bead(rpb).
+Abundance is calculated by the reads proportion of unique hitted a specific taxonomy among each rbp layer. X-axis 0 is the reads failed detecting barcode.  
+Dash line indicates the reads number in each layer.
+When rbp larger than ~300, the distribution becomd unstable, might due to the lower beads number.
+
 ```{r}
 bwa.uniq.curate <- filter(bwa.uniq.anno.stat[-1,],reads>2)
 ggplot(bwa.uniq.curate,aes(x=log10(reads),y=mainPct*100)) +
@@ -109,11 +144,24 @@ bMin2.831.dist.stat <- read.table(
 ```{r}
 cluster.merge <- merge(cluster.select,bwa.uniq.curate,by="Bead")
 ggplot(cluster.merge,aes(y=mainPct,x=reads/2,color=mainTax,size=1/uniqPct)) +
-  geom_point(alpha=.1) + xlab("#reads/bead") +
+  geom_point(alpha=.1) + xlab("#reads/bead") + 
   facet_wrap(~cluster,ncol=5)
 ```
 Most of the abundant communities are belonging to a single specific species, which is good.    
 Hybridization beads may included in the communities as you can see those colorful points distributed in the central area.
+```{r}
+ggplot(cluster.merge%>%filter(mainPct>0.75),
+       aes(x=reads/2,fill=mainTax)) + 
+  geom_bar(position="fill") + xlab("#reads/bead") + ylab("percentage") +
+  facet_wrap(~cluster,ncol=5) + theme(legend.position = c(0.8, 0.15))
+cluster.sum <- ddply(cluster.merge%>%filter(mainPct>0.975),"cluster",summarise,reads=sum(reads)/2)
+cluster.sum$pct <- cluster.sum$reads/sum(cluster.sum$reads)
+ggplot(cluster.merge%>%filter(mainPct>0.975),aes(x=factor(cluster))) + 
+  geom_bar(aes(fill=mainTax),position="fill") +
+  geom_text(data=cluster.sum,aes(y=0.5,label=reads),angle=90) +
+  xlab("#reads/bead") + ylab("percentage")
+```
+Cluster (community) 5, 6, 7 and 39 can be the represented cluster for each species. 
 
 **Show only hybridized beads:**
 ```{r}
