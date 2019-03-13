@@ -46,6 +46,10 @@ p_dist_max: 0.04
 p_rpc_min: 0
 p_bpc_min: 0
 
+#Circos
+p_cc_zoom: 1
+p_cc_cut:  97
+
 ######################
 
 ### Thread control

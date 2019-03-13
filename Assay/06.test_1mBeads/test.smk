@@ -95,11 +95,11 @@ rule TT1M_7_main:
     output:
         count   = "{sample}/TT1M/mash/bMin2.bc.tree.target.cluster.count.main",
         cluster = "{sample}/TT1M/mash/bMin2.bc.tree.target.cluster.main"
-    params: 
-		rpc = config["p_rpc_min"],
-		bpc = config["p_bpc_min"]
+    params:
+        rpc = config["p_rpc_min"],
+        bpc = config["p_bpc_min"]
     shell:
-        "awk '($2>={params.bpc}&$3>={params.rpc}){{print}}' {input.count} | sort -k1,1n > {output.count}\n"
+        "awk '($2>={params.bpc}&&$3>={params.rpc}){{print}}' {input.count} | sort -k1,1n > {output.count}\n"
         "perl -e 'open IN,\"sort -k1,1n {output.count}|\";"
         "while(<IN>){{@a=split(/\\t/,$_);push @ids, $a[0]}}; $tag= shift @ids;"
         "while(<>){{@a=split /\\t/, $_; if($a[0] < $tag){{next}}elsif($a[0] == $tag){{"
@@ -134,3 +134,24 @@ rule TT1M_9_initASMsh:
         "for i in `sort -k2,2nr {input.bc} | cut -f1`; do "
         "echo metabbq bcPost.template.sh {params.sType} {params.samDir} mashBC $i BC;"
         "done > {params.samDir}/batch.assemble.BC.sh\n"
+
+rule TT1M_10_circos:
+    input:
+        log = "{sample}/TT1M/Assemble_mashBC.log",
+        bc = "{sample}/TT1M/mash/bMin2.bc.tree.target.cluster.count.main",
+    output: "{sample}/TT1M/batch.circos.BC.sh"
+    params:
+        refDB  = config["REF_GEN"],
+        refID  = config["REF_ID"],
+        zoom   = config["p_cc_zoom"],
+        cut    = config["p_cc_cut"],
+        outDir = "{sample}/TT1M/Assemble_mashBC",
+    shell:
+        """
+        for i in `ls {params.outDir}`; do
+          echo metabbq reAlign.sh 8 {params.outDir}/$i/sort.{{1,2}}.fq \
+          {params.outDir}/$i/scaffolds.fasta {params.refDB} {params.outDir}/$i/reAlign
+          echo metabbq circos.sh {params.zoom} {params.cut} {params.outDir}/$i/reAlign \
+          {params.refID} {params.outDir}/$i/circos;
+        done > {output}
+        """
