@@ -97,13 +97,17 @@ Optional params: none.
 ```bash
 #results tag
 rTag=SUB_2R100_0D10
-# link previously results
+# link back if needed
+ln -s $rTag.Assemble_mashBC $SAM0/TT1M/Assemble_mashBC
 # main
 snakemake -s test.smk --config p_dist_max=0.1 p_cluster_maxR=100  -j -np $SAM0/TT1M/mash/bMin2.bc.tree.target.cluster.main
 snakemake -s test.smk --config p_dist_max=0.1 p_cluster_maxR=100  -j -np $SAM0/TT1M/batch.assemble.BC.sh
+snakemake -s test.smk -j -np $SAM0/TT1M/batch.circos.BC.sh
 # post
 mv $SAM0/TT1M/{mash,$rTag.mash}
 mv $SAM0/TT1M/{Assemble_mashBC,$rTag.Assemble_mashBC}
+mv $SAM0/TT1M/{circos,$rTag.circos}
+
 ```
 
 ### Run 03.1
