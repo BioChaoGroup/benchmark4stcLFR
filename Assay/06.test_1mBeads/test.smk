@@ -145,12 +145,13 @@ rule TT1M_10_circos:
         refID  = config["REF_ID"],
         zoom   = config["p_cc_zoom"],
         cut    = config["p_cc_cut"],
-        outDir = "{sample}/TT1M/Assemble_mashBC",
+        inDir  = "{sample}/TT1M/Assemble_mashBC",
+        outDir = "{sample}/TT1M/circos"
     shell:
         """
-        for i in `ls {params.outDir}`; do
-          echo metabbq reAlign.sh 8 {params.outDir}/$i/sort.{{1,2}}.fq \
-          {params.outDir}/$i/scaffolds.fasta {params.refDB} {params.outDir}/$i/reAlign
+        for i in `ls {params.inDir}`; do
+          echo metabbq reAlign.sh 8 {params.inDir}/$i/sort.{{1,2}}.fq \
+          {params.inDir}/$i/scaffolds.fasta {params.refDB} {params.outDir}/$i/reAlign
           echo metabbq circos.sh {params.zoom} {params.cut} {params.outDir}/$i/reAlign \
           {params.refID} {params.outDir}/$i/circos;
         done > {output}
