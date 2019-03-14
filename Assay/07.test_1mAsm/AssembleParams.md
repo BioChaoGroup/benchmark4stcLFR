@@ -44,7 +44,7 @@ snakemake -s test.smk -j -np $SAM0/AS1M/batch.assemble.BC.sh
 #post
 mv APR842_00/AS1M/{Assemble_mashBC,run2.Assemble_mashBC}
 #summary
-mode="idbaud";for i in `ls APR842_00/AS1M/run2.Assemble_mashBC/`;do echo $i;awk '$4>999{print}' APR842_00/AS1M/run2.Assemble_mashBC/$i/$mode/scaffolds.$mode.BLAST.tax.blast6.anno.best;done |column -t|les
+mode="idba";for i in `ls APR842_00/AS1M/run2.Assemble_mashBC/`;do echo $i;awk '$4>999{print}' APR842_00/AS1M/run2.Assemble_mashBC/$i/$mode/scaffolds.$mode.BLAST.tax.blast6.anno.best;done |column -t|les
 ```
 
 ######tmp
