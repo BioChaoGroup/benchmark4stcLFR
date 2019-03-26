@@ -18,13 +18,9 @@
 
 ### Requirment
 
-**Environment**: `python 3.6` `perl 5.5` 
+**Environment**: `python 3.6` `perl 5.5`
 
-**Developing projects**：[metaSeq](https://github.com/ZeweiSong/metaSeq) ([biogit](https://biogit.cn/Fangchao/metaSeq))、[cOMG](https://biogit.cn/Fangchao/Omics_pipeline)、[fastp](https://github.com/OpenGene/fastp) ([biogit](https://biogit.cn/PUB/fastp))
-
-**Third party program:**
-
-- **Snakemake** - a pythonic workflow system ([bitbucket](https://bitbucket.org/snakemake/snakemake))
+**Developing tools**：:octocat: [metaSeq](https://github.com/ZeweiSong/metaSeq) ([biogit](https://biogit.cn/Fangchao/metaSeq))
 
 ### Init this repo
 
@@ -59,7 +55,7 @@ Data is organized as the date sequenced (e.g. test20180301)
   > Flammulina velutipes - Fv (Jin Zhen Gu)
   > Hypsizygus marmoreus - Hm (Xie Wei Gu, this fungus has very low PCR efficiency)
 
-**Note**: 
+**Note**:
 
 1. Even mixture is the equal mix of **PCR product** of the five fungi (but **Hm has very low signals** in the data)
 2. Stagger mixture is mixed with **1000Sc : 100Pe : 10Fv : 1Le**
@@ -91,4 +87,3 @@ q5/     # Copy number of PCR product and umi is 1:5
 #### Technical Note
 
 [REAMDME.md](./Assay/README.md)
-

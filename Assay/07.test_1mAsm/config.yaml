@@ -36,6 +36,7 @@ method:
     mode: "idba"
 
 ### params
+dtag: "" #debug tag
 p_cluster_minR: 2
 p_cluster_maxR: 20
 p_cluster_topB: 0
