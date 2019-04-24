@@ -44,10 +44,54 @@ snakemake -s test.smk -j -np $SAM0/AS1M/batch.assemble.BC.sh
 #post
 mv APR842_00/AS1M/{Assemble_mashBC,run2.Assemble_mashBC}
 #summary
-mode="idbaud";for i in `ls APR842_00/AS1M/run2.Assemble_mashBC/`;do echo $i;awk '$4>999{print}' APR842_00/AS1M/run2.Assemble_mashBC/$i/$mode/scaffolds.$mode.BLAST.tax.blast6.anno.best;done |column -t|les
+mode="idba";for i in `ls APR842_00/AS1M/run2.Assemble_mashBC/`;do echo $i;awk '$4>999{print}' APR842_00/AS1M/run2.Assemble_mashBC/$i/$mode/scaffolds.$mode.BLAST.tax.blast6.anno.best;done |column -t|les
 ```
 
 ######tmp
 ```bash
 spades-gbuilder input_dataset.yaml testGB/graph -k 77 -t 24  -gfa
 ```
+
+# ~~Run3~~
+> too many hybrid clusters by this params
+
+use `ASM_2R50_0D05` to test
+
+```bash
+tag="ASM_2R50_0D10"
+mkdir $SAM0/$tag
+ln -s ../clean $SAM0/$tag/clean
+snakemake -s test.smk -j -np $SAM0/$tag/mash/bMin2.raw.dist.anno.stat #once
+snakemake -s test.smk --forceall -j -np $SAM0/$tag/batch.assemble.BC.sh
+#post
+mv APR842_00/AS1M/{Assemble_mashBC,run3.Assemble_mashBC}
+#summary
+mode="megahit";for i in `ls APR842_00/AS1M/Assemble_mashBC/`;do echo $i;awk '$4>999{print}' APR842_00/AS1M/Assemble_mashBC/$i/$mode/scaffolds.$mode.BLAST.tax.blast6.anno.best;done |column -t|les
+mode="megahit";for i in `ls APR842_00/AS1M/run3.Assemble_mashBC/`;do quast.py -i APR842_00/AS1M/run3.Assemble_mashBC/$i/$mode/scaffolds.fa -o APR842_00/AS1M/run3.Assemble_mashBC/$i/$mode/quast;done
+```
+
+# Run 4
+tag `SUB_2R100_0D10` to test
+```bash
+#init
+tag="SUB_2R100_0D10"
+mkdir -p $SAM0/$tag
+ln -s ../TT1M/SUB_2R100_0D10.mash $SAM0/$tag/mash
+#main
+snakemake -s test.smk --forceall -j -np $SAM0/$tag/batch.assemble.BC.sh
+#post
+for i in `ls $SAM0/$tag/Assemble_mashBC`;do
+  awk -v bc=$i '/^>/{print bc"\t"$0}' $SAM0/$tag/Assemble_mashBC/$i/megahit/final.contigs.fa | sed 's/>//;s/ flag=/\t/;s/ multi=/\t/;s/ len=/\t/'
+done > $SAM0/$tag/summary.megahit.contig.tsv
+```
+
+
+
+
+
+
+
+
+
+
+#Fin.

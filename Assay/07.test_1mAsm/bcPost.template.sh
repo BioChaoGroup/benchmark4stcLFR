@@ -1,14 +1,19 @@
 # (c) 2016 - 2019 Chao IN-HORSE SHARE ONLY
 # ===================================================================
 # Purpose:           assemble and annotate clustered beads
-# Parameters:        1
+# Parameters:        8
 #                    ---------------------------
-#                    sample name (the directory name)
-#                    cluster number
-#                    continue from break point if defined
+#                    mode [F|B]
+#                    sample directory
+#                    cluster level
+#                    cluster ID
+#                    tag
+#                    reference 1
+#                    reference 2
+#                    force run
 #                    ---------------------------
 # Author:            fangchao@genomics.cn
-# Version:           V0.1
+# Version:           V0.2
 # Last modified:     04 Jan 2019 (since 04 Jan 2019)
 # ===================================================================
 #
@@ -91,8 +96,10 @@ else
   elif [ $mode == "idba" ]; then
     fq2fa --merge --filter $samDir/$ASB/$subDir/sort.1.fq \
     $samDir/$ASB/$subDir/sort.2.fq $samDir/$ASB/$subDir/sort.pair.fa
-    idba_ud -o $samDir/$ASB/$subDir/idbaud -r $samDir/$ASB/$subDir/sort.pair.fa \
-    --mink 11 --step 22 --maxk 121 --min_contig 999 --num_threads 16
+    cmd="idba_ud -o $samDir/$ASB/$subDir/idba -r $samDir/$ASB/$subDir/sort.pair.fa \
+    --mink 11 --step 22 --maxk 121 --min_contig 999 --num_threads 16"
+	echo $cmd;
+	$cmd
   elif [ $mode == "megahit" ]; then
     echo "[BC] megahit selected."
     megahit --k-min 21 --k-step 22 --k-max 121  \
