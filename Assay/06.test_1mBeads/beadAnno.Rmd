@@ -13,6 +13,7 @@ library(plyr)
 library(reshape2)
 library(ggplot2)
 library(RColorBrewer)
+do.write<-F
 ```
 # Questions to answer
 1. What taxonomy are these beads belonging?
@@ -333,6 +334,64 @@ ggplot(dist.stat.sum,aes(x=distance,y=count,color=interaction(tax1,tax2),linetyp
   geom_line() + geom_vline(xintercept = 0.1,linetype=2)
 ```
 The mash distance between beads from the same species are distributed with their peak smaller than 0.1, while that from different species, the distance peak are larger than 0.1. Thus we can use 0.1 as the threshold to filter distance list in this dataset.
+
+**sum them together**
+```{r}
+dist.stat.sum2 <- ddply(dist.stat.sum,c("distance","group"),summarise,count=sum(count))
+ggplot(dist.stat.sum2,aes(x=distance,y=count,linetype=group),color="grey50",alpha=.3) +
+  geom_line() + geom_point(size=.5) + geom_vline(xintercept = 0.1,linetype=2)
+```
+**ITS region detection**
+```{r}
+its.anno.sum <- read.table("../../Results/APR842_00/beadsAnno/its.anno.sum",
+    col.names=c("BB","reads","mainTax","count","SSU","ITS1","S58","ITS2","LSU"))
+
+its.anno.melt <- melt(its.anno.sum,c("BB","reads","mainTax","count"),
+                      variable.name = "region",value.name = "Rcount")
+its.anno.melt$rate <- its.anno.melt$Rcount/its.anno.melt$reads
+ggplot(its.anno.melt,aes(x=rate,color=region)) + geom_density() + 
+  scale_y_log10()
+```
+```{r}
+bMin2.raw.dist.its.stat <- read.table(
+  "../../Results/APR842_00/TT1M/mash/bMin2.raw.dist.stat",header = T,row.names = NULL)
+bMin2.raw.dist.its.stat$n5.8s <- 
+  (bMin2.raw.dist.its.stat$mainR1==9) + (bMin2.raw.dist.its.stat$mainR2==9)
+bMin2.raw.dist.its.stat$taxGrp <- 
+  ifelse(bMin2.raw.dist.its.stat$tax1==bMin2.raw.dist.its.stat$tax2,"same","diff")
+bMin2.raw.dist.its.stat.sum1 <- ddply(bMin2.raw.dist.its.stat%>%filter(tax1!="*"&tax2!="*"),
+                                     c("tax1","tax2","n5.8s","distance"),summarise,
+                                     count=sum(count))
+p1 <- ggplot(bMin2.raw.dist.its.stat.sum1,
+       aes(x=distance,y=count,color=factor(n5.8s))) +
+  geom_line(alpha=.3) + geom_point(size=.5,alpha=.5) + 
+  geom_vline(xintercept = 0.1,linetype=2) + #scale_y_log10() +
+  facet_wrap(~tax1+tax2,ncol=5,scales="free")
+p1
+
+bMin2.raw.dist.its.stat.sum2 <- ddply(bMin2.raw.dist.its.stat%>%filter(tax1!="*"&tax2!="*"),
+                                     c("taxGrp","mainR1","mainR2","distance"),summarise,
+                                     count=sum(count))
+p2 <- ggplot(bMin2.raw.dist.its.stat.sum2,
+       aes(x=distance,y=count,color=taxGrp)) +
+  geom_line(alpha=.3) + geom_point(size=.5,alpha=.5) + 
+  geom_vline(xintercept = 0.1,linetype=2) + #scale_y_log10() +
+  facet_wrap(~mainR1+mainR2,ncol=5,scales = "free")
+p2
+```
+
+```{r}
+dist.sum.SSU <- 
+  ddply(bMin2.raw.dist.its.stat%>%filter(tax1!="*"&mainR1==mainR2&mainR1==7),
+        c("tax1","tax2","mainR1","distance"),summarise, count=sum(count))
+p3 <- ggplot(bMin2.raw.dist.its.stat.sum3,
+       aes(x=distance,y=count,color=tax1)) +
+  geom_line(alpha=.3) + geom_point(size=.5,alpha=.5) + 
+  geom_vline(xintercept = 0.1,linetype=2) + #scale_y_log10() +
+  facet_grid(mainR1~tax1,scales = "free")
+p3
+```
+
 
 **APR831**
 ```{r fig.width=5, fig.height=3}
