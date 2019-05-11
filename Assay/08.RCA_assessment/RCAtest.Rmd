@@ -1,0 +1,400 @@
+---
+title: "RCA test"
+author: "Chao"
+date: "4/24/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reshape2)
+library(ggplot2)
+library(plyr)
+library(dplyr)
+library(RColorBrewer)
+```
+
+# init
+
+prepare `RCA1.rawseq.lst` and link output dir.
+```{bash,eval=FALSE}
+#DB
+bwa index $Repo/Source/REF/fungal7REF.full.fa -p $Repo/Source/REF/fungal7REF.full.bwa
+makeblastdb -in  $Repo/Source/REF/fungal7REF.full.fa -input_type fasta -dbtype nucl -title Os_protein -parse_seqids -out $Repo/Source/REF/fungal7REF.full.fa
+#ITSx
+mkdir $Repo/Source/REF/fungal7REF.full_ITSx
+ITSx -i $Repo/Source/REF/fungal7REF.full.fa -o $Repo/Source/REF/fungal7REF.full_ITSx/fungal7REF.full -t F --cpu 60
+#mkln ../../Results/RCAs/RCA194
+metabbq init -i RCA1.rawseq.lst -o ./ -c ../07.test_1mAsm/config.yaml -V
+#modified config.yaml
+metabbq smk -j -np RCA194FM/batch.assemble.BC.sh
+metabbq smk -j -np RCA194ALS/batch.assemble.BC.sh
+#
+metabbq smk -j -np RCA194FM_00/summary.megahit.contig.tsv
+
+```
+
+
+```{r load}
+RESDIR <- "../../Results/"
+BC4.bb.stat <- read.table("../../Results/APR842_00_00/clean/BB.stat",
+                          col.names = c("count","num","cumsum"))
+RCA0.bb.stat <- read.table("../../Results/RCA14_00/clean/BB.stat",
+                           col.names = c("count","num","cumsum"))
+FM.bb.stat <- read.table("../../Results/RCAs/RCA194FM/clean/BB.stat",
+                         col.names = c("count","num","cumsum"))
+ALS.bb.stat <- read.table("../../Results/RCAs/RCA194ALS/clean/BB.stat",
+                         col.names = c("count","num","cumsum"))
+```
+
+#QC performance
+
+```{r pressure, echo=FALSE}
+bb.stat <- rbind(
+  cbind(group="BC4",BC4.bb.stat),
+  cbind(group="RCA0",RCA0.bb.stat),
+  cbind(group="RCA1FM",FM.bb.stat),
+  cbind(group="RCA1ALS",ALS.bb.stat)
+)
+bb.stat <- ddply(bb.stat,c("group"),transform,pCount=count/sum(count))
+ggplot(bb.stat,aes(x=num,y=pCount,color=group)) + geom_line(alpha=.5) + geom_point(alpha=.3,size=.5) +
+  scale_y_log10() + scale_x_log10() + xlab("#Reads/Bead") + ylab("proportion") + annotation_logticks()
+```
+
+```{r}
+FM.bb.stat$sum <- sum(FM.bb.stat$count) + 926201436/4
+ALS.bb.stat$sum <- sum(ALS.bb.stat$count) + 943768156/4
+RCA1.bb.stat <- rbind(
+  cbind(group="RCA1FM",FM.bb.stat),
+  cbind(group="RCA1ALS",ALS.bb.stat)
+)
+RCA1.bb.stat$pCount <- RCA1.bb.stat$count/RCA1.bb.stat$sum
+
+ggplot(RCA1.bb.stat,aes(x=num,y=pCount,color=group)) + geom_line(alpha=.5) + geom_point(alpha=.3,size=.5) +
+  scale_y_log10() + scale_x_log10() + xlab("#Reads/Bead") + ylab("proportion")
+ggplot(RCA1.bb.stat,aes(x=num,y=count,color=group)) + geom_line(alpha=.5) + geom_point(alpha=.3,size=.5) +
+  scale_y_log10() + scale_x_log10() + annotation_logticks()
+ggplot(FM.bb.stat,aes(x=num,y=cumsum)) + geom_line(alpha=.5) + geom_point(alpha=.3,size=.5) +
+  scale_y_log10() + scale_x_log10() + annotation_logticks()
+```
+
+```{r}
+test.dat <- RCA1.bb.stat%>%filter(num>=10&num<=100)
+ddply(test.dat,"group",summarise,count=sum(count))
+ggplot(RCA1.bb.stat%>%filter(num>=2&num<=20),aes(x=num,y=count,color=group)) + 
+  geom_line(alpha=.5) + geom_point(alpha=.3,size=.5) + annotation_logticks(side="left") + 
+  scale_y_log10() + scale_x_reverse() + xlab("#Reads/Bead") + ylab("proportion")
+
+```
+
+
+#Downsize 
+
+```{bash, eval=FALSE}
+metabbq randomlyPick.pl -t 8 -n 100 -m 3 -s 194 -i RCA194FM/clean/fastp.sort.1.fq -o RCA194FM/clean/ds.fastp.sort.1 &
+metabbq randomlyPick.pl -t 8 -n 100 -m 3 -s 194 -i RCA194FM/clean/fastp.sort.2.fq -o RCA194FM/clean/ds.fastp.sort.2 &
+mkln ../../Results/RCAs/RCA194FM_00
+mkdir RCA194FM_00/clean
+ln -s ../../RCA194FM/clean/ds.fastp.sort.1_00.fq RCA194FM_00/clean/fastp.sort.1.fq
+ln -s ../../RCA194FM/clean/ds.fastp.sort.2_00.fq RCA194FM_00/clean/fastp.sort.2.fq
+metabbq beadsWrite3.pl -x --r1  RCA194FM_00/clean/fastp.sort.1.fq
+awk '$1!~/0000/{print ($3-$2+1)/4}' RCA194FM_00/clean/fastp.sort.1.fq.idx|sort|uniq -c|sort -k2,2nr|awk '{b=b+$1;print $0"\t"b}' > RCA194FM_00/clean/BB.stat
+
+metabbq smk --config p_cluster_ranP=0 -j -np RCA194FM_00/batch.assemble.BC.sh
+```
+
+## bead dist stat
+First to stat the raw dist file:
+```{bash,eval=FALSE}
+perl -e 'while(<>){@a=split/\t/;$b=sprintf("%.4f",$a[2]);$HS{$b}++}foreach my $d (sort {$a<=>$b} keys %HS){print "$d\t$HS{$d}\n"}' RCA194FM_00/mash/bMin2.raw.dist 
+> RCA194FM_00/mash/bMin2.raw.dist.stat
+```
+
+
+```{r load}
+FM00.dir <- "../../Results/RCAs/RCA194FM_00/" 
+#
+dist.stat <- read.table(paste0(FM00.dir,"mash/bMin2.raw.dist.stat"),
+                        col.names = c("dist","count"))
+bMin2.raw.dist.stat <- read.table(
+  paste0(FM00.dir,"/mash/bMin2.raw.dist.anno.stat"),sep="\t",header=T)
+
+```
+
+```{r}
+ggplot(dist.stat,aes(x=dist,y=count)) + geom_line(alpha=.3) + 
+  geom_point(size=.5) + scale_y_log10() + scale_x_continuous(breaks=seq(0,0.2,0.02))
+```
+```{r}
+dist.stat <- bMin2.raw.dist.stat%>%filter(tax1!=""&tax2!="")
+dist.stat.sum <- ddply(dist.stat,c("tax1","tax2","distance"),summarise,count=sum(count))
+dist.stat.sum$group <-ifelse(dist.stat.sum$tax1==dist.stat.sum$tax2,"same","diff")
+ggplot(dist.stat.sum,aes(x=distance,y=count,color=interaction(tax1,tax2),linetype=group)) +
+  geom_line() + geom_vline(xintercept = 0.1,linetype=2)
+
+```
+**sum them together**
+```{r}
+dist.stat.sum2 <- ddply(dist.stat.sum,c("distance","group"),summarise,count=sum(count))
+ggplot(dist.stat.sum2,aes(x=distance,y=count,linetype=group),color="grey50",alpha=.3) +
+  geom_line() + geom_point(size=.5) + geom_vline(xintercept = 0.1,linetype=2)
+```
+# bead Annotation
+```{bash prep,eval=FALSE}
+SAM0=RCA194FM_00
+bwa mem -t 48 -o $SAM0/beadsAnno/bwa.sam ../../Source/REF/fungal7REF.full.fa $SAM0/clean/fastp.sort.{1,2}.fq
+
+perl -e 'while(<>){@a=split;next if $a[4]<60 || $a[1] > 1024;@b=split("/",$a[0]);
+if($b[1]=~/0000/){$b[1]="0000_0000_0000"};$HS{$b[1]}{$a[2]}++};
+@ref=sort keys %{$HS{"0000_0000_0000"}};print "Bead";
+foreach my $tax (@ref){print "\t$tax"};print "\n";
+foreach $b (sort keys %HS){print "$b";foreach my $tax (@ref){
+$HS{$b}{$tax}||=0;
+print "\t$HS{$b}{$tax}"};print "\n"}' < $SAM0/beadsAnno/bwa.sam > $SAM0/beadsAnno/bwa.uniq.anno.count
+
+perl -e '$once=1;while(<>){@a=split;if($a[0]=~/0000/){$b+=($a[2]-$a[1]+1)/4;next}elsif($once){print "0000_0000_0000\t$b\n";$once--};$b=($a[2]-$a[1]+1)/4;print "$a[0]\t$b\n"}' < $SAM0/clean/fastp.sort.1.fq.idx > $SAM0/beadsAnno/beads.num.count
+
+perl -e '@names=(158,160,161,162,163,164,452); 
+open I,"<'$SAM0'/beadsAnno/beads.num.count"; while(<I>){@a=split;$HS{$a[0]}=$a[1]}; printf("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", "Bead","mainTax","mainPct","uniqPct","uniq","reads",@names);
+while(<>){next if $_ =~ /^Bead/; chomp; @a=split /\t/; $bb=shift @a; $sum=$a[1]+$a[2]+$a[3]+$a[4]+$a[5]+$a[6]+ $a[0]; @b=sort {$a<=>$b} @a; 
+if($b[-1] == $b[-2]){$maxTax="NA"}else{for($i=0;$i<7;$i++){
+$maxTax=$names[$i] if $a[$i]==$b[-1]}; printf("%s\t%s\t%.4f\t%.4f\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", $bb,$maxTax,$b[-1]/$sum,$sum/($HS{$bb}*2),$sum,$HS{$bb}*2,$a[0],$a[1],$a[2],$a[3],$a[4],,$a[5],$a[6])}}' $SAM0/beadsAnno/bwa.uniq.anno.count > $SAM0/beadsAnno/bwa.uniq.anno.stat
+
+#stat coverage
+perl -e '$prv="";sub ccov{$k=shift;if($k>90){$k=91};return($k)}; while(<>){
+  if($_=~/^\@SQ\tSN:(\S+)\tLN:(\d+)/){$REF{$1}=$2; next};
+  @a=split; next if $a[1] > 1024 || $a[6] ne "=" || $a[8]<0;
+  @b=split("/",$a[0]); 
+  $c ++ if $b[1] ne $prv;
+  if($b[1]=~/0000/){
+    for($i=0;$i<$a[8];$i++){ $H0{$a[2]}{$a[3]+$i} ++;}
+    $prv=$b[1];
+  }else{
+    if($b[1] ne $prv){
+      #print STDERR "print $prv(!=$b[1] at $.) ; \$c=$c\n";
+      foreach $t (sort keys %HS){
+        print "$prv\t$t\t";for($i=1;$i<=$REF{$t};$i++){
+          $HS{$t}{$i}||=0; print chr(33+&ccov($HS{$t}{$i}));
+        }; print "\n";
+      }; undef %HS;
+    }; for($i=0;$i<$a[8];$i++){ $HS{$a[2]}{$a[3]+$i} ++}; $prv=$b[1];};
+}; foreach $t (sort keys %HS){print "$prv\t$t\t";for($i=1;$i<=$REF{$t};$i++){
+  $HS{$t}{$i}||=0; print chr(33+&ccov($HS{$t}{$i}));$HS{$t}{$i}=0};print "\n";};
+foreach $t (sort keys %H0){print "0000_0000_0000\t$t\t";for($i=1;$i<=$REF{$t};$i++){
+    $H0{$t}{$i}||=0; print chr(33+&ccov($H0{$t}{$i}))};print "\n";}
+' < $SAM0/beadsAnno/bwa.sam > $SAM0/beadsAnno/bwa.pair.cov.stat
+
+## unique
+perl -e '$prv="";sub ccov{$k=shift;if($k>90){$k=91};return($k)}; while(<>){
+  if($_=~/^\@SQ\tSN:(\S+)\tLN:(\d+)/){ $REF{$1}=$2; next};
+  @a=split; next if $a[4]<60 || $a[1] > 1024 || $a[6] ne "=" || $a[8]<0;
+  @b=split("/",$a[0]); 
+  $c ++ if $b[1] ne $prv;
+  if($b[1]=~/0000/){
+    for($i=0;$i<$a[8];$i++){ $H0{$a[2]}{$a[3]+$i} ++;}
+    $prv=$b[1];
+  }else{
+    if($b[1] ne $prv){
+      #print STDERR "print $prv(!=$b[1] at $.) ; \$c=$c\n";
+      foreach $t (sort keys %HS){
+        print "$prv\t$t\t";for($i=1;$i<=$REF{$t};$i++){
+          $HS{$t}{$i}||=0; print chr(33+&ccov($HS{$t}{$i}));
+        }; print "\n";
+      }; undef %HS;
+    }; for($i=0;$i<$a[8];$i++){ $HS{$a[2]}{$a[3]+$i} ++}; $prv=$b[1];};
+}; foreach $t (sort keys %HS){print "$prv\t$t\t";for($i=1;$i<=$REF{$t};$i++){
+  $HS{$t}{$i}||=0; print chr(33+&ccov($HS{$t}{$i}));$HS{$t}{$i}=0};print "\n";};
+foreach $t (sort keys %H0){print "0000_0000_0000\t$t\t";for($i=1;$i<=$REF{$t};$i++){
+    $H0{$t}{$i}||=0; print chr(33+&ccov($H0{$t}{$i}))};print "\n";}
+' < $SAM0/beadsAnno/bwa.sam > $SAM0/beadsAnno/bwa.uniq.cov.stat
+
+###summary coverage
+perl -e 'while(<>){ chomp; @a=split;
+  for($i=0;$i<length($a[2]);$i++){ $HS{$a[1]}{$i}+=ord(substr($a[2],$i,1))-33;}
+};foreach $t (sort keys %HS){foreach $i (sort {$a<=>$b} keys %{$HS{$t}}){
+  print "$t\t$i\t$HS{$t}{$i}\n";
+}}' < $SAM0/beadsAnno/bwa.uniq.cov.stat > $SAM0/beadsAnno/bwa.uniq.cov.sum1
+perl -e 'while(<>){ chomp; @a=split;
+  for($i=0;$i<length($a[2]);$i++){ $HS{$a[1]}{$i}+=ord(substr($a[2],$i,1))-33;}
+};foreach $t (sort keys %HS){foreach $i (sort {$a<=>$b} keys %{$HS{$t}}){
+  print "$t\t$i\t$HS{$t}{$i}\n";
+}}' < $SAM0/beadsAnno/bwa.pair.cov.stat > $SAM0/beadsAnno/bwa.pair.cov.sum1
+
+
+perl ../07.test_1mAsm/itsAnno.pl $SAM0/beadsAnno/bwa.sam $SAM0/beadsAnno/its.anno
+
+perl -e 'open I,"<'$SAM0'/beadsAnno/bwa.uniq.anno.stat"; <I>;<I>;
+while(<I>){@a=split; next if $a[4]==2;
+  $HS{$a[0]}{tax}=$a[1];$HS{$a[0]}{pct}=$a[2];
+};while(<>){@a=split; next if $a[0]==$a[1]; @b=sort ($HS{$a[0]}{tax},$HS{$a[1]}{tax});
+  $min=($HS{$a[0]}{pct}<$HS{$a[1]}{pct})?$HS{$a[0]}{pct}:$HS{$a[1]}{pct};
+  $HS2{$b[0]}{$b[1]}{sprintf("%.2f",$min)}{sprintf("%.2f",$a[2])} ++;
+};print "tax1\ttax2\tmainPct\tdistance\tcount\n";
+foreach $t1 (sort keys %HS2){foreach $t2 (sort keys %{$HS2{$t1}}){
+    foreach $pct (sort keys %{$HS2{$t1}{$t2}}){
+      foreach $dst (sort keys %{$HS2{$t1}{$t2}{$pct}}){
+        printf("%s\t%s\t%f\t%f\t%d\n",$t1,$t2,$pct,$dst,$HS2{$t1}{$t2}{$pct}{$dst})
+}}}}' < $SAM0/mash/bMin2.raw.dist > $SAM0/mash/bMin2.raw.dist.anno.stat
+
+```
+
+```{r load bead anno}
+SAM0="RCA194FM_00"
+
+bwa.uniq.anno.stat <- read.table(header=T,sep="\t",
+  file=paste0("../../Results/RCAs/",SAM0,"/beadsAnno/bwa.uniq.anno.stat"))
+bwa.uniq.cov.sum1 <- read.table(col.names=c("taxonomy","position","coverage"),
+  file=paste0("../../Results/RCAs/",SAM0,"/beadsAnno/bwa.uniq.cov.sum1"))
+bwa.pair.cov.sum1 <- read.table(col.names=c("taxonomy","position","coverage"),
+  file=paste0("../../Results/RCAs/",SAM0,"/beadsAnno/bwa.pair.cov.sum1"))
+```
+
+```{r visual}
+sum.uniq.anno <- ddply(
+  bwa.uniq.anno.stat,c("reads"),summarise,uniq=sum(uniq),sumReads=sum(reads)/2,
+  Au=sum(X158)/sum(uniq),Pe=sum(X160)/sum(uniq),An=sum(X161)/sum(uniq),
+  Pc=sum(X162)/sum(uniq),Tl=sum(X163)/sum(uniq),Tc=sum(X164)/sum(uniq),
+  As=sum(X452)/sum(uniq))
+
+sum.uniq.anno$reads[nrow(sum.uniq.anno)] <- 0.2
+sum.uniq.anno$reads <- sum.uniq.anno$reads/2
+sum.uniq.anno$beads <- sum.uniq.anno$sumReads/sum.uniq.anno$reads
+sum.uniq.anno2 <- melt(sum.uniq.anno,id.vars = c("uniq","reads","sumReads","beads"),
+                       variable.name = "taxonomy", value.name = "ratio")
+sum.uniq.anno2$sRp <- sum.uniq.anno2$sumReads/sum.uniq.anno2$sumReads[nrow(sum.uniq.anno)]
+sum.uniq.anno2$sBp <- sum.uniq.anno2$beads/sum.uniq.anno2$beads[1]
+ggplot(sum.uniq.anno2,aes(x=reads,y=ratio,color=taxonomy),alpha=.1) +
+  geom_point(size=1,alpha=.5) + geom_line(linetype=1,alpha=.3) +
+  geom_line(aes(y=sBp),color="grey50",linetype=2) +
+  xlab("reads per bead") + annotation_logticks(sides = "b") +
+  scale_x_log10(limits=c(0.1,1000)) +
+  scale_y_continuous(breaks=seq(0,1,.2),limits=c(0,1))
+
+```
+
+```{r}
+bwa.comb.cov.sum1 <- rbind(
+  cbind(type="uniq",bwa.uniq.cov.sum1),
+  cbind(type="pair",bwa.pair.cov.sum1)
+)
+
+ggplot(bwa.comb.cov.sum1,aes(x=position,y=coverage)) + geom_line(aes(color=type)) +
+  facet_wrap(~taxonomy,ncol=3,scale="free")
+```
+
+```{r}
+bwa.uniq.curate <- filter(bwa.uniq.anno.stat[-1,],reads>2 )
+ggplot(bwa.uniq.curate,aes(x=log10(reads/2),y=mainPct*100)) +
+  geom_point(alpha=.1) + annotation_logticks(sides = "b") +
+  geom_vline(xintercept = log10(c(50,100)),linetype=2) +
+  stat_density_2d(h=c(1,50)) + facet_wrap(~mainTax,ncol=3)
+```
+
+
+#ASM
+#blast asm to ref
+
+```{r}
+SAM0="RCA194FM_00"
+tag="00d03"
+megahit.contig <- read.table(paste0(RESDIR,SAM0,"/",tag,"/summary.megahit.contig.tsv"),
+                             col.names = c("BC","ID","flag","multi","len"))
+
+megahit.anno <- read.table(paste0(RESDIR,SAM0,"/",tag,"/summary.megahit.contig.anno"),
+  col.names = c("BC","region","scaf","sid","pident", "length", "mismatch", "gapopen",
+                "qstart", "qend", "sstart", "send", "evalue", "bitscore","ssciname","sid2"))
+#megahit.anno <- megahit.anno[,1:5]
+#colnames(megahit.anno) <- c("BC","ID","taxonomy","identity","length")
+```
+
+```{r}
+cut.megahit.contig <- megahit.contig%>%filter(len>1500)
+cut.megahit.contig$BC <- reorder(cut.megahit.contig$BC,cut.megahit.contig$len,mean)
+cut.megahit.contig <- cut.megahit.contig[order(cut.megahit.contig$len),]
+cut.BC.names <- as.character(unique(cut.megahit.contig$BC))
+cut.megahit.anno <- megahit.anno%>%filter(length>1500)
+ggplot(cut.megahit.contig,aes(x=BC,y=len)) + geom_boxplot() +
+  geom_point(aes(color=multi,size=multi)) + coord_flip()
+```
+
+```{r}
+pickLong <- function(d){
+  if(nrow(d)==1){
+    return(d)
+  }else{
+    i <- which(d$length==max(d$length))
+    return(d[1,])
+  }
+}
+megahit.anno2 <- ddply(megahit.anno,c("BC","scaf"),pickLong)
+colnames(megahit.anno2)[3] <- "ID" 
+megahit.contig.anno <- merge(cut.megahit.contig,megahit.anno2,by=c("BC","ID"))
+
+ggplot(megahit.contig.anno,aes(x=BC)) +
+  geom_boxplot(aes(y=len),alpha=.5) + coord_flip() + 
+  labs(x="Bead cluster ID",y="scaffold length",size="coverage") +
+  geom_point(aes(y=len,size=multi,fill=ssciname),shape=21,alpha=.5)
+
+```
+
+#blast select scaf to nt
+```{bash}
+blastn -num_threads 16 -db $MDB/NCBI/blast_nt/nt -query RCA194FM_00/summary.megahit.contig.fasta -outfmt '6 std staxid ssciname' -out RCA194FM_00/summary.megahit.contig.blast
+
+blastn -num_threads 32 -db $MDB/NCBI/blast_nt/nt -query RCA194FM_00/summary.BI.megahit.contig.fasta -outfmt '6 std staxid ssciname stitle' -out RCA194FM_00/summary.BI.megahit.contig.b6
+```
+
+# Beads isolate assembly
+```{bash}
+metabbq smk --force -j -np RCA194FM_00/summary.BI.megahit.contig.fasta
+```
+
+**load**
+```{r}
+SAM0="RCA194FM_00"
+tag="BI02d03"
+BI.megahit.contig <- read.table(paste0(RESDIR,SAM0,"/",tag,"/summary.BI.megahit.contig.tsv"),
+                             col.names = c("BI","scaf","flag","multi","len"))
+
+
+megahit.anno <- read.table(paste0(RESDIR,SAM0,"/",tag,"/summary.BI.megahit.contig.anno.best"),
+  col.names = c("BI","scaf","sid","pident", "length", "mismatch", "gapopen",
+                "qstart", "qend", "sstart", "send", "evalue", "bitscore","ssciname","sid2"))
+
+blast.anno <- read.table(paste0(RESDIR,SAM0,"/",tag,"/summary.BI.megahit.contig.b6"),
+  sep="\t",fill=NA, col.names = c("BI_scaf_cov_len","sid","pident", "length", 
+  "mismatch", "gapopen", "qstart", "qend", "sstart", "send", "evalue",
+  "bitscore","staxid","ssciname","desc"))
+BI.stat <- read.table("../../Results/RCA194FM_00/BI02d03/Assemble_BI/ID.lst",
+                      col.names = c("ID","BB","reads"))
+
+```
+
+```{r}
+BB.stat <- read.table("../../Results/RCA194FM_00/clean/BB.stat",
+                      col.names = c("count","reads","cumsum"))
+ggplot(BB.stat,aes(y=cumsum,x=reads)) + geom_point() + 
+  scale_y_log10() + scale_x_reverse() + labs(x="Reads per bead") + 
+  annotation_logticks(side="l")
+```
+
+```{r}
+BI.stat$BI = sprintf("BI%06d",BI.stat$ID)
+cut.megahit.contig <- merge(BI.megahit.contig%>%filter(len>500),BI.stat,by="BI")
+cut.megahit.contig$BI <- reorder(cut.megahit.contig$BI,cut.megahit.contig$len,mean)
+cut.megahit.contig <- cut.megahit.contig[order(cut.megahit.contig$len),]
+cut.BC.names <- as.character(unique(cut.megahit.contig$BI))
+cut.megahit.anno <- merge(cut.megahit.contig,megahit.anno,by=c("BI","scaf"),all.x=T)
+
+ggplot(cut.megahit.anno,aes(y=reads,x=len)) + geom_path(aes(group=BI),alpha=.3,linetype=2) +
+  geom_point(aes(color=ssciname,size=multi),alpha=.5) + 
+  labs(x="scaffold length",y="Reads per bead(rpb)",size="coverage") +
+  scale_color_brewer(palette = "Spectral",na.value="grey50")
+```
+
+```{r}
+
+```
+
+
+
