@@ -345,6 +345,8 @@ blastn -num_threads 32 -db $MDB/NCBI/blast_nt/nt -query RCA194FM_00/summary.BI.m
 ```
 
 # Beads isolate assembly
+
+### FM: 7 fungal mixture
 ```{bash}
 metabbq smk --force -j -np RCA194FM_00/summary.BI.megahit.contig.fasta
 ```
@@ -391,10 +393,80 @@ ggplot(cut.megahit.anno,aes(y=reads,x=len)) + geom_path(aes(group=BI),alpha=.3,l
   labs(x="scaffold length",y="Reads per bead(rpb)",size="coverage") +
   scale_color_brewer(palette = "Spectral",na.value="grey50")
 ```
+### ALS: real soil sample
+Real sample could be too complex using cluster method, let's only pick large beads
+for isolated bead assembly
 
+```{bash}
+SAM="RCA194ALS"
+metabbq smk --config p_rpb_min=199 -j -np $SAM/summary.BI.megahit.contig.fasta
+```
+
+```{r}
+ALS.BB.stat <- read.table("../../Results/RCAs/RCA194ALS/clean/BB.stat",
+                      col.names = c("count","reads","cumsum"))
+ggplot(ALS.BB.stat,aes(y=cumsum,x=reads)) + geom_point() + geom_vline(xintercept = 200) +
+  scale_y_log10() + scale_x_reverse() + labs(x="Reads per bead") + 
+  annotation_logticks(side="l")
+ALS.BB.stat%>%filter(reads==200)
+```
+
+**megahit asm stat**
+```{r}
+ALS.ID.lst <- read.table("../../Results/RCAs/RCA194ALS/Assemble_BI/ID.lst",
+                         col.names = c("ID","BB","reads"))
+ALS.asm.stat <- read.table("../../Results/RCAs/RCA194ALS/tmp.megahit.stat",
+                           col.names = c("BI","scaf","flag","multi","len"))
+ALS.ID.lst$BI <- sprintf("BI%08d",ALS.ID.lst$ID,by="BI")
+ALS.mID.stat <- merge(ALS.ID.lst[1:4000,],ALS.asm.stat,by="BI",all.x=T)
+
+length(unique((ALS.asm.stat%>%filter(len>1000))$BI))
+length(unique(ALS.asm.stat$BI))
+ggplot(ALS.mID.stat,aes(x=reads)) + geom_histogram() + labs(x="reads per bead")
+ggplot(ALS.mID.stat,aes(x=len)) + geom_histogram() + labs(x="scaffold length")
+ggplot(ALS.mID.stat,aes(x=len,y=multi)) + geom_density_2d(alpha=.3) + geom_point(alpha=.1) + 
+  scale_x_continuous(limits=c(0,3000)) 
+```
+
+
+```{r}
+ggplot(ALS.mID.stat,aes(x=reads,y=len,color=multi)) +geom_density_2d(alpha=.3) + 
+  geom_point(alpha=.3) + scale_colour_distiller(type="seq",palette="Spectral") +
+  scale_y_continuous(limits=c(0,3000)) + 
+  labs(x="reads per bead",y="scaffold length",color="Coverage")
+```
+
+```{r}
+ALS.mID.s2 <- ddply(ALS.mID.stat,c("BI","reads"),summarise,
+                    totalLen=sum(len),totalCov=sum(multi*len)/sum(len))
+ggplot(ALS.mID.s2,aes(x=reads,y=totalLen,color=totalCov)) +geom_density_2d(alpha=.3) + 
+  geom_point(alpha=.3) + scale_colour_distiller(type="seq",palette="Spectral") +
+  scale_y_continuous(limits=c(0,3000)) +
+   labs(x="reads per bead",y="scaffold length",color="Coverage")
+```
+
+**spades asm stat**
+```{r}
+ALS.spades.stat <- read.table("../../Results/RCAs/RCA194ALS/tmp.spades.stat",
+                           col.names = c("BI","scaf","length","cov"))
+ALS.sID.stat <- merge(ALS.ID.lst[1:4000,],ALS.spades.stat,by="BI",all.x=T)
+
+length(unique((ALS.sID.stat%>%filter(length>1000))$BI))
+length(unique(ALS.spades.stat$BI))
+ggplot(ALS.sID.stat,aes(x=reads)) + geom_histogram() + labs(x="reads per bead")
+ggplot(ALS.sID.stat,aes(x=length)) + geom_histogram() + labs(x="scaffold length")
+ggplot(ALS.sID.stat,aes(x=length,y=cov)) + geom_density_2d(alpha=.3) + geom_point(alpha=.1) + 
+  scale_x_continuous(limits=c(0,3000)) 
+```
 ```{r}
 
 ```
 
-
+```{r}
+ggplot(ALS.sID.stat%>%filter(!is.na(scaf)&length>1000),aes(x=reads,y=length,color=log2(cov))) +
+  geom_point(alpha=.3) + geom_density_2d(alpha=.3) + 
+  scale_colour_distiller(type="seq",palette="Spectral") +
+  #scale_y_continuous(limits=c(0,3000)) + 
+  labs(x="reads per bead",y="scaffold length",color="Coverage")
+```
 
