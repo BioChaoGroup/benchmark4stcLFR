@@ -9,14 +9,15 @@
 # Init
 ## Read config
 configfile: "config.yaml"
-
+if config["dtag"]:
+    config["dtag"] = config["dtag"] + "/"
 rule AS1M_0_sketch:
     input:
         id = "{sample}/clean/fastp.sort.1.fq.idx",
         x1 = "{sample}/clean/fastp.sort.1.fq",
         x2 = "{sample}/clean/fastp.sort.2.fq",
         bb = "{sample}/clean/BB.stat"
-    output:  "{sample}/{dtag}/mash/bMin2.msh"
+    output:  "{sample}/"+config["dtag"]+"mash/bMin2.msh"
     params:
         pfx = "{sample}/{dtag}/mash/bMin2",
         minR= config['p_cluster_minR'],

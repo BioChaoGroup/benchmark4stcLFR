@@ -13,6 +13,7 @@ library(plyr)
 library(reshape2)
 library(ggplot2)
 library(RColorBrewer)
+do.write<-F
 ```
 # Questions to answer
 1. What taxonomy are these beads belonging?
@@ -24,11 +25,9 @@ library(RColorBrewer)
 2. stat unique mapped annotation.
 ```{bash eval=FALSE}
 SAM0=APR842_00
-tag="SUB_2R20_0D04"  # 1st test
-tag="SUB_2R100_0D10" # 2nd test
-#tag="SUB_2R100_0D05" # 3rd test (no better than 2nd)
 mkdir -p $SAM0/beadsAnno
-bwa mem -t 48 -o $SAM0/beadsAnno/bwa.sam REF/fungal5REF.fa $SAM0/clean/fastp.sort.{1,2}.fq
+#run once per sample
+#bwa mem -t 48 -o $SAM0/beadsAnno/bwa.sam REF/fungal5REF.fa $SAM0/clean/fastp.sort.{1,2}.fq
 
 perl -e 'while(<>){@a=split;next if $a[4]<60 || $a[1] > 1024;@b=split("/",$a[0]);if($b[1]=~/0000/){$b[1]="0000_0000_0000"};$HS{$b[1]}{$a[2]}++};print "Bead\tSaccharomyces_cerevisiae\tPleurotus_eryngii\tLentinula_edodes\tHypsizygus_marmoreus\tFlammulina_velutipes\n";foreach $b (sort keys %HS){print "$b\t$HS{$b}{Saccharomyces_cerevisiae}\t$HS{$b}{Pleurotus_eryngii}\t$HS{$b}{Lentinula_edodes}\t$HS{$b}{Hypsizygus_marmoreus}\t$HS{$b}{Flammulina_velutipes}\n"}' < $SAM0/beadsAnno/bwa.sam > $SAM0/beadsAnno/bwa.uniq.anno.count
 
@@ -36,18 +35,6 @@ perl -e '$once=1;while(<>){@a=split;if($a[0]=~/0000/){$b+=($a[2]-$a[1]+1)/4;next
 
 perl -e '@names=("Saccharomyces_cerevisiae","Pleurotus_eryngii","Lentinula_edodes","Hypsizygus_marmoreus","Flammulina_velutipes"); open I,"<'$SAM0'/beadsAnno/beads.num.count"; while(<I>){@a=split;$HS{$a[0]}=$a[1]}; printf("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", "Bead","mainTax","mainPct","uniqPct","uniq","reads",@names);while(<>){next if $_ =~ /^Bead/; chomp; @a=split /\t/; $bb=shift @a; $sum=$a[1]+$a[2]+$a[3]+$a[4]+$a[0]; @b=sort {$a<=>$b} @a; if($b[-1] == $b[-2]){$maxTax="NA"}else{for($i=0;$i<5;$i++){$maxTax=$names[$i] if $a[$i]==$b[-1]}; printf("%s\t%s\t%.4f\t%.4f\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",$bb,$maxTax,$b[-1]/$sum,$sum/($HS{$bb}*2),$sum,$HS{$bb}*2,$a[0],$a[1],$a[2],$a[3],$a[4])}}' $SAM0/beadsAnno/bwa.uniq.anno.count > $SAM0/beadsAnno/bwa.uniq.anno.stat
 
-perl -e 'open I,"<'$SAM0'/beadsAnno/bwa.uniq.anno.stat"; <I>;<I>;
-while(<I>){@a=split; next if $a[4]==2;
-  $HS{$a[0]}{tax}=$a[1];$HS{$a[0]}{pct}=$a[2];
-};while(<>){@a=split; next if $a[0]==$a[1]; @b=sort ($HS{$a[0]}{tax},$HS{$a[1]}{tax});
-  $min=($HS{$a[0]}{pct}<$HS{$a[1]}{pct})?$HS{$a[0]}{pct}:$HS{$a[1]}{pct};
-  $HS2{$b[0]}{$b[1]}{sprintf("%.2f",$min)}{sprintf("%.2f",$a[2])} ++;
-};print "tax1\ttax2\tmainPct\tdistance\tcount\n";
-foreach $t1 (sort keys %HS2){foreach $t2 (sort keys %{$HS2{$t1}}){
-    foreach $pct (sort keys %{$HS2{$t1}{$t2}}){
-      foreach $dst (sort keys %{$HS2{$t1}{$t2}{$pct}}){
-        printf("%s\t%s\t%f\t%f\t%d\n",$t1,$t2,$pct,$dst,$HS2{$t1}{$t2}{$pct}{$dst})
-}}}}' < $SAM0/TT1M/$tag.mash/bMin2.raw.dist > $SAM0/TT1M/$tag.mash/bMin2.raw.dist.anno.stat
 
 #stat coverage
 perl -e '$prv="";sub ccov{$k=shift;if($k>90){$k=91};return($k)}; while(<>){
@@ -108,6 +95,25 @@ perl -e 'while(<>){ chomp; @a=split;
 };foreach $t (sort keys %HS){foreach $i (sort {$a<=>$b} keys %{$HS{$t}}){
   print "$t\t$i\t$HS{$t}{$i}\n";
 }}' < $SAM0/beadsAnno/bwa.pair.cov.stat > $SAM0/beadsAnno/bwa.pair.cov.sum1
+```
+
+```{bash,eval=FALSE}
+tag="SUB_2R20_0D04"  # 1st test
+tag="SUB_2R100_0D10" # 2nd test
+#tag="SUB_2R100_0D05" # 3rd test (no better than 2nd)
+tag="SUB_2R50_0D10" # 4th test
+perl -e 'open I,"<'$SAM0'/beadsAnno/bwa.uniq.anno.stat"; <I>;<I>;
+while(<I>){@a=split; next if $a[4]==2;
+  $HS{$a[0]}{tax}=$a[1];$HS{$a[0]}{pct}=$a[2];
+};while(<>){@a=split; next if $a[0]==$a[1]; @b=sort ($HS{$a[0]}{tax},$HS{$a[1]}{tax});
+  $min=($HS{$a[0]}{pct}<$HS{$a[1]}{pct})?$HS{$a[0]}{pct}:$HS{$a[1]}{pct};
+  $HS2{$b[0]}{$b[1]}{sprintf("%.2f",$min)}{sprintf("%.2f",$a[2])} ++;
+};print "tax1\ttax2\tmainPct\tdistance\tcount\n";
+foreach $t1 (sort keys %HS2){foreach $t2 (sort keys %{$HS2{$t1}}){
+    foreach $pct (sort keys %{$HS2{$t1}{$t2}}){
+      foreach $dst (sort keys %{$HS2{$t1}{$t2}{$pct}}){
+        printf("%s\t%s\t%f\t%f\t%d\n",$t1,$t2,$pct,$dst,$HS2{$t1}{$t2}{$pct}{$dst})
+}}}}' < $SAM0/TT1M/$tag.mash/bMin2.raw.dist > $SAM0/TT1M/$tag.mash/bMin2.raw.dist.anno.stat
 ```
 
 **Loading the stat results**
@@ -172,10 +178,10 @@ I've summarised all reads mapping to above 5 references, with directly hitting (
 Another point is that the unique hits are quite lower at specific region among those reference. *Hm* is almost missing unique hit records. And *Pe* is insufficient before 1200 bp. This characteristics of uneven depth will influence assembly performance.
 
 ```{r}
-bwa.uniq.curate <- filter(bwa.uniq.anno.stat[-1,],reads>2)
-ggplot(bwa.uniq.curate,aes(x=log10(reads),y=mainPct*100)) +
+bwa.uniq.curate <- filter(bwa.uniq.anno.stat[-1,],reads>2 )
+ggplot(bwa.uniq.curate,aes(x=log10(reads/2),y=mainPct*100)) +
   geom_point(alpha=.1) + annotation_logticks(sides = "b") +
-  geom_vline(xintercept = log10(c(100)),linetype=2) +
+  geom_vline(xintercept = log10(c(50,100)),linetype=2) +
   stat_density_2d(h=c(1,50)) + facet_wrap(~mainTax,ncol=3)
 ```
 Each point indicats a bead with its belonging reads in x-axis (lg scale) and the percentage of the most abundant taxonomy annotation (mainPct) in y-axis, e.g, 100% mainPct of *Flammulina velutipes* means that all of the reads belonging to this bead are uniquely hitted this species. Otherwise, the bead may contained DNA source comming from other species, as known as the `hybridized bead`.  
@@ -191,7 +197,7 @@ Besides, lower `mainPct` enriched in the area **when # reads(per bead) larger th
 `uniqPct` means the percentage of reads uniquely mapping to the reference, without alternative hit position. The multi-position hitting happens when the references of different species shared homologous sequence. In this case, only **uniquely hitted recorded** are included to assess the hybridize degree.  
 The distribution of `uniqPct` are shown below:
 ```{r}
-ggplot(bwa.uniq.curate,aes(x=log10(reads),y=uniqPct*100)) +
+ggplot(bwa.uniq.curate,aes(x=log10(reads/2),y=uniqPct*100)) +
   geom_point(alpha=.1) + annotation_logticks(sides = "b") +
   stat_density_2d(h=c(1,50)) + facet_wrap(~mainTax,ncol=3)
 ```
@@ -200,7 +206,7 @@ From above figure I guess that *Le* and *Pe* may be homologous in many ITS seque
 
 **Exclue beads with 100% `mainPct`:**
 ```{r}
-ggplot(bwa.uniq.curate%>%filter(mainPct<1),aes(x=log10(reads),y=uniqPct*100)) +
+ggplot(bwa.uniq.curate%>%filter(mainPct<1),aes(x=log10(reads/2),y=uniqPct*100)) +
   geom_point(alpha=.1) + annotation_logticks(sides = "b") +
   stat_density_2d(h=c(1,30),alpha=.5) + facet_wrap(~mainTax,ncol=3)
 ```
@@ -214,11 +220,13 @@ Here I test the communities clustered by rpb(reads per bead) between 2 to 100 an
 
 **Select the tag to read:**
 ```{r}
-tag="SUB_2R20_0D04"  # 1st test
+#tag="SUB_2R20_0D04"  # 1st test
 tag="SUB_2R100_0D10" # 2nd test
 #tag="SUB_2R100_0D05" # 3rd test
+#tag="SUB_2R50_0D10" # 4th test
+lv=1
 cluster.select <- read.table(
-  paste0("APR842_00/TT1M/",tag,".mash/bMin2.bc.tree.target.cluster.main"),
+  paste0("APR842_00/TT1M/",tag,".mash/lv",lv,"/tree.cluster.main"),
   col.names = c("cluster","Bead"))
 bMin2.raw.dist.stat <- read.table(
   paste0("APR842_00/TT1M/",tag,".mash/bMin2.raw.dist.anno.stat"),sep="\t",header=T)
@@ -238,10 +246,14 @@ Hybridization beads may included in the communities as you can see those colorfu
 ```{r}
 cluster.sum <- ddply(cluster.merge%>%filter(mainPct>0.975),"cluster",summarise,reads=sum(reads)/2)
 cluster.sum$pct <- cluster.sum$reads/sum(cluster.sum$reads)
+cluster.merge$cluster <- reorder(cluster.merge$cluster,cluster.merge$reads,sum)
 ggplot(cluster.merge%>%filter(mainPct>0.975),aes(x=factor(cluster))) +
   geom_bar(aes(fill=mainTax),position="fill") +
   geom_text(data=cluster.sum,aes(y=0.5,label=reads),angle=90) +
-  xlab("#reads/bead") + ylab("percentage")
+  xlab("Bead cluster ID") + ylab("percentage")
+if(do.write){
+  save(cluster.merge,file= paste0("APR842_00/TT1M/",tag,"/cluster.merge.anno.RData"))
+}
 ```
 Tile plot shows that cluster 5, 6, 7 and 39 can be the represented cluster for each species.
 
@@ -322,6 +334,64 @@ ggplot(dist.stat.sum,aes(x=distance,y=count,color=interaction(tax1,tax2),linetyp
   geom_line() + geom_vline(xintercept = 0.1,linetype=2)
 ```
 The mash distance between beads from the same species are distributed with their peak smaller than 0.1, while that from different species, the distance peak are larger than 0.1. Thus we can use 0.1 as the threshold to filter distance list in this dataset.
+
+**sum them together**
+```{r}
+dist.stat.sum2 <- ddply(dist.stat.sum,c("distance","group"),summarise,count=sum(count))
+ggplot(dist.stat.sum2,aes(x=distance,y=count,linetype=group),color="grey50",alpha=.3) +
+  geom_line() + geom_point(size=.5) + geom_vline(xintercept = 0.1,linetype=2)
+```
+**ITS region detection**
+```{r}
+its.anno.sum <- read.table("../../Results/APR842_00/beadsAnno/its.anno.sum",
+    col.names=c("BB","reads","mainTax","count","SSU","ITS1","S58","ITS2","LSU"))
+
+its.anno.melt <- melt(its.anno.sum,c("BB","reads","mainTax","count"),
+                      variable.name = "region",value.name = "Rcount")
+its.anno.melt$rate <- its.anno.melt$Rcount/its.anno.melt$reads
+ggplot(its.anno.melt,aes(x=rate,color=region)) + geom_density() + 
+  scale_y_log10()
+```
+```{r}
+bMin2.raw.dist.its.stat <- read.table(
+  "../../Results/APR842_00/TT1M/mash/bMin2.raw.dist.stat",header = T,row.names = NULL)
+bMin2.raw.dist.its.stat$n5.8s <- 
+  (bMin2.raw.dist.its.stat$mainR1==9) + (bMin2.raw.dist.its.stat$mainR2==9)
+bMin2.raw.dist.its.stat$taxGrp <- 
+  ifelse(bMin2.raw.dist.its.stat$tax1==bMin2.raw.dist.its.stat$tax2,"same","diff")
+bMin2.raw.dist.its.stat.sum1 <- ddply(bMin2.raw.dist.its.stat%>%filter(tax1!="*"&tax2!="*"),
+                                     c("tax1","tax2","n5.8s","distance"),summarise,
+                                     count=sum(count))
+p1 <- ggplot(bMin2.raw.dist.its.stat.sum1,
+       aes(x=distance,y=count,color=factor(n5.8s))) +
+  geom_line(alpha=.3) + geom_point(size=.5,alpha=.5) + 
+  geom_vline(xintercept = 0.1,linetype=2) + #scale_y_log10() +
+  facet_wrap(~tax1+tax2,ncol=5,scales="free")
+p1
+
+bMin2.raw.dist.its.stat.sum2 <- ddply(bMin2.raw.dist.its.stat%>%filter(tax1!="*"&tax2!="*"),
+                                     c("taxGrp","mainR1","mainR2","distance"),summarise,
+                                     count=sum(count))
+p2 <- ggplot(bMin2.raw.dist.its.stat.sum2,
+       aes(x=distance,y=count,color=taxGrp)) +
+  geom_line(alpha=.3) + geom_point(size=.5,alpha=.5) + 
+  geom_vline(xintercept = 0.1,linetype=2) + #scale_y_log10() +
+  facet_wrap(~mainR1+mainR2,ncol=5,scales = "free")
+p2
+```
+
+```{r}
+dist.sum.SSU <- 
+  ddply(bMin2.raw.dist.its.stat%>%filter(tax1!="*"&mainR1==mainR2&mainR1==7),
+        c("tax1","tax2","mainR1","distance"),summarise, count=sum(count))
+p3 <- ggplot(bMin2.raw.dist.its.stat.sum3,
+       aes(x=distance,y=count,color=tax1)) +
+  geom_line(alpha=.3) + geom_point(size=.5,alpha=.5) + 
+  geom_vline(xintercept = 0.1,linetype=2) + #scale_y_log10() +
+  facet_grid(mainR1~tax1,scales = "free")
+p3
+```
+
 
 **APR831**
 ```{r fig.width=5, fig.height=3}

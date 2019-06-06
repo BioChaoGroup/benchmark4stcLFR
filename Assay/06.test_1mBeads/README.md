@@ -218,3 +218,29 @@ cut -f1-13 scaffolds.F.BLAST.tax.blast6.anno.best
 
 
 ```
+
+### test2: split beads aligned either to ITS or 5.8S
+
+If beads come from 5.8S, then the distance might be small no matter they came from same species or not!
+
+First, annotate references' 5.8S region
+
+```bash
+cd $repo/Source/REF/
+mkdir fungal5REF_ITSx
+ITSx -i fungal5REF.fa -o fungal5REF_ITSx/fungal5REF -t F --cpu 60
+cd $repo/Assay/07.test_1mAsm
+perl itsAnno.pl APR842_00/beadsAnno/bwa.sam APR842_00/beadsAnno/its.anno
+```
+
+```perl
+my %fungal5REF(
+	"KM029995.1"=>"Saccharomyces_cerevisiae",
+	"AB777519.1"=>"Pleurotus_eryngii",
+	"KM382063.1"=>"Lentinula_edodes",
+	"KF192813.1"=>"Hypsizygus_marmoreus",
+	"HQ660197.1"=>"Flammulina_velutipes"
+);
+
+```
+

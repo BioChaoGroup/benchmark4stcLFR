@@ -141,3 +141,56 @@ mv $SAM0/TT1M/{mash,$rTag.mash}
 mv $SAM0/TT1M/{Assemble_mashBC,$rTag.Assemble_mashBC}
 
 ```
+
+### Run 04
+
+Test the distance range `(0,0.1)` and rpb up to 50.
+Key params: `p_dist_max: 0.1` & `p_cluster_maxR: 50`.  
+Optional params: none.`p_rpc_min=100`
+
+```bash
+#results tag
+tag=SUB_2R50_0D10
+# link back if needed
+ln -s $rTag.Assemble_mashBC $SAM0/TT1M/Assemble_mashBC
+# main
+snakemake -s test.smk --config p_dist_max=0.1 p_cluster_maxR=50 p_rpc_min=1000 -j -np $SAM0/TT1M/mash/bMin2.bc.tree.target.cluster.main
+snakemake -s test.smk --config p_dist_max=0.1 p_cluster_maxR=50 p_rpc_min=1000 -j -np $SAM0/TT1M/batch.assemble.BC.sh
+snakemake -s test.smk -j -np $SAM0/TT1M/batch.circos.BC.sh
+# post
+mv $SAM0/TT1M/{mash,$tag.mash}
+mv $SAM0/TT1M/{Assemble_mashBC,$tag.Assemble_mashBC}
+mv $SAM0/TT1M/{circos,$tag.circos}
+
+```
+
+
+
+### Run 05
+
+Test the distance range `(0,0.1)` and rpb up to 100.
+Key params: `p_dist_max: 0.1` & `p_cluster_maxR: 50`.  
+Optional params: none.`p_rpc_min=100`
+
+```bash
+#results tag
+tag=SUB_2R100_0D10
+# link back if needed
+ln -s ../TT1M/$tag.mash $SAM0/$tag/mash
+# main
+for lv in {1..4};do 
+	snakemake -s test.smk --config p_dist_lv=$lv -j -p $SAM0/$tag/mash/lv$lv/tree.cluster.main;
+done
+snakemake -s test.smk --config p_dist_lv=1 p_cluster_maxR=100 p_rpc_min=1000 -j -np $SAM0/$tag/batch.assemble.BC.sh
+#stat
+mode="megahit";for i in `ls $SAM0/$tag/Assemble_mashBC/`;do echo $i;awk '$4>999{print}' $SAM0/$tag/Assemble_mashBC/$i/$mode/scaffolds.$mode.BLAST.tax.blast6.anno.best;done |column -t|les
+snakemake -s test.smk -j -np $SAM0/TT1M/batch.circos.BC.sh
+# post
+mv $SAM0/TT1M/{mash,$tag.mash}
+mv $SAM0/TT1M/{Assemble_mashBC,$tag.Assemble_mashBC}
+mv $SAM0/TT1M/{circos,$tag.circos}
+
+```
+
+
+
