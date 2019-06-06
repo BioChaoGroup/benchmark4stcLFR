@@ -8,13 +8,16 @@ distCutoff: 0.04
 divideSH: 10
 
 BB_LIST: "../../Source/REF/barcode.list"
-REF_GEN: "../../Source/REF/fungal7REF.full.fa"
+REF_GEN: "../../Source/REF/fungal7mix/MIX7.fa"
 
-REF_FA: "../../Source/REF/fungal7REF.full.fa"
-REF_ID: "../../Source/REF/fungal7REF.full.faID"
+REF_FA: "../../Source/REF/fungal7mix/MIX7.fa"
+REF_ID: "../../Source/REF/fungal7mix/MIX7.faID"
 
 sampleType: "F" # F(ungi) or B(acteria)
 
+### adapters
+AdFw: "GGTCATTTAGAGGAAGTAA"
+AdRv: "CGTTCTTCATCG"
 
 ### method selection
 method:
@@ -29,14 +32,22 @@ method:
 
 ### params
 
-p_cluster_minR: 10
-p_cluster_maxR: 100
-p_cluster_topB: 0
-p_cluster_ranP: 10
+#### mash dist params
+p_dist_k: 31
+p_dist_s: 2000
 
 p_dist_min: 0.02
-p_dist_max: 0.03
+p_dist_max: 0.04
+
+#### cluster cutoff
+p_cluster_minR: 5
+p_cluster_maxR: 400
+p_cluster_topB: 0
+p_cluster_ranP: 0
+
+#### community level
 p_dist_lv: 1
+
 #reads per bead threashold
 p_rpb_min: 100
 #reads/beads per cluster threashold
