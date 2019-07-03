@@ -45,7 +45,7 @@ Generally, more than 85% of reads are successfully idtentiable with a barely off
 
 We totally identified Among the identified **68645** unique BBs. However, about **40%** of them are only attached by one pair-read (fig3. black). 
 
-![fig.3](04.test_vsearch/BBwithReadsin.png)
+![fig.3](./04.test_vsearch/BBwithReadsin.png)
 
 >**Fig.3 Distribution of bead barcodes with different number of reads attached to it**. 
 >Black, all reads included; red, only dereplicated reads included
