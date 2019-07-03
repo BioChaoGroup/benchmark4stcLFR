@@ -2,7 +2,7 @@
 title: "RCA test"
 author: "Chao"
 date: "4/24/2019"
-output: html_document
+output: html_notebook
 ---
 
 ```{r setup, include=FALSE}
@@ -35,7 +35,7 @@ metabbq smk -j -np RCA194FM_00/summary.megahit.contig.tsv
 ```
 
 
-```{r load}
+```{r load2}
 RESDIR <- "../../Results/"
 BC4.bb.stat <- read.table("../../Results/APR842_00_00/clean/BB.stat",
                           col.names = c("count","num","cumsum"))
