@@ -22,7 +22,7 @@
 
 **Developing tools**：:octocat: [metaSeq](https://github.com/ZeweiSong/metaSeq) ([biogit](https://biogit.cn/Fangchao/metaSeq))
 
-### Init this repo
+### File structure
 
 ```shell
 export D_fastp="/path/to/fastp/reporsitory"
@@ -34,9 +34,7 @@ ln -s ../../../DATA
 ln -s ../../../DB
 ```
 
-
-
-### Test sample
+### Demo samples 1
 
 All raw data saved under: /hwfssz1/ST_META/P18Z10200N0059_stLFR_SZW/DATA/
 Data is organized as the date sequenced (e.g. test20180301)
@@ -80,9 +78,32 @@ q1/     # Copy number of PCR product and umi is 1:1, this data is converted to J
 q5/     # Copy number of PCR product and umi is 1:5
 ```
 
-#### Module
+### Demo samples 2
 
-**stLFR barcodes split** - [README.md](./)
+This demo is a stLFR  test of single strain (*E.Coli* and an other), which was sequenced at June 2018.
+
+Location: `/hwfssz1/ST_META/EE/analysis/stlfr_genomes`
+
+Content:
+
+| Tag   | Chip_lane_ID    | Species                 | ref                                | output        |
+| ----- | --------------- | ----------------------- | ---------------------------------- | ------------- |
+| LR186 | CL100077200_L01 | *Lactobacillus Reuteri* | 11.Lactobacillusreuteri.fasta      | Results/LR186 |
+| EC186 | CL100077200_L02 | *Escherichia Coli*      | 25.Escherichiacoli-K-12W3110.fasta | Results/EC186 |
+
+
+
+### Module
+
+Process index (Find corresponding tags in following codenotes):
+
+| Module / Process / rules | Path | Note |
+| ------------------------ | ---- | ---- |
+| BB preparation           |      |      |
+|                          |      |      |
+|                          |      |      |
+
+
 
 #### Technical Note
 
