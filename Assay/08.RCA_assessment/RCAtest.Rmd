@@ -28,7 +28,6 @@ awk -F '|' 'NR==FNR{a[$2]=$1}NR!=FNR{tag=substr($4,1,4);print a[tag]"\t"$4"\t"$0
 sed -i 's/^>gi|\([0-9]*\)|\([a-z]*\)|\([^|]*\)|/>\3\tgi|\1|\2|\3|/' MIX7.fa
 
 awk 'NR==FNR{a[$2]=$1}NR!=FNR{sub(">","",$0);tag=substr($0,1,4);print a[tag]"\t"$1"\t"$0}' ID.map MIX7.tmp > MIX7.faID
-
 ```
 
 
