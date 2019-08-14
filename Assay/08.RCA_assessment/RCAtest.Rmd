@@ -55,6 +55,7 @@ metabbq init -i RCA1.rawseq.lst -o ./ -c ../07.test_1mAsm/config.yaml -V
 metabbq smk -j -np {RCA194FM,RCA194ALS}/clean/BB.stat
 ```
 
+
 Since a whole lane data are oversampled and of heavy computation, let me just pick 10% of them for following analysis.
 ```{bash, eval=FALSE}
 #split
@@ -68,11 +69,42 @@ for i in {FM,ALS};do
   ln -s ../../RCA194$i/clean/ds.sort.1_00.fq RCA194$i\_00/clean/fastp.sort.1.fq
   ln -s ../../RCA194$i/clean/ds.sort.2_00.fq RCA194$i\_00/clean/fastp.sort.2.fq
 done
+
+tag="00d10" # set a tag for 1st test
+for i in {FM,ALS};do 
+  mkdir -p RCA194$i\_00/$tag/{mash,Assemble_BI,Assemble_mashBC}
+  rm RCA194$i\_00/{mash,Assemble_BI,Assemble_mashBC}
+  for j in {mash,Assemble_BI,Assemble_mashBC};do
+    ln -s $tag/$j RCA194$i\_00/$j
+  done
+done
+```
+
+****
+```{r}
+
+```
+
+**remove adapters and primers**
+```{bash,eval=FALSE}
+for i in {FM,ALS};do 
+  mv RCA194$i\_00/clean/fastp.sort.1.fq RCA194$i\_00/clean/fastp.Ad.sort.1.fq
+  mv RCA194$i\_00/clean/fastp.sort.2.fq RCA194$i\_00/clean/fastp.Ad.sort.2.fq
+done
+
+metabbq delAd.pl ./primers.lst RCA194FM_00/clean/{fastp.Ad.sort.1.fq,fastp.Ad.sort.2.fq,fastp.sort.1.fq,fastp.sort.2.fq} &
+metabbq delAd.pl ./primers.lst RCA194ALS_00/clean/{fastp.Ad.sort.1.fq,fastp.Ad.sort.2.fq,fastp.sort.1.fq,fastp.sort.2.fq}
+
 ```
 
 **RUN!**
 ```{bash}
-metabbq smk -j -np RCA194{FM,ALS}_00/summary.BI.megahit.contig.fasta
+metabbq smk -j -np RCA194{FM,ALS}_00/batch.assemble.BI.sh
+metabbq smk -j -np RCA194ALS_00/summary.BC.megahit.contig.fasta
+
+#metabbq smk -j -np RCA194ALS/summary.BI.megahit.contig.fasta
+metabbq smk -j -np RCA194ALS_00/summary.BI.idba.contig.fasta
+
 ```
 
 
@@ -86,6 +118,12 @@ FM.bb.stat <- read.table("../../Results/RCAs/RCA194FM/clean/BB.stat",
                          col.names = c("count","num","cumsum"))
 ALS.bb.stat <- read.table("../../Results/RCAs/RCA194ALS/clean/BB.stat",
                          col.names = c("count","num","cumsum"))
+
+#following subsets are with primers removed
+FM00.bb.stat <- read.table("../../Results/RCAs/RCA194FM_00/clean/BB.stat",
+                         col.names = c("count","num","cumsum"))
+ALS00.bb.stat <- read.table("../../Results/RCAs/RCA194ALS_00/clean/BB.stat",
+                         col.names = c("count","num","cumsum"))
 ```
 
 #QC performance
@@ -95,7 +133,9 @@ bb.stat <- rbind(
   cbind(group="BC4",BC4.bb.stat),
   cbind(group="RCA0",RCA0.bb.stat),
   cbind(group="RCA1FM",FM.bb.stat),
-  cbind(group="RCA1ALS",ALS.bb.stat)
+  cbind(group="RCA1ALS",ALS.bb.stat),
+  cbind(group="RCA1FM00",FM00.bb.stat),
+  cbind(group="RCA1ALS00",ALS00.bb.stat)
 )
 bb.stat <- ddply(bb.stat,c("group"),transform,pCount=count/sum(count))
 ggplot(bb.stat,aes(x=num,y=pCount,color=group)) + geom_line(alpha=.5) + geom_point(alpha=.3,size=.5) +
@@ -128,21 +168,6 @@ ggplot(RCA1.bb.stat%>%filter(num>=2&num<=20),aes(x=num,y=count,color=group)) +
 
 ```
 
-
-#Downsize 
-
-```{bash, eval=FALSE}
-metabbq randomlyPick.pl -t 8 -n 100 -m 3 -s 194 -i RCA194FM/clean/fastp.sort.1.fq -o RCA194FM/clean/ds.fastp.sort.1 &
-metabbq randomlyPick.pl -t 8 -n 100 -m 3 -s 194 -i RCA194FM/clean/fastp.sort.2.fq -o RCA194FM/clean/ds.fastp.sort.2 &
-mkln ../../Results/RCAs/RCA194FM_00
-mkdir RCA194FM_00/clean
-ln -s ../../RCA194FM/clean/ds.fastp.sort.1_00.fq RCA194FM_00/clean/fastp.sort.1.fq
-ln -s ../../RCA194FM/clean/ds.fastp.sort.2_00.fq RCA194FM_00/clean/fastp.sort.2.fq
-metabbq beadsWrite3.pl -x --r1  RCA194FM_00/clean/fastp.sort.1.fq
-awk '$1!~/0000/{print ($3-$2+1)/4}' RCA194FM_00/clean/fastp.sort.1.fq.idx|sort|uniq -c|sort -k2,2nr|awk '{b=b+$1;print $0"\t"b}' > RCA194FM_00/clean/BB.stat
-
-metabbq smk --config p_cluster_ranP=0 -j -np RCA194FM_00/batch.assemble.BC.sh
-```
 
 ## bead dist stat
 First to stat the raw dist file:
@@ -441,14 +466,31 @@ ggplot(bwa.uniq.curate,aes(x=log10(reads/2),y=mainPct*100)) +
   stat_density_2d(h=c(1,50)) + facet_wrap(~mainTax,ncol=3)
 ```
 
-#isolated stat
+#Isolated assembly stat
 This time I removed SSU TW primers
-```{bash,eval=F}
+```{bash,eval=FALSE}
 SAM0="RCA194FM_00"
-tag="00d06_31mer"
+tag="00d10"
 mkdir -p $SAM0/$tag/mash
 rm $SAM0/mash && ln -sf $SAM0/$tag/mash $SAM0/mash
-metabbq smk --config p_cluster_minR=100 p_cluster_maxR=400 -j -np $SAM0/mash/bMin2.msh
+
+#DRY RUN!
+metabbq smk -j -np $SAM0/mash/bMin2.msh #quick glance of the kmers number in each bead
+metabbq smk -j -np $SAM0/summary.BI.megahit.contig.fasta
+#post
+mv $SAM0/summary.BI.megahit.* $SAM0/$tag/
+blastn -num_threads 32 -db REF/fungal7mix/MIX7.blast -query $SAM0/$tag/summary.BI.megahit.contig.fasta \
+-outfmt 6 > $SAM0/$tag/summary.BI.megahit.contig.m6
+sed 's/_/\t/g' $SAM0/$tag/summary.BI.megahit.contig.m6 >$SAM0/$tag/summary.BI.megahit.contig.anno
+#pick info from msh
+mash info $SAM0/mash/bMin2.msh|perl -e 'while(<>){if($_=~/(\d+)\s+(\d+)\s+(\S+)\s+\[(\d+) seqs\]/){
+print "$3\t$4\t$2\n"}}' > $SAM0/mash/bMin2.msh.info
+
+#quast.py
+quast.py $SAM0/$tag/summary.BI.megahit.contig.fasta -r REF/fungal7mix/MIX7.fa -o $SAM0/$tag/quast
+#ITSx
+mkdir -p $SAM0/$tag/summary.BI.megahit.contig.ITSx
+ITSx -t F --cpu 48 -i $SAM0/$tag/*fasta -o $SAM0/$tag/summary.BI.megahit.contig.ITSx
 ```
 
 #ASM
@@ -457,7 +499,10 @@ metabbq smk --config p_cluster_minR=100 p_cluster_maxR=400 -j -np $SAM0/mash/bMi
 
 ```{r}
 SAM0="RCA194FM_00"
-tag="00d06_31mer"
+tag="00d10"
+
+msh.info <- read.table(paste(sep="/",RESDIR,SAM0,tag,"mash/bMin2.msh.info"),
+                             col.names = c("BB","rpb","kmerN"))
 megahit.contig <- read.table(paste(sep="/",RESDIR,SAM0,tag,"summary.BI.megahit.contig.tsv"),
                              col.names = c("BI","ID","flag","multi","len"))
 
@@ -468,16 +513,30 @@ megahit.anno$ID <- paste(megahit.anno$kmer,megahit.anno$num,sep="_")
 
 ```
 
+**landscape**
+```{r}
+ggplot(msh.info,aes(x=rpb,y=kmerN)) + geom_point()
+```
+
+About megahit `flag`:  
+> flag is a tag to represent the connectivity of a contig in the assembly graph. 
+flag=1 means the contig is standalone, 
+flag=2 a looped path and 
+flag=0 for other contigs.
+>
+> multi is roughly the average kmer coverage. But the figure is not precise and if you want to quantify the coverage of a contig, I would suggest you align the reads back to the contigs by short read aligners.
+>https://github.com/voutcn/megahit/issues/54
+
+```{r}
+ggplot(megahit.contig,aes(x=len,y=multi,color=factor(flag))) + geom_point(alpha=.1)
+```
+
+
 ```{r}
 cut.megahit.contig <- megahit.contig%>%filter(len>1000)
 cut.megahit.contig$BI <- reorder(cut.megahit.contig$BI,cut.megahit.contig$len,mean)
 cut.megahit.contig <- cut.megahit.contig[order(cut.megahit.contig$len),]
 cut.BI.names <- as.character(unique(cut.megahit.contig$BI))
-ggplot(cut.megahit.contig,aes(x=BI,y=len)) + geom_boxplot() +
-  geom_point(aes(color=flag,size=multi),alpha=.3) + coord_flip()
-```
-
-```{r}
 
 megahit.contig.anno <- merge(cut.megahit.contig,megahit.anno,by=c("BI","ID"),all.x=T)
 megahit.contig.anno$strainID <- substr(megahit.contig.anno$sid,1,4)
@@ -501,9 +560,15 @@ refCount
 
 #blast select scaf to nt
 ```{bash}
-blastn -num_threads 16 -db $MDB/NCBI/blast_nt/nt -query RCA194FM_00/summary.megahit.contig.fasta -outfmt '6 std staxid ssciname' -out RCA194FM_00/summary.megahit.contig.blast
+blastn -num_threads 32 -db $MDB/NCBI/blast_nt/nt -query RCA194FM_00/00d10/summary.BI.megahit.contig.fasta \
+-outfmt '6 std staxid ssciname' -out RCA194FM_00/00d10/summary.BI.megahit.contig.blast
 
 blastn -num_threads 32 -db $MDB/NCBI/blast_nt/nt -query RCA194FM_00/summary.BI.megahit.contig.fasta -outfmt '6 std staxid ssciname stitle' -out RCA194FM_00/summary.BI.megahit.contig.b6
+
+#make a primer lsit first
+#command refer to http://bioweb.cbm.uam.es/courses/MasterVirol2013/alignment/BLAST-NCBI-programs.htm
+blastn -num_threads 8 -query primers.fa -db RCA194FM_00/blast/summary.BI.megahit.contig.fasta \
+-out RCA194FM_00/blast/summary.BI.megahit.contig.b6 -outfmt 6 -word_size 7 -evalue 10
 ```
 
 # Beads isolate assembly
