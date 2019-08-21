@@ -1,0 +1,199 @@
+---
+title: "RCA merged results"
+author: "Chao"
+date: "4/24/2019"
+output: 
+  html_notebook:
+    code_fold: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reshape2)
+library(ggplot2)
+library(plyr)
+library(dplyr)
+library(RColorBrewer)
+```
+
+# Background
+
+Samples involved:
+
+| Sample ID             | lane | barcode | Note    |
+| --------------------- | ---- | ------- | ------- |
+| ALS 16S               | M01  | 1       | RCA     |
+| Zymo 16S              | M01  | 2       | RCA     |
+| ALS ITS               | M01  | 3       | RCA     |
+| 159:160:161=100:10:1  | M01  | 4       | RCA     |
+| 163                   | M01  | 5       | RCA     |
+| 164                   | M01  | 6       | RCA     |
+| ALS ITS 10X dilute    | M01  | 7       | Non-RCA |
+| Zymo 16S 10X dilute   | M01  | 8       | Non-RCA |
+| Zymo 16S-2            | M02  | 1       | RCA     |
+| Zymo 16S-3            | M02  | 2       | RCA     |
+| ALS ITS-2             | M02  | 3       | RCA     |
+| ALS ITS-3             | M02  | 4       | RCA     |
+| Mock16_23S            | M02  | 5       | RCA     |
+| Skin16_23S            | M02  | 6       | RCA     |
+| ALS ITS 10X   dilute  | M02  | 7       | Non-RCA |
+| Zymo 16S 10X   dilute | M02  | 8       | Non-RCA |   
+
+#combine same libraries
+```{bash,eval=FALSE}
+for j in {1..8};do mkdir -p RCA197M01\_$j/clean;done;done
+for j in {1..8};
+do
+  echo 'cat RCA197L0{1,2}\_'$j'/clean/fastp.sort.1.fq | paste - - - - | sort -T ./tmp -k2,2 -t "/" | tr "\t" "\n" > RCA197M01\_'$j'/clean/fastp.sort.1.fq'
+  echo 'cat RCA197L0{1,2}\_'$j'/clean/fastp.sort.2.fq | paste - - - - | sort -T ./tmp -k2,2 -t "/" | tr "\t" "\n" > RCA197M01\_'$j'/clean/fastp.sort.2.fq'
+done > sort.sh
+
+for j in {1..8};do mkdir -p RCA197M02\_$j/clean;done
+for j in {1..8};
+do
+  echo 'cat RCA197L0{3,4}\_'$j'/clean/fastp.sort.1.fq | paste - - - - | sort -T ./tmp -k2,2 -t "/" | tr "\t" "\n" > RCA197M02\_'$j'/clean/fastp.sort.1.fq'
+  echo 'cat RCA197L0{3,4}\_'$j'/clean/fastp.sort.2.fq | paste - - - - | sort -T ./tmp -k2,2 -t "/" | tr "\t" "\n" > RCA197M02\_'$j'/clean/fastp.sort.2.fq'
+done >> sort.sh
+sh sort.sh
+```
+
+
+# blast select scaf to nt
+```{bash,eval=FALSE}
+SAM="RCA197ALS16S"
+#make a primer lsit first
+
+#make db
+makeblastdb -in $SAM/summary.BI.megahit.contig.fasta -input_type fasta -dbtype nucl \
+-title megahit.contig -parse_seqids -out $SAM/blast/summary.BI.megahit.contig.fasta
+#command refer to http://bioweb.cbm.uam.es/courses/MasterVirol2013/alignment/BLAST-NCBI-programs.htm
+blastn -num_threads 8 -query primers.fa -db $SAM/blast/summary.BI.megahit.contig.fasta \
+-out $SAM/blast/summary.BI.megahit.contig.b6 -outfmt 6 -word_size 7 -evalue 10
+```
+
+# Load phenotype
+```{r}
+phe.df <- read.csv("../../Results/RCAs/RCA197FIN/RCA197FIN.PHE.csv")
+```
+
+
+# Load BB.stat
+```{r}
+tmp <- read.table("../../Results/RCAs/RCA197FIN/RCA197M01_1/clean/BB.stat")
+BB.stat <- rbind(
+  cbind(ID="M01_1",read.table("../../Results/RCAs/RCA197FIN/RCA197M01_1/clean/BB.stat")),
+  cbind(ID="M01_2",read.table("../../Results/RCAs/RCA197FIN/RCA197M01_2/clean/BB.stat")),
+  cbind(ID="M01_3",read.table("../../Results/RCAs/RCA197FIN/RCA197M01_3/clean/BB.stat")),
+  cbind(ID="M01_4",read.table("../../Results/RCAs/RCA197FIN/RCA197M01_4/clean/BB.stat")),
+  cbind(ID="M01_5",read.table("../../Results/RCAs/RCA197FIN/RCA197M01_5/clean/BB.stat")),
+  cbind(ID="M01_6",read.table("../../Results/RCAs/RCA197FIN/RCA197M01_6/clean/BB.stat")),
+  cbind(ID="M01_7",read.table("../../Results/RCAs/RCA197FIN/RCA197M01_7/clean/BB.stat")),
+  cbind(ID="M01_8",read.table("../../Results/RCAs/RCA197FIN/RCA197M01_8/clean/BB.stat")),
+  cbind(ID="M02_1",read.table("../../Results/RCAs/RCA197FIN/RCA197M02_1/clean/BB.stat")),
+  cbind(ID="M02_2",read.table("../../Results/RCAs/RCA197FIN/RCA197M02_2/clean/BB.stat")),
+  cbind(ID="M02_3",read.table("../../Results/RCAs/RCA197FIN/RCA197M02_3/clean/BB.stat")),
+  cbind(ID="M02_4",read.table("../../Results/RCAs/RCA197FIN/RCA197M02_4/clean/BB.stat")),
+  cbind(ID="M02_5",read.table("../../Results/RCAs/RCA197FIN/RCA197M02_5/clean/BB.stat")),
+  cbind(ID="M02_6",read.table("../../Results/RCAs/RCA197FIN/RCA197M02_6/clean/BB.stat")),
+  cbind(ID="M02_7",read.table("../../Results/RCAs/RCA197FIN/RCA197M02_7/clean/BB.stat")),
+  cbind(ID="M02_8",read.table("../../Results/RCAs/RCA197FIN/RCA197M02_8/clean/BB.stat"))
+)
+colnames(BB.stat) <- c("ID","count","rpb","cumsum")
+BB.stat <- merge(BB.stat,phe.df,by="ID")
+```
+
+```{r}
+ggplot(BB.stat,aes(x=rpb,y=count,group=ID,color=Note,linetype=dilute)) + geom_line(size=1) + 
+  xlim(c(0,100)) + facet_grid(sample~.) +
+  scale_y_log10() + annotation_logticks(sides="l")
+```
+
+```{r}
+ggplot(BB.stat%>%filter(Note=="Non-RCA"),aes(x=rpb,y=count,color=ID)) + geom_line() + 
+  xlim(c(0,100)) +
+  scale_y_log10() + annotation_logticks(sides="l")
+```
+
+# seeking primers
+```{bash, eval=FALSE}
+makeblastdb -in primers.fa -input_type fasta -dbtype nucl -title primers \
+-parse_seqids -out primers/primers.blast
+
+for SAM in RCA197M0{1,2}_{1..8};do
+for i in {1,2};do
+  echo 'awk '\''(FNR%4==1){sub(/^@/,">");print $0}(FNR%4==2)'\' $SAM/clean/fastp.sort.$i.fq\|blastn -num_threads 4 -query - -db primers/primers.blast -out tmp/$SAM/clean/seekPrimers.$i.b6 -outfmt 6 -word_size 11 -evalue 10
+done;done
+
+#stat
+for i in tmp/RCA197M0{1,2}_{1..8}/clean/seekPrimers.{1,2}.b6 ;do echo perl statPrimer.pl count -i $i -o ${i/b6/stat};done > batch.stat.sh
+
+for i in tmp/RCA197M0{1,2}_{1..8}/clean/seekPrimers.{1,2}.stat ;do perl -e 'while(<>){chomp;@a=split;$HS{$a[1]}{'b'}++;$HS{$a[1]}{'c'}+=$a[2]};foreach my $pri(sort keys %HS){print "$pri\t$HS{$pri}{'b'}\t$HS{$pri}{'c'}\n"}' $i > ${i/stat/stat2} & done
+
+for i in {1,2};do for j in {1..8};do for k in {1,2};do awk -v tag=M0$i\_$j -v rd=$k '{print tag"\t"rd"\t"$0}' tmp/RCA197M0$i\_$j/clean/seekPrimers.$k.stat2;done;done;done > ../../Results/RCAs/RCA197FIN/summary.seekPrimers.stat
+```
+
+#Visual
+```{r}
+seekP.df <- merge(phe.df,read.table("../../Results/RCAs/RCA197FIN/summary.seekPrimers.stat",
+                       col.names = c("ID","Rd","primers","beads","reads")),by="ID")
+seekP.df$primers <- reorder(seekP.df$primers,seekP.df$beads,mean)
+
+select.primers <- levels(seekP.df$primers)[length(levels(seekP.df$primers))-10:0]
+ggplot(seekP.df%>%filter(primers%in%select.primers),aes(x=interaction(factor(Rd),ID),y=beads,fill=primers)) + 
+  geom_bar(stat="identity",position="stack") + facet_grid(.~interaction(Note,method),scale="free",space="free")+
+  theme(axis.text.x = element_text(angle=45,hjust=1,vjust=1))
+
+ggplot(seekP.df%>%filter(primers%in%select.primers),aes(x=interaction(factor(Rd),ID),y=beads,fill=primers)) + 
+  geom_bar(stat="identity",position="stack") + facet_grid(.~interaction(Note,method),scale="free",space="free")+
+  theme(axis.text.x = element_text(angle=45,hjust=1,vjust=1))
+```
+
+```{r}
+ggplot(seekP.df%>%filter(primers%in%select.primers),aes(x=interaction(factor(Rd),ID),y=beads,fill=primers)) + 
+  geom_bar(stat="identity",position="fill") + facet_grid(.~interaction(Note,method),scale="free",space="free")+
+  geom_text(aes(label=sample,y=0),angle=90,color="grey20") +
+  theme(axis.text.x = element_text(angle=45,hjust=1,vjust=1))
+```
+
+
+# stat of primer linkage pattern
+```{bash, eval=FALSE}
+for i in tmp/RCA197M0{1,2}_{1..8}/clean/seekPrimers.{1,2}.b6 ;do echo perl statPrimer.pl link -i $i -o ${i/b6/links};done > batch.link.sh
+#Run it
+for i in {1,2};do for j in {1..8};do for k in {1,2};do awk -v tag=M0$i\_$j -v rd=$k '{print tag"\t"rd"\t"$0}' tmp/RCA197M0$i\_$j/clean/seekPrimers.$k.links;done;done;done > ../../Results/RCAs/RCA197FIN/summary.seekPrimers.links.stat
+```
+
+```{r}
+PrimerPattern.df <- merge(phe.df,read.table("../../Results/RCAs/RCA197FIN/summary.seekPrimers.links.stat",
+                       col.names = c("ID","Rd","pattern","beads","reads","note")),by="ID")
+PrimerPattern.df$pattern <- as.character(PrimerPattern.df$pattern)
+topfun <- function(d,x){
+  rest <- sum(d$beads[x+1:nrow(d)])
+  d <- d[rev(order(d$beads))[1:(x+1)],]
+  #d$patterns<- factor(d$pattern,levels=c(levels(d$pattern),"others"))
+  d$beads[x+1] <- rest
+  d$pattern[x+1] <- "others"
+  return(d)
+}
+top10PP.df <- ddply(PrimerPattern.df,c("ID"),topfun,10)
+
+ggplot(top10PP.df,aes(x=interaction(factor(Rd),ID),y=beads,fill=pattern)) + 
+  geom_bar(stat="identity",position="fill") + facet_grid(.~interaction(Note,method),scale="free",space="free")+
+  geom_text(aes(label=sample,y=0),angle=90,color="grey20") +
+  theme(axis.text.x = element_text(angle=45,hjust=1,vjust=1))
+```
+
+
+# blast assembled fa to reference
+```{bash,eval=FALSE}
+for i in {1,2};do for j in {1..8};do
+SAM=RCA197M0$i\_$j;
+echo "blastn -num_threads 4 -query $SAM/summary.BI.megahit.contig.fasta -db $MDB/NCBI/blast_nt/nt -out $SAM/summary.BI.megahit.contig.b6 -outfmt '6 std staxid ssciname' -word_size 7 -evalue 10"
+done;done
+```
+
+
+
+
+
+#FIN.
