@@ -5,7 +5,7 @@ tmp: "./tmp"
 # int cutoff of freq number for select beads; 0 means output all beads
 beadSelect: 10
 distCutoff: 0.04
-divideSH: 20
+divideSH: 4
 
 BB_LIST: "../../Source/REF/barcode.list"
 REF_GEN: "../../Source/REF/fungal7mix/MIX7.fa"
@@ -13,15 +13,15 @@ REF_GEN: "../../Source/REF/fungal7mix/MIX7.fa"
 REF_FA: "../../Source/REF/fungal7mix/MIX7.fa"
 REF_ID: "../../Source/REF/fungal7mix/MIX7.faID"
 
+REF_nt: "$MDB/NCBI/blast_nt/nt"
+REF_silva: "../../Source/REF/silva132/combine/SILVA_132_SSU_LSU_tax_DNA.blast"
 sampleType: "F" # F(ungi) or B(acteria)
 
 ### adapters
-#AdFw: "GGTCATTTAGAGGAAGTAA"
-#AdRv: "CGTTCTTCATCG"
 AdFw:
 AdRv:
 A_primer_list_to_remove:
-
+A_primer_fa_to_find: "./primers.fa"
 ### method selection
 method:
   cluster:
@@ -58,7 +58,7 @@ p_rpc_min: 100
 p_bpc_min: 0
 
 #Assembly
-p_asm_min: 1000
+p_asm_min: 500
 p_asm_mem: 10000000000
 p_asm_cpu: 4
 
@@ -70,11 +70,13 @@ p_cc_cut:  97
 
 ### Thread control
 thread:
-  manualDivide: 10
+  manualDivide: 2
   pigz: 4
-  fastp: 6
-  spades: 8
+  fastp: 4
+  spades: 4
+  megahit: 1
   vsearch: 16
+  blastn: 16
 
 samples:
   RCA194ALS: rawSeq/RCA194ALS
