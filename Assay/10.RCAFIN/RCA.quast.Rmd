@@ -1,0 +1,161 @@
+---
+title: "RCA merged results"
+author: "Chao"
+date: "4/24/2019"
+output: 
+  html_notebook:
+    code_fold: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reshape2)
+library(ggplot2)
+library(plyr)
+library(dplyr)
+library(RColorBrewer)
+```
+
+# Background
+
+Samples involved:
+
+| Sample ID             | lane | barcode | Note    |
+| --------------------- | ---- | ------- | ------- |
+| ALS 16S               | M01  | 1       | RCA     |
+| Zymo 16S              | M01  | 2       | RCA     |
+| ALS ITS               | M01  | 3       | RCA     |
+| 159:160:161=100:10:1  | M01  | 4       | RCA     |
+| 163                   | M01  | 5       | RCA     |
+| 164                   | M01  | 6       | RCA     |
+| ALS ITS 10X dilute    | M01  | 7       | Non-RCA |
+| Zymo 16S 10X dilute   | M01  | 8       | Non-RCA |
+| Zymo 16S-2            | M02  | 1       | RCA     |
+| Zymo 16S-3            | M02  | 2       | RCA     |
+| ALS ITS-2             | M02  | 3       | RCA     |
+| ALS ITS-3             | M02  | 4       | RCA     |
+| Mock16_23S            | M02  | 5       | RCA     |
+| Skin16_23S            | M02  | 6       | RCA     |
+| ALS ITS 10X   dilute  | M02  | 7       | Non-RCA |
+| Zymo 16S 10X   dilute | M02  | 8       | Non-RCA |   
+
+
+
+Fungal mock strains:
+
+| ID   | Prefix | Tag  | Taxonomy                    | Alternative                |
+| ---- | ------ | ---- | --------------------------- | -------------------------- |
+| 158  | JOMC   | Au   | Aspergillus ustus           | Aspergillus puniceus       |
+| 159  | BCGH   | Tk   | Trichoderma koningii        | Trichoderma pseudokoningii |
+| 160  | JQFZ   | Pe   | Penicillium expansum        |                            |
+| 161  | AACD   | An   | Aspergillus nidulans        |                            |
+| 162  | JMSF   | Pc   | Penicillium chrysogenum     |                            |
+| 163  | MBDJ   | Tl   | Trichoderma longibrachiatum |                            |
+| 164  | AAIL   | Tr   | Trichoderma viride          | Trichoderma reesei         |
+| 165  | ABDG   | Ta   | Trichoderma atroviride      |                            |
+
+
+# blast select scaf to nt
+```{bash,eval=FALSE}
+SAM="RCA197M01_4"
+metabbq RCACLIPS -i $SAM/summary.BI.megahit.contig.fasta -o $SAM/summary.BI.megahit.contig.clip.fa
+sed 's/ CLIP=/_C/' $SAM/summary.BI.megahit.contig.clip.fa > $SAM/summary.BI.megahit.contig.CLIP2.fasta
+quast.py $SAM/summary.BI.megahit.contig.CLIP2.fasta -r ../../Source/REF/MIX7.fa -o $SAM/summary.BI.megahit.contig.CLIP2_quast/ -t 48 --fungus --circos --fragmented
+#
+awk 'BEGIN{prv=""}{if($4=="correct"){print prv}else{prv=$0}}' $SAM/summary.BI.megahit.contig.CLIP2_quast/contigs_reports/all_alignments_summary-BI-megahit-contig-CLIP2.tsv > $SAM/summary.BI.megahit.contig.CLIP2_quast/contigs_reports/correct_alignments_summary-BI-megahit-contig-CLIP2.tsv
+
+file=summary.BI.megahit.contig.CLIP2_quast/contigs_reports/correct_alignments_summary-BI-megahit-contig-CLIP2.tsv
+perl quast.cov.pl $SAM/$file < $SAM/$file
+
+```
+
+# Load phenotype
+```{r}
+SAM="RCA197M01_4"
+file="summary.BI.megahit.contig.CLIP2_quast/contigs_reports/correct_alignments_summary-BI-megahit-contig-CLIP2.tsv.999"
+
+IDMAP <- read.table("../../Results/REF/fungal7mix/ID.map",col.names = c("taxID","pfx"))
+#cAlign <- read.table(paste0("../../Results/RCAs/RCA197FIN/",SAM,"/",file),col.names = c("S1","E1","S2","E2","Reference","Contig","IDY","Best_group"))
+cCov <- read.table(paste0("../../Results/RCAs/RCA197FIN/",SAM,"/",file,".cov"),col.names = c("Reference","start","position","coverage"))
+cReg <- read.table(paste0("../../Results/RCAs/RCA197FIN/",SAM,"/",file,".reg"),col.names = c("Reference","start","length","maxCov","Contigs"))
+
+```
+
+# Curve
+```{r}
+sReg <- cReg[,1:4]
+sReg$pfx <- substr(sReg$Reference,1,4)
+sReg <- merge(IDMAP,sReg,by="pfx")
+sReg$Reference <- reorder(sReg$Reference,sReg$maxCov,sum)
+sReg$taxID <- reorder(sReg$taxID,sReg$maxCov,sum)
+
+ggplot(sReg%>%filter(maxCov>9),aes(x=Reference,y=maxCov,fill=factor(start))) + geom_bar(stat="identity",position="stack") +
+  facet_grid(taxID~.,scales="free",space="free") + coord_flip() + guides(fill=F)
+```
+```{r}
+ggplot(sReg,aes(x=taxID,y=maxCov,fill=factor(Reference))) + geom_bar(stat="identity",position="stack") +
+  coord_flip() + guides(fill=F)
+```
+
+#ref to BI
+```{r,warning=FALSE}
+ref2BI <- function(d){
+  ind <- which(colnames(d)=="Contigs")
+  tmp <- unlist(strsplit(as.character(d$Contigs),","))
+  tmp2 <- matrix(unlist(strsplit(tmp,"_")),ncol=6,byrow=T)
+  colnames(tmp2) <- c("BI","K","flag","depth","clen","CLIP")
+  tmp3 <- as.matrix(table(tmp2[,1]))
+  res <- cbind(d[,-ind],data.frame(contig=tmp,tmp2))
+  return(res)
+}
+dReg <- ddply(cReg,c("Reference","start","length"),ref2BI)
+
+dBI <- ddply(dReg,"BI",summarise,num=length(unique(Reference)))
+```
+
+
+```{r}
+refNames <- levels(cCov$Reference)
+sReg$region <- paste(sReg$Reference,sReg$start,sep="_")
+selectRef <- unique((sReg%>%filter(maxCov>99))$region)
+cCov$region <- paste(cCov$Reference,cCov$start,sep="_")
+ggplot(cCov%>%filter(region%in%selectRef),aes(x=position,y=coverage)) + geom_line() + 
+  facet_wrap(~region,scales="free") #+ annotation_logticks(side="l")
+
+
+```
+
+
+###################################
+# Load phenotype
+```{r}
+SAM="RCA197M01_5"
+file="summary.BI.megahit.contig.CLIP2_quast/contigs_reports/correct_alignments_summary-BI-megahit-contig-CLIP2.tsv"
+
+IDMAP <- read.table("../../Results/REF/fungal7mix/ID.map",col.names = c("taxID","pfx"))
+#cAlign <- read.table(paste0("../../Results/RCAs/RCA197FIN/",SAM,"/",file),col.names = c("S1","E1","S2","E2","Reference","Contig","IDY","Best_group"))
+cCov <- read.table(paste0("../../Results/RCAs/RCA197FIN/",SAM,"/",file,".cov"),col.names = c("Reference","start","position","coverage"))
+cReg <- read.table(paste0("../../Results/RCAs/RCA197FIN/",SAM,"/",file,".reg"),col.names = c("Reference","start","length","maxCov","Contigs"))
+
+```
+
+# Curve
+```{r}
+sReg <- cReg[,1:4]
+sReg$pfx <- substr(sReg$Reference,1,4)
+sReg <- merge(IDMAP,sReg,by="pfx")
+sReg$Reference <- reorder(sReg$Reference,sReg$maxCov,sum)
+sReg$taxID <- reorder(sReg$taxID,sReg$maxCov,sum)
+
+ggplot(sReg,aes(x=taxID,y=maxCov,fill=factor(Reference))) + geom_bar(stat="identity",position="stack") +
+  coord_flip() + guides(fill=F)
+ggplot(sReg%>%filter(maxCov>9),aes(x=Reference,y=maxCov,fill=factor(start))) + geom_bar(stat="identity",position="stack") +
+  facet_grid(taxID~.,scales="free",space="free") + coord_flip() + guides(fill=F)
+```
+```{r}
+ggplot(sReg,aes(x=taxID,y=maxCov,fill=factor(Reference))) + geom_bar(stat="identity",position="stack") +
+  coord_flip() + guides(fill=F)
+```
+
+
+#FIN.

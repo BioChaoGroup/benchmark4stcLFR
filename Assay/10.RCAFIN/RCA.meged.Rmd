@@ -109,6 +109,30 @@ ggplot(BB.stat,aes(x=rpb,y=count,group=ID,color=Note,linetype=dilute)) + geom_li
 ```
 
 ```{r}
+BB.all <- ddply(BB.stat,c("ID","sample","Note","dilute"),summarise,cumsum=sum(count))
+ggplot(BB.all,aes(x=ID,y=cumsum,group=ID,fill=Note,linetype=dilute)) + 
+  geom_bar(stat="identity") + facet_grid(.~sample+Note,scale="free",space="free") +
+  scale_y_log10() + annotation_logticks(sides="l") + ggtitle("Total detected beads number")
+```
+
+```{r}
+BB.above100 <- ddply(BB.stat%>%filter(rpb>99),c("ID","sample","method","Note","dilute"),summarise,cumsum=sum(count))
+ggplot(BB.above100,aes(x=interaction(ID,sample),y=cumsum,group=ID,fill=Note,linetype=dilute)) + 
+  geom_bar(stat="identity") + facet_grid(.~method+Note,scale="free",space="free") +
+  scale_y_log10() + annotation_logticks(sides="l") + 
+  theme(axis.text.x = element_text(angle=45,hjust=1,vjust=1)) +
+  ggtitle("Beads number with rpb > 99 (for isolated assemble)")
+```
+
+```{r}
+BB.above50 <- ddply(BB.stat%>%filter(rpb>49),c("ID","sample","Note","dilute"),summarise,cumsum=sum(count))
+ggplot(BB.above50,aes(x=ID,y=cumsum,group=ID,fill=Note,linetype=dilute)) + 
+  geom_bar(stat="identity") + facet_grid(.~sample+Note,scale="free",space="free") +
+  scale_y_log10() + annotation_logticks(sides="l") + 
+  ggtitle("Beads number with rpb > 49 (for isolated assemble)")
+```
+
+```{r}
 ggplot(BB.stat%>%filter(Note=="Non-RCA"),aes(x=rpb,y=count,color=ID)) + geom_line() + 
   xlim(c(0,100)) +
   scale_y_log10() + annotation_logticks(sides="l")
@@ -188,7 +212,7 @@ ggplot(top10PP.df,aes(x=interaction(factor(Rd),ID),y=beads,fill=pattern)) +
 ```{bash,eval=FALSE}
 for i in {1,2};do for j in {1..8};do
 SAM=RCA197M0$i\_$j;
-echo "blastn -num_threads 4 -query $SAM/summary.BI.megahit.contig.fasta -db $MDB/NCBI/blast_nt/nt -out $SAM/summary.BI.megahit.contig.b6 -outfmt '6 std staxid ssciname' -word_size 7 -evalue 10"
+echo "blastn -num_threads 4 -query $SAM/summary.BI.megahit.contig.fasta -db $MDB/NCBI/blast_nt/nt -out $SAM/summary.BI.megahit.contig.b6 -outfmt '6 std staxid ssciname'"
 done;done
 ```
 
