@@ -1,0 +1,16 @@
+metabbq smk -j -p M03_Origin/origin/RCA199L01_1/clean/BB.stat
+metabbq smk -j -p M03_Origin/origin/RCA199L01_2/clean/BB.stat
+metabbq smk -j -p M03_Origin/origin/RCA199L01_3/clean/BB.stat
+metabbq smk -j -p M03_Origin/origin/RCA199L01_4/clean/BB.stat
+metabbq smk -j -p M03_Origin/origin/RCA199L01_5/clean/BB.stat
+metabbq smk -j -p M03_Origin/origin/RCA199L01_6/clean/BB.stat
+metabbq smk -j -p M03_Origin/origin/RCA199L01_7/clean/BB.stat
+metabbq smk -j -p M03_Origin/origin/RCA199L01_8/clean/BB.stat
+metabbq smk -j -p M03_Origin/origin/RCA199L02_1/clean/BB.stat
+metabbq smk -j -p M03_Origin/origin/RCA199L02_2/clean/BB.stat
+metabbq smk -j -p M03_Origin/origin/RCA199L02_3/clean/BB.stat
+metabbq smk -j -p M03_Origin/origin/RCA199L02_4/clean/BB.stat
+metabbq smk -j -p M03_Origin/origin/RCA199L02_5/clean/BB.stat
+metabbq smk -j -p M03_Origin/origin/RCA199L02_6/clean/BB.stat
+metabbq smk -j -p M03_Origin/origin/RCA199L02_7/clean/BB.stat
+metabbq smk -j -p M03_Origin/origin/RCA199L02_8/clean/BB.stat

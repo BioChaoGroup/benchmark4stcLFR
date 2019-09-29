@@ -46,7 +46,7 @@ for h in {1,2};do for i in {1,2};do for j in {1..8};do let k=$i+2; ln -sf $sDir/
 ```{bash,eval=FALSE}
 #batch 01 #chip: CL100124160
 #batch 02 #chip: CL100124159
-metabbq smk -j 32 -np RCA197L0{3,4}_{1..8}/batch.assemble.BI.sh
+metabbq smk -j 32 -np RCA197L0{1,2}_{1..8}/BB.stat
 ```
 
 #combine same libraries
