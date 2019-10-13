@@ -58,13 +58,26 @@ Fungal mock strains:
 # blast select scaf to nt
 ```{bash,eval=FALSE}
 SAM="RCA197M01_4"
-metabbq RCACLIPS -i $SAM/summary.BI.megahit.contig.fasta -o $SAM/summary.BI.megahit.contig.clip.fa
-sed 's/ CLIP=/_C/' $SAM/summary.BI.megahit.contig.clip.fa > $SAM/summary.BI.megahit.contig.CLIP2.fasta
+metabbq RCACLIPS -i $SAM/summary.BI.megahit.contig.fasta -o $SAM/summary.BI.megahit.contig.CLIP.fa
+sed 's/ CLIP=/_C/' $SAM/summary.BI.megahit.contig.CLIP.fa > $SAM/summary.BI.megahit.contig.CLIP2.fasta
 quast.py $SAM/summary.BI.megahit.contig.CLIP2.fasta -r ../../Source/REF/MIX7.fa -o $SAM/summary.BI.megahit.contig.CLIP2_quast/ -t 48 --fungus --circos --fragmented
 #
-awk 'BEGIN{prv=""}{if($4=="correct"){print prv}else{prv=$0}}' $SAM/summary.BI.megahit.contig.CLIP2_quast/contigs_reports/all_alignments_summary-BI-megahit-contig-CLIP2.tsv > $SAM/summary.BI.megahit.contig.CLIP2_quast/contigs_reports/correct_alignments_summary-BI-megahit-contig-CLIP2.tsv
-
 file=summary.BI.megahit.contig.CLIP2_quast/contigs_reports/correct_alignments_summary-BI-megahit-contig-CLIP2.tsv
+awk 'BEGIN{prv=""}{if($4=="correct"){print prv}else{prv=$0}}' $SAM/${file/correct/all} >$SAM/$file
+perl quast.cov.pl $SAM/$file < $SAM/$file
+
+#ITSx
+mkdir $SAM/ITSx
+ITSx -t F --cpu 2 -i $SAM/summary.BI.megahit.contig.CLIP2.fasta -o $SAM/ITSx/CLIP2
+
+
+#CLIP3
+awk -F '_' '/>/{if($5>1999){p=1}else{p=0}};(p){print}' $SAM/summary.BI.megahit.contig.CLIP2.fasta > $SAM/summary.BI.megahit.contig.CLIP3.fasta
+quast.py $SAM/summary.BI.megahit.contig.CLIP3.fasta -r ../../Source/REF/MIX7.fa -o $SAM/summary.BI.megahit.contig.CLIP3_quast/ -t 48 --fungus --circos --fragmented
+
+file=summary.BI.megahit.contig.CLIP3_quast/contigs_reports/correct_alignments_summary-BI-megahit-contig-CLIP3.tsv
+awk 'BEGIN{prv=""}{if($4=="correct"){print prv}else{prv=$0}}' $SAM/${file/correct/all} >$SAM/$file
+
 perl quast.cov.pl $SAM/$file < $SAM/$file
 
 ```
@@ -72,7 +85,8 @@ perl quast.cov.pl $SAM/$file < $SAM/$file
 # Load phenotype
 ```{r}
 SAM="RCA197M01_4"
-file="summary.BI.megahit.contig.CLIP2_quast/contigs_reports/correct_alignments_summary-BI-megahit-contig-CLIP2.tsv.999"
+file="summary.BI.megahit.contig.CLIP2_quast/contigs_reports/correct_alignments_summary-BI-megahit-contig-CLIP2.tsv"
+file="summary.BI.megahit.contig.CLIP3_quast/contigs_reports/correct_alignments_summary-BI-megahit-contig-CLIP3.tsv"
 
 IDMAP <- read.table("../../Results/REF/fungal7mix/ID.map",col.names = c("taxID","pfx"))
 #cAlign <- read.table(paste0("../../Results/RCAs/RCA197FIN/",SAM,"/",file),col.names = c("S1","E1","S2","E2","Reference","Contig","IDY","Best_group"))
@@ -113,49 +127,101 @@ dReg <- ddply(cReg,c("Reference","start","length"),ref2BI)
 dBI <- ddply(dReg,"BI",summarise,num=length(unique(Reference)))
 ```
 
-
 ```{r}
-refNames <- levels(cCov$Reference)
-sReg$region <- paste(sReg$Reference,sReg$start,sep="_")
-selectRef <- unique((sReg%>%filter(maxCov>99))$region)
-cCov$region <- paste(cCov$Reference,cCov$start,sep="_")
-ggplot(cCov%>%filter(region%in%selectRef),aes(x=position,y=coverage)) + geom_line() + 
-  facet_wrap(~region,scales="free") #+ annotation_logticks(side="l")
+c2r.bwa <- read.table("../../Results/RCAs/RCA197FIN/RCA197M01_4/summary.BI.megahit.contig.CLIP3.simple",col.names = c("contig","Reference"))
+c2r.b6 <- read.table("../../Results/RCAs/RCA197FIN/RCA197M01_4/summary.BI.megahit.contig.CLIP3.blast",
+                     col.names = c("contig","Reference","pident","length","mismatch","gapopen","qstart","qend","sstart","send","evalue","bitscore")
+)
+c2clust <- read.table("../../Results/RCAs/RCA197FIN/RCA197M01_4/mash/t1999.bc.tree.cluster",col.names = c("cluster","contig"))
+fb6<-function(d){
+  d <- d[1,]
+  return(d)
+}
 
+c2r.1b6 <- ddply(c2r.b6,"contig",fb6)
+c2r.b6 <- c2r.b6%>%filter(pident>98&length>999)
+c2r.b6$pfx <- substr(c2r.b6$Reference,1,4)
+c2r.b6 <- merge(IDMAP,c2r.b6,by="pfx")
 
-```
-
-
-###################################
-# Load phenotype
-```{r}
-SAM="RCA197M01_5"
-file="summary.BI.megahit.contig.CLIP2_quast/contigs_reports/correct_alignments_summary-BI-megahit-contig-CLIP2.tsv"
-
-IDMAP <- read.table("../../Results/REF/fungal7mix/ID.map",col.names = c("taxID","pfx"))
-#cAlign <- read.table(paste0("../../Results/RCAs/RCA197FIN/",SAM,"/",file),col.names = c("S1","E1","S2","E2","Reference","Contig","IDY","Best_group"))
-cCov <- read.table(paste0("../../Results/RCAs/RCA197FIN/",SAM,"/",file,".cov"),col.names = c("Reference","start","position","coverage"))
-cReg <- read.table(paste0("../../Results/RCAs/RCA197FIN/",SAM,"/",file,".reg"),col.names = c("Reference","start","length","maxCov","Contigs"))
-
-```
-
-# Curve
-```{r}
-sReg <- cReg[,1:4]
-sReg$pfx <- substr(sReg$Reference,1,4)
-sReg <- merge(IDMAP,sReg,by="pfx")
-sReg$Reference <- reorder(sReg$Reference,sReg$maxCov,sum)
-sReg$taxID <- reorder(sReg$taxID,sReg$maxCov,sum)
-
-ggplot(sReg,aes(x=taxID,y=maxCov,fill=factor(Reference))) + geom_bar(stat="identity",position="stack") +
-  coord_flip() + guides(fill=F)
-ggplot(sReg%>%filter(maxCov>9),aes(x=Reference,y=maxCov,fill=factor(start))) + geom_bar(stat="identity",position="stack") +
+ggplot(c2r.b6%>%filter(pident>99&length>1999),aes(x=Reference,fill=factor(mismatch))) + geom_bar(position="stack") +
   facet_grid(taxID~.,scales="free",space="free") + coord_flip() + guides(fill=F)
 ```
+
+
 ```{r}
-ggplot(sReg,aes(x=taxID,y=maxCov,fill=factor(Reference))) + geom_bar(stat="identity",position="stack") +
-  coord_flip() + guides(fill=F)
+
 ```
+
+```{r}
+statb6 <- table(c2r.b6$contig)
+selectC<- names(statb6)[which(statb6>1)]
+
+test.b <- merge(c2r.bwa,c2r.1b6[,1:2],by="contig")
+test.b$Reference.x <- as.character(test.b$Reference.x)
+test.b$Reference.y <- as.character(test.b$Reference.y)
+
+test.b$check <- ifelse(test.b$Reference.x==test.b$Reference.y,"SAME","DIFF")
+
+test.c <- merge(test.b,c2clust,by="contig")
+ggplot(test.c,aes(x=factor(cluster),fill=Reference.y)) + geom_bar(position="stack")
+```
+
+
+
+```{r}
+bc.map <- read.table("../../Results/RCAs/RCA197FIN/RCA197M01_4/mash/t1999.bc.map",col.names = c("ID","contig"))
+bc.dist <- read.table("../../Results/RCAs/RCA197FIN/RCA197M01_4/mash/t1999.bc.dist",col.names = c("source","target","dist"))
+#
+bc.map <- merge(c2r.bwa,bc.map,by="contig")
+
+RR.mdat <- merge(bc.dist,bc.map,by.x="source",by.y="ID")
+RR.mdat2 <- merge(RR.mdat,bc.map,by.x="target",by.y="ID")
+RR.mdat2$dist5 <- round(RR.mdat2$dist,5)
+RR.stat <- ddply(RR.mdat2,c("Reference.x","Reference.y","dist5"),summarise,count=length(dist5))
+```
+
+```{r}
+load("tmp.RData")
+selectRef <- names(rev(sort(table(RR.stat$Reference.x)))[c(1,2,9)])
+RR.stat2 <- RR.stat%>%filter(dist5>0&dist5<0.5)
+ggplot(RR.stat2%>%filter(Reference.x%in%selectRef&Reference.y%in%selectRef),aes(x=dist5,y=count)) + 
+  geom_point(size=.5,alpha=.5) + facet_wrap(~Reference.x+Reference.y,ncol=3,scales="free")
+```
+
+```{r}
+ggplot(RR.stat2%>%filter(Reference.x%in%selectRef&Reference.y%in%selectRef&dist5<0.1),aes(x=dist5,y=count)) + 
+  geom_point(size=.5,alpha=.5) + facet_wrap(~Reference.x+Reference.y,ncol=3,scales="free") + 
+  scale_x_continuous(breaks=seq(0,0.1,0.02))
+```
+
+
+
+```{r}
+RR.mdat3 <- merge(RR.mdat2,c2clust,by.x="contig.x",by.y="contig")
+RR.mdat3 <- merge(RR.mdat3,c2clust,by.x="contig.y",by.y="contig")
+
+CC.stat <- ddply(RR.mdat3,c("cluster.x","cluster.y","dist5"),summarise,count=length(dist5))
+```
+
+```{r}
+CC.stat2 <- CC.stat%>%filter(dist5>0&dist5<0.5)
+ggplot(CC.stat2,aes(x=dist5,y=count)) + 
+  geom_point(size=.5,alpha=.5) + facet_wrap(~cluster.x+cluster.y,ncol=3,scales="free")
+```
+
+
+
+#find region
+```{r}
+RR.mdat4 <- merge(RR.mdat3[,-c(6:7)],dReg,by.x="contig.x",by.y="contig")
+RR.mdat4 <- merge(RR.mdat4,dReg,by.x="contig.y",by.y="contig")
+
+```
+
+
+
+
+
 
 
 #FIN.

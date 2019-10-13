@@ -1,0 +1,281 @@
+---
+title: "RCA merged results"
+author: "Chao"
+date: "4/24/2019"
+output: 
+  html_notebook:
+    code_fold: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reshape2)
+library(ggplot2)
+library(plyr)
+library(dplyr)
+library(RColorBrewer)
+```
+
+# Background
+
+Samples involved:
+
+| Sample ID             | lane | barcode | Note    |
+| --------------------- | ---- | ------- | ------- |
+| ALS 16S               | M01  | 1       | RCA     |
+| Zymo 16S              | M01  | 2       | RCA     |
+| ALS ITS               | M01  | 3       | RCA     |
+| 159:160:161=100:10:1  | M01  | 4       | RCA     |
+| 163                   | M01  | 5       | RCA     |
+| 164                   | M01  | 6       | RCA     |
+| ALS ITS 10X dilute    | M01  | 7       | Non-RCA |
+| Zymo 16S 10X dilute   | M01  | 8       | Non-RCA |
+| Zymo 16S-2            | M02  | 1       | RCA     |
+| Zymo 16S-3            | M02  | 2       | RCA     |
+| ALS ITS-2             | M02  | 3       | RCA     |
+| ALS ITS-3             | M02  | 4       | RCA     |
+| Mock16_23S            | M02  | 5       | RCA     |
+| Skin16_23S            | M02  | 6       | RCA     |
+| ALS ITS 10X   dilute  | M02  | 7       | Non-RCA |
+| Zymo 16S 10X   dilute | M02  | 8       | Non-RCA |   
+
+
+
+Zymo mock strains:
+
+| Species                  | Genomic DNA | 16S Only1 | 16S & 18S1 | Genome Copy2 | Cell Number3 |
+| ------------------------ | ----------- | --------- | ---------- | ------------ | ------------ |
+| Pseudomonas aeruginosa   | 12          | 4.2       | 3.6        | 6.1          | 6.1          | +
+| Escherichia coli         | 12          | 10.1      | 8.9        | 8.5          | 8.5          | +
+| Salmonella enterica      | 12          | 10.4      | 9.1        | 8.7          | 8.8          | +
+| Lactobacillus fermentum  | 12          | 18.4      | 16.1       | 21.6         | 21.9         |
+| Enterococcus faecalis    | 12          | 9.9       | 8.7        | 14.6         | 14.6         | +
+| Staphylococcus aureus    | 12          | 15.5      | 13.6       | 15.2         | 15.3         | +
+| Listeria monocytogenes   | 12          | 14.1      | 12.4       | 13.9         | 13.9         | +
+| Bacillus subtilis        | 12          | 17.4      | 15.3       | 10.3         | 10.3         | +
+| Saccharomyces cerevisiae | 2           | NA        | 9.3        | 0.57         | 0.29         |
+| Cryptococcus neoformans  | 2           | NA        | 3.3        | 0.37         | 0.18         |
+
+
+# 
+```{bash, eval=FALSE}
+grep ">" $SAM/VSEARCH/contig.LFRs.fasta|sed 's/>//;s/ /\t/' > $SAM/VSEARCH/contig.LFRs.IDs
+```
+
+
+# Load 
+```{r}
+SAM="RCA197M01_2"
+pfx=paste0("../../Results/RCAs/RCA197FIN/",SAM,"/VSEARCH/contig")
+
+name.uc <- c("RecordType","ClusterNO","size","Percentage","Orientation","NA1","NA2","CIGAR","query","centroid")
+uc.derep <- read.table(paste0(pfx,".derep.full.uc"),col.names = name.uc)
+uc.clust <- read.table(paste0(pfx,".preclust.uc"),col.names = name.uc)
+uc.chime <- read.table(paste0(pfx,".LFRs.uc"),col.names = name.uc)
+LFRID <- read.table(paste0(pfx,".LFRs.IDs"),col.names = c("LFR","BIC"))
+
+#
+LFRb6 <- read.table(paste0(pfx,".LFRs.zymo.genome.b6"),
+            col.names = c("LFR","Subject","pident","len","mismatch","gap","qs","qe","ss","se","eval","score","qLen"))
+LFRb6m <- read.table(paste0(pfx,".LFRs.zymo.genome.b6.more"),
+            col.names = c("LFR","Subject","pident","len","mismatch","gap","qs","qe","ss","se","eval","score","qLen","region","range"))
+
+LFR.barrnap <- read.table(paste0(pfx,".LFRs.barrnap"),sep="\t",
+            col.names = c("LFR","version","type","qs","qe","eval","strand","dot","Desc"))
+
+LFR.rRNA <- read.table(paste0(pfx,".LFRs.rRNA.b6"),sep="\t",
+            col.names = c("LFR","Subject","pident","len","mismatch","gap","qs","qe","ss","se","eval","score","qLen"))
+
+```
+
+# Curve
+```{r}
+LFRID$level <- "represent"
+LFRD0 <- merge(LFRID[,1:2],(uc.chime%>%filter(RecordType=="H"))[,9:10],by.x="BIC",by.y="centroid")
+LFRD0$level <- "centroid"
+
+LFRD1 <- merge(LFRD0[,2:3],(uc.clust%>%filter(RecordType=="H"))[,9:10],by.x="query",by.y="centroid")
+LFRD1$level <- "clusters"
+LFRD2 <- merge(LFRD1[,2:3],(uc.derep%>%filter(RecordType=="H"))[,9:10],by.x="query.y",by.y="centroid")
+LFRD2$level <- "duplicates"
+
+colnames(LFRD0)[3] <- "BIC"
+colnames(LFRD1)[3] <- "BIC"
+colnames(LFRD2)[3] <- "BIC"
+
+LFRDM <- rbind(LFRID,LFRD0[,-1],LFRD1[,-1],LFRD2[,-1])
+tmp <- matrix(unlist(strsplit(as.character(LFRDM$BIC),"_")),ncol=8,byrow = T)
+LFRDM$BI <- as.factor(tmp[,1])
+LFRDM$CLIP <- as.factor(tmp[,6])
+LFRDM$len <- as.numeric(tmp[,8])
+LFR.stat <- ddply(LFRDM,c("LFR"),summarise,size=length(unique(BI)))
+```
+
+```{r}
+pickOne <- function(d){
+  d <- d[1,]
+  return(d)
+}
+LFR.map <- merge(LFR.stat,ddply(LFRb6m,"LFR",pickOne),by="LFR",all.x=T)
+LFR.map$TaxID <- substr(LFR.map$Subject,1,10)
+#LFR.map$LFR <- reorder(LFR.map$LFR,LFR.map$size,sum)
+
+LFR.map2 <- merge(LFR.map,ddply(LFR.rRNA[,1:2],"LFR",pickOne),by="LFR",all.x=T)
+LFR.map2$Subject.y <- factor(LFR.map2$Subject.y,
+    levels=c("Pseudomonas_aeruginosa","Escherichia_coli","Salmonella_enterica","Lactobacillus_fermentum","Enterococcus_faecalis",
+             "Staphylococcus_aureus","Listeria_monocytogenes","Bacillus_subtilis","Saccharomyces_cerevisiae","Cryptococcus_neoformans"))
+LFR.map3 <- merge(LFR.map2,ddply(LFR.barrnap[,c(1,3)],"LFR",pickOne),by="LFR",all.x=T)
+LFR.map3 <- LFR.map3[order(LFR.map3$LFR),]
+LFR.map3$type <- ifelse(is.na(LFR.map3$type),"others",as.character(LFR.map3$type))
+
+```
+
+```{r}
+ggplot(LFR.map3,aes(x=type,y=size,fill=Subject.y)) + geom_bar(stat="sum")
+```
+
+```{r}
+test.df <- LFR.map3%>%filter(!is.na(Subject.x))
+ggplot(test.df,aes(x=TaxID,fill=Subject.y)) + geom_bar() +
+  coord_flip() + facet_grid(type~.)
+```
+
+
+```{r}
+LFR.map.stat <- ddply(LFR.map,c("LFR","TaxID","Subject","region","qLen"),summarise,count=sum(size))
+tmp <- matrix(unlist(strsplit(as.character(LFR.map.stat$region),"-")),ncol=2,byrow = T)
+LFR.map.stat$regStart <- as.numeric(tmp[,1])
+LFR.map.stat$regEnd <- as.numeric(tmp[,2])
+
+LFR.map.stat$region <- reorder(LFR.map.stat$region,LFR.map.stat$regStart,mean)
+LFR.map.stat$TaxID <- reorder(LFR.map.stat$TaxID,LFR.map.stat$count,sum)
+
+```
+
+```{r}
+LFR.map.sum <- ddply(LFR.map.stat%>%filter(qLen>1499),c("TaxID","region"),summarise,count=sum(count))
+ggplot(LFR.map.stat%>%filter(qLen>1499),aes(x=region,y=count)) + 
+  geom_bar(stat="identity",aes(fill=LFR)) + 
+  geom_text(data=LFR.map.sum,aes(y=count,label=count)) +
+  theme(axis.text.x= element_text(angle = 90,hjust=1,vjust=1)) +
+  facet_grid(.~TaxID,scale="free",space="free")
+```
+
+```{r}
+LFR.map.sum <- ddply(LFR.map.stat%>%filter(count>2&qLen>999&qLen<2000),c("TaxID","region"),summarise,count=sum(count))
+ggplot(LFR.map.stat%>%filter(count>2&qLen>999&qLen<2000),aes(x=region,y=count)) + 
+  geom_bar(stat="identity",aes(fill=LFR)) +
+  geom_text(data=LFR.map.sum,aes(y=count,label=count)) +
+  guides(fill=F) + facet_grid(TaxID~.,scale="free",space="free") + coord_flip()
+```
+
+```{r}
+LFR.map.stat2 <- ddply(LFR.map.stat%>%filter(count>10),c("TaxID","region","regStart","regEnd"),
+                       summarise,count=sum(count))
+LFR.map.stat2 <- melt(LFR.map.stat2,id.vars = c("TaxID","region","count"),variable.name = "board",value.name = "pos")
+LFR.map.stat2$shift <- ifelse(LFR.map.stat2$board=="regStart",-1,+1)
+LFR.map.stat3 <- LFR.map.stat2
+LFR.map.stat3$pos <- LFR.map.stat2$pos + LFR.map.stat2$shift
+LFR.map.stat3$count <- 0 
+LFR.map.stat4 <- rbind(LFR.map.stat2,LFR.map.stat3)
+LFR.map.stat4 <- LFR.map.stat4[order(LFR.map.stat4$pos),]
+ggplot(LFR.map.stat4,aes(x=pos,y=count)) + 
+  geom_path() +
+  guides(color=F) + facet_grid(~TaxID+region,scale="free",space="free")
+```
+
+#mapping all reads
+```{r}
+b2r <- read.table(paste0("../../Results/RCAs/RCA197FIN/",SAM,"/VSEARCH/test.B2R"),
+           col.names = c("BB","LFR","UNIQ","MULT"))
+
+b2rm <- merge(LFR.map.stat,b2r,by="LFR")
+b2rm$LFR <- reorder(b2rm$LFR,as.numeric(b2rm$Subject),mean)
+```
+
+```{r}
+ggplot(b2rm%>%filter(UNIQ>20),aes(x=region,y=UNIQ+MULT)) + 
+  geom_bar(stat="identity",aes(fill=LFR)) +
+  guides(fill=F) + facet_grid(TaxID~.,scale="free",space="free") + coord_flip()
+
+b2rm.20.sum <- ddply(b2rm%>%filter(UNIQ>20),c("TaxID"),summarise,count=sum(UNIQ+MULT))
+ggplot(b2rm%>%filter(UNIQ>20),aes(x=TaxID,y=UNIQ+MULT)) + 
+  geom_bar(stat="identity",aes(fill=LFR)) +
+  geom_text(data=b2rm.20.sum,aes(y=count,label=count)) +
+  guides(fill=F) #+ facet_grid(TaxID~.,scale="free",space="free") + coord_flip()
+```
+
+
+
+#Quantification
+
+```{r}
+LFR.prop <- read.table(paste0(pfx,".LFRs.bwa.prop"), col.names = c("count","LFR"))
+
+LFR.map.prop <- merge(LFR.map,LFR.prop,by="LFR")
+
+```
+
+```{r}
+LFR.map.prop.sum <- ddply(LFR.map.prop%>%filter(count>999&qLen>1999),c("TaxID","region"),summarise,count=sum(count))
+ggplot(LFR.map.prop%>%filter(count>999&qLen>1999),aes(x=region,y=count)) + 
+  geom_bar(stat="identity",aes(fill=LFR)) +
+  geom_text(data=LFR.map.prop.sum,aes(y=count,label=count)) +
+  guides(fill=F) + facet_grid(TaxID~.,scale="free",space="free") + coord_flip()
+```
+
+```{r}
+LFR.map.prop.sum <- ddply(LFR.map.prop%>%filter(qLen>1999),c("TaxID"),summarise,count=sum(count))
+LFR.map.prop.sum$pct <- LFR.map.prop.sum$count/sum(LFR.map.prop.sum$count)
+
+ggplot(LFR.map.prop%>%filter(count>999&qLen>1999),aes(x=TaxID,y=count)) + 
+  geom_bar(stat="identity",aes(fill=LFR)) +
+  geom_text(data=LFR.map.prop.sum,aes(y=count,label=count)) +
+  guides(fill=F) + facet_grid(TaxID~.,scale="free",space="free") + coord_flip()
+```
+
+#bbs
+```{r}
+pick.map <- unique((LFR.map.prop%>%filter(count>999&qLen>1999))[,c(1:3,16:17)])
+pick.LFRs <- as.character((LFR.map.prop%>%filter(count>999&qLen>1999))$LFR)
+bbs.dat <- read.table(paste0(pfx,".derep.nonchimeras.LFRs.99.bbs"),
+                      col.names = c("mainTax","commTax","BBs","sumUniq","sumComm","pU","PM"))
+
+bbs.dcast <- dcast(bbs.dat,mainTax~commTax,value.var = "PM") 
+rownames(bbs.dcast) <- bbs.dcast$mainTax
+bbs.dcast <- as.matrix(bbs.dcast[,-1])
+bbs.select <- bbs.dcast[which(rownames(bbs.dcast)%in%pick.LFRs),which(colnames(bbs.dcast)%in%pick.LFRs)]
+library(pheatmap)
+pheatmap(bbs.select)
+```
+
+
+#test
+```{r}
+LFR.map3.prop <- merge(LFR.map3,LFR.prop,by="LFR",all.x=T)
+LFR.map3.prop$count[which(is.na(LFR.map3.prop$count))] <- 0
+ggplot(LFR.map3.prop,aes(x=Subject.y,y=count,fill=Subject.y)) + geom_bar(stat="sum") + facet_grid(type~.) + coord_flip()
+```
+
+
+```{r}
+zymo.copy.num <- data.frame(Subject.y=c("Pseudomonas_aeruginosa","Escherichia_coli","Salmonella_enterica","Lactobacillus_fermentum","Enterococcus_faecalis",
+             "Staphylococcus_aureus","Listeria_monocytogenes","Bacillus_subtilis","Saccharomyces_cerevisiae","Cryptococcus_neoformans"),
+             copyNum=c(4,7,7,5,4,6,6,10,109,60))
+LFR.map3.prop.m <- merge(LFR.map3.prop,zymo.copy.num,by="Subject.y",all.x=T)
+LFR.map3.prop.m$prop <- LFR.map3.prop.m$count/sum(LFR.map3.prop.m$count)
+ggplot(LFR.map3.prop.m%>%filter(!is.na(TaxID)),aes(x=TaxID,y=prop,fill=Subject.y)) + geom_bar(stat="sum") + coord_flip()
+```
+
+```{r}
+LFR.map3.prop.m2 <- LFR.map3.prop.m%>%filter(!is.na(TaxID)&qLen>1000&!is.na(Subject.y))
+LFR.map3.prop.m2$prop <- LFR.map3.prop.m2$count/sum(LFR.map3.prop.m2$count)
+ggplot(LFR.map3.prop.m2,aes(x=TaxID,y=prop,fill=Subject.y)) + 
+  geom_bar(stat="identity") + coord_flip()
+
+```
+
+
+
+
+#FIN.
