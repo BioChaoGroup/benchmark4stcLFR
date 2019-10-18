@@ -18,10 +18,15 @@ REF_silva: "../../Source/REF/silva132/combine/SILVA_132_SSU_LSU_tax_DNA.blast"
 sampleType: "F" # F(ungi) or B(acteria)
 
 ### adapters
+AdRCA: AAGTCGGACGCTGATAAGGTCGCCATGCCTCTCAGTACTCCGACTT
 AdFw:
 AdRv:
 A_primer_list_to_remove:
 A_primer_fa_to_find: "./primers.fa"
+### Primers
+pmrFwd: GCCAGCAACCGCGGTAA
+pmrRev: GGTCCGTGTTTCAAGACG
+
 ### method selection
 method:
   cluster:
@@ -43,8 +48,8 @@ p_dist_min: 0.02
 p_dist_max: 0.04
 
 #### cluster cutoff
-p_cluster_minR: 5
-p_cluster_maxR: 999
+p_cluster_minR: 10
+p_cluster_maxR: 30
 p_cluster_topB: 0
 p_cluster_ranP: 0
 
@@ -62,6 +67,10 @@ p_asm_min: 500
 p_asm_mem: 10000000000
 p_asm_cpu: 4
 
+#VSEARCH
+p_VS_preClust: 0.999
+p_VS_postClust: 0.99
+
 #Circos
 p_cc_zoom: 1
 p_cc_cut:  97
@@ -75,8 +84,9 @@ thread:
   fastp: 4
   spades: 4
   megahit: 1
-  vsearch: 16
+  vsearch: 8
   blastn: 16
+  athena: 24
 
 samples:
   RCA194ALS: rawSeq/RCA194ALS
