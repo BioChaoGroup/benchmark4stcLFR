@@ -27,6 +27,8 @@ perl tmp.split.pl LFR195M00/input/rawSeqBC.sort.2.fq LFR195M00/split 2
 
 ### prep metabbq pipeline
 ```
-for i in ../../Results/LFRs/LFR195M00_{1,2,3};do mkdir $i; ln -s $i ;done
-
+#prep dirs
+for i in ../../Results/LFRs/LFR195M00_{1,2,3};do mkdir -p $i/input; ln -s $i ;done
+#prep inputs
+for i in {1..3};do ln -s
 ```
