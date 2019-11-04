@@ -135,6 +135,19 @@ ggplot(BB.stat,aes(x=rpb,y=count,group=ID,color=Note,linetype=dilute)) + geom_li
   xlim(c(0,100)) + facet_grid(sample~.) +
   scale_y_log10() + annotation_logticks(sides="l")
 ```
+```{r}
+BB.stat$layer <- ifelse(BB.stat$rpb<10,BB.stat$rpb,ifelse(BB.stat$rpb<20,"10-19",ifelse(BB.stat$rpb<50,"21-49",
+                   ifelse(BB.stat$rpb<100,"51-99",">=100"))))
+BB.stat$layer <- factor(BB.stat$layer,levels=c(seq(1,9),"10-19","21-49","51-99",">=100"))
+
+BB2.stat <- ddply(BB.stat%>%filter(ID=="M01_2"),c("layer"),summarise,count=sum(count))
+BB2.stat$color <- NA
+BB2.stat$color[which(BB2.stat$layer==">=100")] <- "pick"
+ggplot(BB2.stat,aes(x=layer,y=count,fill=color)) + 
+  geom_bar(stat="identity",position="stack") + scale_y_log10() +
+  annotation_logticks(sides="l") + xlab("#Reads per bead") + ylab("#Beads") +
+  theme(axis.text.x = element_text(angle=-45,hjust=0,vjust=1))
+```
 
 ```{r}
 BB.all <- ddply(BB.stat,c("ID","sample","Note","dilute"),summarise,cumsum=sum(count))

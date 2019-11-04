@@ -96,9 +96,36 @@ $h1,$h2,$HS{$h1}{$h2}{BB},$HS{$h1}{$h2}{US},$HS{$h1}{$h2}{MS},
 
 #zymo
 SAM=RCA197M01_2
-vsearch --threads $threads --allpairs_global $SAM/VSEARCH/contig.LFRs.fasta --uc $SAM/VSEARCH/contig.LFRs.allpairs.uc --iddef 0 --id 0.95
+SAM=RCA197B01_2
+
+vsearch --threads $threads --iddef 0 --id 0.98 --fasta_width 0 \
+--cluster_fast $SAM/VSEARCH/contig.LFRs.fasta \
+--centroids $SAM/VSEARCH/contig.LFRs.cdhit.fasta \
+--uc $SAM/VSEARCH/contig.LFRs.cdhit.uc 
+
+vsearch --threads $threads --iddef 0 --id 0.98 \
+--allpairs_global $SAM/VSEARCH/contig.LFRs.fasta \
+--centroids $SAM/VSEARCH/contig.LFRs.allpairs.fasta \
+--uc $SAM/VSEARCH/contig.LFRs.allpairs.uc 
 
 perl -e 'while(<>){chomp;@a=split;$HS{$a[9]}++}; open IN,"< '$SAM'/VSEARCH/contig.LFRs.fasta"; while(<IN>){@a=split />| /;$seq=<IN>;unless(defined $HS{$a[1]}){print $_; print $seq}}' < $SAM/VSEARCH/contig.LFRs.allpairs.uc > $SAM/VSEARCH/contig.LFRs.filter.fasta
+
+barrnap --threads 48 --reject 0.1  $SAM/VSEARCH/contig.LFRs.cdhit.fasta --outseq $SAM/VSEARCH/contig.LFRs.cdhit.barrnap.fasta &> $SAM/VSEARCH/contig.LFRs.cdhit.barrnap
+
+ln -s $MDB/NCBI/blast_nt/taxdb.btd
+ln -s $MDB/NCBI/blast_nt/taxdb.bti
+blastn -num_threads 48 -outfmt '6 std staxid ssciname' -db $MDB/NCBI/blast_nt/nt \
+-query $SAM/VSEARCH/contig.LFRs.cdhit.barrnap.fasta \
+-out $SAM/VSEARCH/contig.LFRs.cdhit.barrnap.nt.m6
+
+awk -F '[(_:-]' 'FNR%2==1&&/16S/{if($7-$6>999){p=1;print}else{p=0}}(FNR%2==0&&p==1){print}' $SAM/VSEARCH/contig.LFRs.cdhit.barrnap.fasta > $SAM/VSEARCH/contig.LFRs.cdhit.barrnap.1k.16S.fasta
+
+bwa mem -t 32 ../../Source/REF/zymo/D6305.ssrRNA.fasta $SAM/VSEARCH/contig.LFRs.cdhit.barrnap.1k.16S.fasta > $SAM/VSEARCH/contig.LFRs.cdhit.barrnap.1k.16S.ssrRNA.sam
+
+mafft  --auto --thread 36 \
+--reorder $SAM/VSEARCH/contig.LFRs.cdhit.barrnap.1k.16S.fasta \
+> $SAM/VSEARCH/contig.LFRs.cdhit.barrnap.1k.16S.mafft.fa
+
 
 
 ## backup ##########################################################
