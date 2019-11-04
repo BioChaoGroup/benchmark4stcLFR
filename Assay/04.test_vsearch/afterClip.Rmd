@@ -6,6 +6,15 @@ output:
     code_fold: hide
 ---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+library(pheatmap)
+```
+
 check list:
 
 #Plan A
@@ -98,6 +107,7 @@ bwa mem -t 32 -a $DB/D6305.genomes.bwa $SAM/summary.BI.megahit.rRNA.fasta \
 |samtools view -b | samtools sort > $SAM/tmp/rRNA2zymo.bam
 samtools index $SAM/tmp/rRNA2zymo.bam
 
+## pick 23S
 grep -A1 23S_rRNA $SAM/summary.BI.megahit.rRNA.fasta | vsearch --threads 32 \
 --cluster_fast - --id 0.99 --strand both --fasta_width 0 \
 --uc $SAM/summary.BI.megahit.23S.clust.uc \
@@ -105,8 +115,82 @@ grep -A1 23S_rRNA $SAM/summary.BI.megahit.rRNA.fasta | vsearch --threads 32 \
 
 vsearch --threads 32 --allpairs_global $SAM/summary.BI.megahit.23S.clust.fa \
 --id 0 --uc $SAM/summary.BI.megahit.23S.pair.uc
-#export
-samtools view $SAM/tmp/rRNA2zymo.bam|cut -f 1,3 > $SAM/tmp/rRNA2zymo.stat
-cut -f 4,9,10 $SAM/summary.BI.megahit.23S.pair.uc > $SAM/summary.BI.megahit.23S.pair.stat
-awk '($1=="S"){print "100\t"$9"\t"$9}($1=="H"){print $4"t"$9"\t"$10}' $SAM/summary.BI.megahit.23S.clust.uc > $SAM/summary.BI.megahit.23S.clust.stat
+### export
+samtools view $SAM/tmp/rRNA2zymo.bam|perl -ne '@a=split;@f=split("",reverse sprintf("%012b",$a[1]));if($f[8] eq 0 && $f[11] eq 0){print "$a[0]\t$a[2]\n"}' > $SAM/tmp/rRNA2zymo.stat
+cut -f 4,9,10 $SAM/summary.BI.megahit.23S.pair.uc > $SAM/tmp/summary.BI.megahit.23S.pair.stat
+awk '($1=="S"){print "100\t"$9"\t"$9}($1=="H"){print $4"\t"$9"\t"$10}' $SAM/summary.BI.megahit.23S.clust.uc > $SAM/tmp/summary.BI.megahit.23S.clust.stat
+## pick 16S
+grep -A1 16S_rRNA $SAM/summary.BI.megahit.rRNA.fasta | vsearch --threads 32 \
+--cluster_fast - --id 0.99 --strand both --fasta_width 0 \
+--uc $SAM/summary.BI.megahit.16S.clust.uc \
+--centroids $SAM/summary.BI.megahit.16S.clust.fa
+
+vsearch --threads 32 --allpairs_global $SAM/summary.BI.megahit.16S.clust.fa \
+--id 0 --uc $SAM/summary.BI.megahit.16S.pair.uc
+### export
+cut -f 4,9,10 $SAM/summary.BI.megahit.16S.pair.uc > $SAM/tmp/summary.BI.megahit.16S.pair.stat
+awk '($1=="S"){print "100\t"$9"\t"$9}($1=="H"){print $4"\t"$9"\t"$10}' $SAM/summary.BI.megahit.16S.clust.uc > $SAM/tmp/summary.BI.megahit.16S.clust.stat
 ```
+
+
+
+# Visualization  
+## Identities assessment
+
+```{r}
+BI2zymo.tsv <- read.table("../../Results/RCAs/RCA197FIN/RCA197M01_2.auto_removed_Ad/tmp/rRNA2zymo.stat",col.names = c("BI","Species"),as.is =T)
+BI.23S.pair <- read.table("../../Results/RCAs/RCA197FIN/RCA197M01_2.auto_removed_Ad/tmp/summary.BI.megahit.23S.pair.stat", col.names = c("Ident","BI1","BI2"),as.is =T)
+BI.23S.clust <- read.table("../../Results/RCAs/RCA197FIN/RCA197M01_2.auto_removed_Ad/tmp/summary.BI.megahit.23S.clust.stat", col.names = c("Ident","BI","centriod"),as.is =T)
+BI.16S.pair <- read.table("../../Results/RCAs/RCA197FIN/RCA197M01_2.auto_removed_Ad/tmp/summary.BI.megahit.16S.pair.stat", col.names = c("Ident","BI1","BI2"),as.is =T)
+BI.16S.clust <- read.table("../../Results/RCAs/RCA197FIN/RCA197M01_2.auto_removed_Ad/tmp/summary.BI.megahit.16S.clust.stat", col.names = c("Ident","BI","centriod"),as.is =T)
+
+```
+
+```{r}
+check.23S.pair <- merge(merge(BI.23S.pair,BI2zymo.tsv,by.x="BI1",by.y="BI",all.x=T),BI2zymo.tsv,by.x="BI2",by.y="BI",all.x=T)
+check.23S.pair <- check.23S.pair%>%filter(Ident!="*")
+check.23S.pair$Ident <- as.numeric(as.character(check.23S.pair$Ident))
+check.23S.pair$check <- ifelse(check.23S.pair$Species.x==check.23S.pair$Species.y,"SAME","DIFF")
+tmp <- matrix(strsplit(check.23S.pair$BI1,"_:(-"),ncol=16,byrow = T)
+check.16S.pair <- merge(merge(BI.16S.pair,BI2zymo.tsv,by.x="BI1",by.y="BI",all.x=T),BI2zymo.tsv,by.x="BI2",by.y="BI",all.x=T)
+check.16S.pair <- check.16S.pair%>%filter(Ident!="*")
+check.16S.pair$Ident <- as.numeric(as.character(check.16S.pair$Ident))
+check.16S.pair$check <- ifelse(check.16S.pair$Species.x==check.16S.pair$Species.y,"SAME","DIFF")
+
+```
+
+### Identities between cnetriods
+```{r}
+ggplot(check.23S.pair,aes(x=Ident,fill=check)) + geom_density(alpha=.5)
+
+ggplot(check.23S.pair,aes(x=Ident,fill=check)) + geom_density(alpha=.5) + scale_x_continuous(breaks=seq(80,100,2),limits=c(80,100))
+```
+
+
+```{r}
+ggplot(check.16S.pair,aes(x=Ident,fill=check)) + geom_density(alpha=.5)
+
+ggplot(check.16S.pair,aes(x=Ident,fill=check)) + geom_density(alpha=.5) + scale_x_continuous(breaks=seq(70,100,2),limits=c(70,100))
+```
+### Identities within clusters
+```{r}
+check.23S.clust <- merge(BI.23S.clust,BI2zymo.tsv,by="BI",all.x=T)
+stat.23S.clust <- ddply(check.23S.clust,c("centriod","Species"),summarise,count=length(BI))
+stat.23S.clust2 <- ddply(stat.23S.clust,c("centriod"),summarise,pct=max(count)/sum(count))
+ggplot(stat.23S.clust2,aes(x=pct)) + geom_histogram()
+```
+
+```{r}
+check.16S.clust <- merge(BI.16S.clust,BI2zymo.tsv,by="BI",all.x=T)
+stat.16S.clust <- ddply(check.16S.clust,c("centriod","Species"),summarise,count=length(BI))
+stat.16S.clust2 <- ddply(stat.16S.clust,c("centriod"),summarise,pct=max(count)/sum(count))
+ggplot(stat.16S.clust2,aes(x=pct)) + geom_histogram()
+```
+
+
+
+
+
+
+
+#FIN.
