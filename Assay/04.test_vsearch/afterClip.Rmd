@@ -1,0 +1,112 @@
+---
+title: "species level represent sequence generation
+"
+output:
+  html_notebook:
+    code_fold: hide
+---
+
+check list:
+
+#Plan A
+Pick longest sequence in each cluster
+```{bash}
+DB=../../Source/REF/zymo
+SAM=RCA197B01_2
+mkdir -p $SAM/tmp
+
+#prep
+metabbq bbSNV uc -i0 $SAM/summary.BI.megahit.clip.fasta \
+-i1 $SAM/VSEARCH/contig.CDHIT.uc -i2 $SAM/VSEARCH/contig.preclust.uc \
+-i3 $SAM/VSEARCH/contig.derep.full.uc -o $SAM/VSEARCH/contig.uc.stat
+#step1
+awk '($4=="L0"){print $6}' RCA197B01_2/VSEARCH/contig.uc.stat \
+|grep --no-group-separator -f - -A1 RCA197B01_2/summary.BI.megahit.clip.fasta \
+|sed 's/_(\S*)_/_/g' > $SAM/tmp/bbSNV.ref.fa
+#step2
+bwa index $SAM/tmp/bbSNV.ref.fa -p $SAM/tmp/bbSNV.ref.bwa
+#step3
+sed 's/_(\S*)_/_/g' RCA197B01_2/summary.BI.megahit.clip.fasta \
+|bwa mem -t 32 $SAM/tmp/bbSNV.ref.bwa - \
+|samtools view -b | samtools sort > $SAM/tmp/bbSNV.align.bam
+samtools index $SAM/tmp/bbSNV.align.bam
+#step4
+metabbq bbSNV snv -u $SAM/VSEARCH/contig.uc.stat -b $SAM/tmp/bbSNV.align.bam -o $SAM/tmp/bbSNV.align
+#step5
+barrnap --kingdom bac --threads 32 --reject 0.1 \
+$SAM/tmp/bbSNV.align.fa \
+--outseq $SAM/tmp/bbSNV.align.barrnap.fa &> $SAM/tmp/bbSNV.align.barrnap.log
+```
+
+###test
+```{bash}
+bwa mem -t 32 $DB/D6305.genomes.bwa $SAM/tmp/bbSNV.align.fa \
+|samtools view -b | samtools sort > $SAM/tmp/bbSNV.align2zymo.bam
+samtools index $SAM/tmp/bbSNV.align2zymo.bam
+bwa mem -t 32 $DB/D6305.genomes.bwa $SAM/tmp/bbSNV.align.barrnap.fa \
+|samtools view -b | samtools sort > $SAM/tmp/bbSNV.barrnap2zymo.bam
+samtools index $SAM/tmp/bbSNV.barrnap2zymo.bam
+```
+
+#Plan B: strat from post-barrnap
+Pick longest sequence in each cluster
+```{bash}
+SAM=RCA197B01_2
+mkdir -p $SAM/tmp
+
+#prep
+metabbq bbSNV uc -i0 $SAM/summary.BI.megahit.rRNA.fasta \
+-i1 $SAM/VSEARCH/barrnap.CDHIT.uc -i2 $SAM/VSEARCH/barrnap.preclust.uc \
+-o $SAM/VSEARCH/barrnap.uc.stat
+#step1
+awk '($4=="L0"){print $6}' RCA197B01_2/VSEARCH/barrnap.uc.stat \
+|grep --no-group-separator -f - -A1 $SAM/summary.BI.megahit.rRNA.fasta \
+|sed 's/_(\S*)_/_/g' > $SAM/tmp/barrnap.ref.fa
+#step2
+bwa index $SAM/tmp/barrnap.ref.fa -p $SAM/tmp/barrnap.ref.bwa
+#step3
+sed 's/_(\S*)_/_/g' $SAM/summary.BI.megahit.rRNA.fasta \
+|bwa mem -t 32 $SAM/tmp/barrnap.ref.bwa - \
+|samtools view -b | samtools sort > $SAM/tmp/barrnap.align.bam
+samtools index $SAM/tmp/barrnap.align.bam
+#step4
+metabbq bbSNV snv -u $SAM/VSEARCH/barrnap.uc.stat -b $SAM/tmp/barrnap.align.bam \
+-o $SAM/tmp/barrnap.align
+```
+
+###test
+```{bash}
+bwa mem -t 32 $DB/D6305.genomes.bwa $SAM/tmp/barrnap.align.fa \
+|samtools view -b | samtools sort > $SAM/tmp/barrnap.align2zymo.bam
+samtools index $SAM/tmp/barrnap.align2zymo.bam
+bwa mem -t 32 $DB/D6305.rRNA.bwa $SAM/tmp/barrnap.align.fa \
+|samtools view -b | samtools sort > $SAM/tmp/barrnap.align2rRNA.bam
+samtools index $SAM/tmp/barrnap.align2rRNA.bam
+```
+
+# Assess similarity of contigs mapped to the same strain
+```{bash}
+bwa mem -t 32 -a $DB/D6305.genomes.bwa $SAM/summary.BI.megahit.clip.fasta \
+|samtools view -b | samtools sort > $SAM/tmp/clip2zymo.bam
+samtools index $SAM/tmp/clip2zymo.bam
+
+vsearch --threads 32 --allpairs_global $SAM/summary.BI.megahit.clip.fasta --id 0.9 \
+--uc $SAM/summary.BI.megahit.clip.pair.uc
+
+#from rRNA
+bwa mem -t 32 -a $DB/D6305.genomes.bwa $SAM/summary.BI.megahit.rRNA.fasta \
+|samtools view -b | samtools sort > $SAM/tmp/rRNA2zymo.bam
+samtools index $SAM/tmp/rRNA2zymo.bam
+
+grep -A1 23S_rRNA $SAM/summary.BI.megahit.rRNA.fasta | vsearch --threads 32 \
+--cluster_fast - --id 0.99 --strand both --fasta_width 0 \
+--uc $SAM/summary.BI.megahit.23S.clust.uc \
+--centroids $SAM/summary.BI.megahit.23S.clust.fa
+
+vsearch --threads 32 --allpairs_global $SAM/summary.BI.megahit.23S.clust.fa \
+--id 0 --uc $SAM/summary.BI.megahit.23S.pair.uc
+#export
+samtools view $SAM/tmp/rRNA2zymo.bam|cut -f 1,3 > $SAM/tmp/rRNA2zymo.stat
+cut -f 4,9,10 $SAM/summary.BI.megahit.23S.pair.uc > $SAM/summary.BI.megahit.23S.pair.stat
+awk '($1=="S"){print "100\t"$9"\t"$9}($1=="H"){print $4"t"$9"\t"$10}' $SAM/summary.BI.megahit.23S.clust.uc > $SAM/summary.BI.megahit.23S.clust.stat
+```
