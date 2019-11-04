@@ -37,7 +37,16 @@ Samples involved:
 | Mock16_23S            | M02  | 5       | RCA     |
 | Skin16_23S            | M02  | 6       | RCA     |
 | ALS ITS 10X   dilute  | M02  | 7       | Non-RCA |
-| Zymo 16S 10X   dilute | M02  | 8       | Non-RCA |   
+| Zymo 16S 10X   dilute | M02  | 8       | Non-RCA |
+| Zymo 16S-2            | M03  | 1       | RCA     |
+| Zymo 16S-3            | M03  | 2       | RCA     |
+| ALS ITS-2             | M03  | 3       | RCA     |
+| ALS ITS-3             | M03  | 4       | RCA     |
+| Mock16_23S            | M03  | 5       | RCA     |
+| Skin16_23S            | M03  | 6       | RCA     |
+| ALS ITS 10X   dilute  | M03  | 7       | Non-RCA |
+| Zymo 16S 10X   dilute | M03  | 8       | Non-RCA |   
+
 
 #combine same libraries
 ```{bash,eval=FALSE}
@@ -53,8 +62,19 @@ for j in {1..8};
 do
   echo 'cat RCA197L0{3,4}\_'$j'/clean/fastp.sort.1.fq | paste - - - - | sort -T ./tmp -k2,2 -t "/" | tr "\t" "\n" > RCA197M02\_'$j'/clean/fastp.sort.1.fq'
   echo 'cat RCA197L0{3,4}\_'$j'/clean/fastp.sort.2.fq | paste - - - - | sort -T ./tmp -k2,2 -t "/" | tr "\t" "\n" > RCA197M02\_'$j'/clean/fastp.sort.2.fq'
-done >> sort.sh
+done > sort.sh
 sh sort.sh
+
+#for batch03
+for j in {1..8};do mkdir -p RCA197M03\_$j/clean;done
+for j in {1..8};
+do
+  echo 'cat M03_Origin/origin/RCA199L0{1,2}\_'$j'/clean/fastp.sort.1.fq | paste - - - - | sort -T ./tmp -k2,2 -t "/" | tr "\t" "\n" > RCA199M03\_'$j'/clean/fastp.sort.1.fq'
+  echo 'cat M03_Origin/origin/RCA199L0{1,2}\_'$j'/clean/fastp.sort.2.fq | paste - - - - | sort -T ./tmp -k2,2 -t "/" | tr "\t" "\n" > RCA199M03\_'$j'/clean/fastp.sort.2.fq'
+done > sort.sh
+sh sort.sh
+
+
 ```
 
 
@@ -96,7 +116,15 @@ BB.stat <- rbind(
   cbind(ID="M02_5",read.table("../../Results/RCAs/RCA197FIN/RCA197M02_5/clean/BB.stat")),
   cbind(ID="M02_6",read.table("../../Results/RCAs/RCA197FIN/RCA197M02_6/clean/BB.stat")),
   cbind(ID="M02_7",read.table("../../Results/RCAs/RCA197FIN/RCA197M02_7/clean/BB.stat")),
-  cbind(ID="M02_8",read.table("../../Results/RCAs/RCA197FIN/RCA197M02_8/clean/BB.stat"))
+  cbind(ID="M02_8",read.table("../../Results/RCAs/RCA197FIN/RCA197M02_8/clean/BB.stat")),
+  cbind(ID="M03_1",read.table("../../Results/RCAs/RCA197FIN/RCA199M03_1/clean/BB.stat")),
+  cbind(ID="M03_2",read.table("../../Results/RCAs/RCA197FIN/RCA199M03_2/clean/BB.stat")),
+  cbind(ID="M03_3",read.table("../../Results/RCAs/RCA197FIN/RCA199M03_3/clean/BB.stat")),
+  cbind(ID="M03_4",read.table("../../Results/RCAs/RCA197FIN/RCA199M03_4/clean/BB.stat")),
+  cbind(ID="M03_5",read.table("../../Results/RCAs/RCA197FIN/RCA199M03_5/clean/BB.stat")),
+  cbind(ID="M03_6",read.table("../../Results/RCAs/RCA197FIN/RCA199M03_6/clean/BB.stat")),
+  cbind(ID="M03_7",read.table("../../Results/RCAs/RCA197FIN/RCA199M03_7/clean/BB.stat")),
+  cbind(ID="M03_8",read.table("../../Results/RCAs/RCA197FIN/RCA199M03_8/clean/BB.stat"))
 )
 colnames(BB.stat) <- c("ID","count","rpb","cumsum")
 BB.stat <- merge(BB.stat,phe.df,by="ID")
@@ -110,10 +138,49 @@ ggplot(BB.stat,aes(x=rpb,y=count,group=ID,color=Note,linetype=dilute)) + geom_li
 
 ```{r}
 BB.all <- ddply(BB.stat,c("ID","sample","Note","dilute"),summarise,cumsum=sum(count))
-ggplot(BB.all,aes(x=ID,y=cumsum,group=ID,fill=Note,linetype=dilute)) + 
+BB.all$batch <- substr(BB.all$ID,1,3)
+ggplot(BB.all%>%filter(batch!="M03"),aes(x=ID,y=cumsum,group=ID,fill=Note,linetype=dilute)) + 
   geom_bar(stat="identity") + facet_grid(.~sample+Note,scale="free",space="free") +
+  theme(axis.text.x = element_text(angle=45,hjust=1,vjust=1)) +
   scale_y_log10() + annotation_logticks(sides="l") + ggtitle("Total detected beads number")
 ```
+
+```{r}
+BB.stat.tmp <- BB.stat
+BB.stat.tmp$layer <- ">100"
+BB.stat.tmp$layer[which(BB.stat.tmp$rpb<=100)] <- "<=100"
+BB.stat.tmp$layer[which(BB.stat.tmp$rpb<= 50)] <- "<=50"
+BB.stat.tmp$layer[which(BB.stat.tmp$rpb<= 30)] <- "<=30"
+BB.stat.tmp$layer[which(BB.stat.tmp$rpb<= 10)] <- "<=10"
+BB.stat.tmp$layer[which(BB.stat.tmp$rpb<=  1)] <- "<=1"
+
+BB.layer <- ddply(BB.stat.tmp,c("ID","sample","Note","dilute","layer"),summarise,cumsum=sum(count))
+BB.layer$layer <- factor(BB.layer$layer,levels=rev(c("<=1","<=10","<=30","<=50","<=100",">100")))
+BB.layer$batch <- substr(BB.layer$ID,1,3)
+BB.layer <- BB.layer[rev(order(BB.layer$layer)),]
+
+ggplot(BB.layer%>%filter(batch!="M03"),aes(x=ID,y=cumsum,group=ID,fill=layer,size=dilute)) + 
+  geom_bar(stat="identity",position="stack") + facet_grid(.~sample+Note,scale="free",space="free") +
+  theme(axis.text.x = element_text(angle=45,hjust=1,vjust=1)) +
+  ggtitle("Total detected beads number")
+
+ggplot(BB.layer%>%filter(batch!="M03"&layer%in%c(">100","<=100","<=50","<=30")),aes(x=ID,y=cumsum,group=ID,fill=layer,size=dilute)) + 
+  geom_bar(stat="identity",position="stack") + facet_grid(.~sample+Note,scale="free",space="free") +
+  theme(axis.text.x = element_text(angle=45,hjust=1,vjust=1)) +
+  ggtitle("Total detected beads number")
+
+ggplot(BB.layer,aes(x=ID,y=cumsum,group=ID,fill=layer,size=dilute)) + 
+  geom_bar(stat="identity",position="stack") + facet_grid(.~sample+Note,scale="free",space="free") +
+  theme(axis.text.x = element_text(angle=45,hjust=1,vjust=1)) +
+  ggtitle("Total detected beads number")
+
+ggplot(BB.layer%>%filter(layer%in%c(">100","<=100","<=50")),aes(x=ID,y=cumsum,group=ID,fill=layer,size=dilute)) + 
+  geom_bar(stat="identity",position="stack") + facet_grid(.~sample+Note,scale="free",space="free") +
+  theme(axis.text.x = element_text(angle=45,hjust=1,vjust=1)) +
+  ggtitle("Total detected beads number")
+```
+
+
 
 ```{r}
 BB.above100 <- ddply(BB.stat%>%filter(rpb>99),c("ID","sample","method","Note","dilute"),summarise,cumsum=sum(count))
