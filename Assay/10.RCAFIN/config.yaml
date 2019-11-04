@@ -68,8 +68,8 @@ p_asm_mem: 10000000000
 p_asm_cpu: 4
 
 #VSEARCH
-p_VS_preClust: 0.999
-p_VS_postClust: 0.99
+p_VS_clust_id: 0.98
+p_VS_cdhit_id: 0.98
 
 #Circos
 p_cc_zoom: 1
