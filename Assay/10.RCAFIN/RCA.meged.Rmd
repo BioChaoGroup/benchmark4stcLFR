@@ -77,6 +77,27 @@ sh sort.sh
 
 ```
 
+#patch
+```{bash}
+for j in {3..8};
+do
+  echo 'cat ../../Results/RCAs/New_RCA197FIN_test/origin/RCA197L0{1,2}\_'$j'/clean/fastp.sort.1.fq | paste - - - - | sort -T ./tmp -k2,2 -t "/" | tr "\t" "\n" > RCA197M01\_'$j'/clean/fastp.sort.1.fq'
+  echo 'cat ../../Results/RCAs/New_RCA197FIN_test/origin/RCA197L0{1,2}\_'$j'/clean/fastp.sort.2.fq | paste - - - - | sort -T ./tmp -k2,2 -t "/" | tr "\t" "\n" > RCA197M01\_'$j'/clean/fastp.sort.2.fq'
+done > sort.sh
+for j in {1..8};
+do
+  echo 'cat ../../Results/RCAs/New_RCA197FIN_test/origin/RCA197L0{3,4}\_'$j'/clean/fastp.sort.1.fq | paste - - - - | sort -T ./tmp -k2,2 -t "/" | tr "\t" "\n" > RCA197M01\_'$j'/clean/fastp.sort.1.fq'
+  echo 'cat ../../Results/RCAs/New_RCA197FIN_test/origin/RCA197L0{3,4}\_'$j'/clean/fastp.sort.2.fq | paste - - - - | sort -T ./tmp -k2,2 -t "/" | tr "\t" "\n" > RCA197M01\_'$j'/clean/fastp.sort.2.fq'
+done >> sort.sh
+for j in {1..8};
+do
+  echo 'cat ../../Results/RCAs/New_RCA197FIN_test/origin/RCA199L0{1,2}\_'$j'/clean/fastp.sort.1.fq | paste - - - - | sort -T ./tmp -k2,2 -t "/" | tr "\t" "\n" > RCA197M01\_'$j'/clean/fastp.sort.1.fq'
+  echo 'cat ../../Results/RCAs/New_RCA197FIN_test/origin/RCA199L0{1,2}\_'$j'/clean/fastp.sort.2.fq | paste - - - - | sort -T ./tmp -k2,2 -t "/" | tr "\t" "\n" > RCA197M01\_'$j'/clean/fastp.sort.2.fq'
+done >> sort.sh
+
+```
+
+
 
 # blast select scaf to nt
 ```{bash,eval=FALSE}
