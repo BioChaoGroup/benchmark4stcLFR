@@ -1,0 +1,316 @@
+---
+title: "species level represent sequence generation"
+output:
+  html_notebook:
+    code_fold: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+library(pheatmap)
+
+# Global vars
+DB="../../Source/REF/zymo"
+SAM="RCA197B01_2"
+SAM="A12"
+threads=32
+
+do.write<-F
+```
+
+After obtained LFR contigs, I then map them back to referece.
+```{bash, include=FALSE}
+#0. Mapping rRNA to zymo genome reference
+bwa mem -t 48 $DB/D6305.genomes.bwa $SAM/summary.BI.megahit.rRNA.fasta |samtools view -b > $SAM/rRNA2zymo.bam
+
+#choose 1
+samtools view $SAM/rRNA2zymo.bam|sed 's/::/\t/'|sort -k2,2 | perl -e 'while(<>){@s=split; @b=split("_",$s[1]);
+  if($bi ne $b[0]){$r=1}elsif($gi ne $b[7]){$r++}; ($mLen,$rLen) = (0,0); while($s[6]){
+    $s[6] =~ s/^(\d*)([MIDNSHP=X])//;($mode,$n) = ($2,$1);$n||=1;
+	  if($mode =~/[MINP=X]/){$mLen += $n;}; if($mode =~/[HSMINP=X]/){$rLen += $n;} 
+	 }; print "$b[0]\t$b[2]\t$r\t$s[0]\t$rLen\t$mLen\t$s[3]\n"; $bi=$b[0];$ri=$b[2];$gi=$b[7];
+}'  > $SAM/rRNA2zymo.stat
+grep ">" $SAM/VSEARCH/barrnap.LFRs.fasta|sed 's/>//;s/::/\t/'|sort -k3,3 |perl -e 'while(<>){@s=split; @b=split("_",$s[2]);
+if($bi ne $b[0]){$r=1}elsif($gi ne $b[7]){$r++};$bi=$b[0];$gi=$b[2];
+print "$b[0]\t$b[2]\t$r\t$s[1]\t$s[0]\n"}' > $SAM/VSEARCH/barrnap.LFRs.IDs
+
+# choose 2 (@b is shorter)
+samtools view $SAM/rRNA2zymo.bam|sed 's/::/\t/'|sort -k2,2 | perl -e 'while(<>){@s=split; @b=split("_",$s[1]);
+  if($bi ne $b[0]){$r=1}elsif($gi ne $b[3]){$r++}; ($mLen,$rLen) = (0,0); while($s[6]){
+    $s[6] =~ s/^(\d*)([MIDNSHP=X])//;($mode,$n) = ($2,$1);$n||=1;
+	  if($mode =~/[MINP=X]/){$mLen += $n;}; if($mode =~/[HSMINP=X]/){$rLen += $n;} 
+	 }; print "$b[0]\t$b[2]\t$r\t$s[0]\t$rLen\t$mLen\t$s[3]\n"; $bi=$b[0];$ri=$b[2];$gi=$b[3];
+}'  > $SAM/rRNA2zymo.stat
+grep ">" $SAM/VSEARCH/barrnap.LFRs.fasta|sed 's/>//;s/::/\t/'|sort -k3,3 |perl -e 'while(<>){@s=split; @b=split("_",$s[2]);
+if($bi ne $b[0]){$r=1}elsif($gi ne $b[3]){$r++};$bi=$b[0];$gi=$b[3];
+print "$b[0]\t$b[2]\t$r\t$s[1]\t$s[0]\n"}' > $SAM/VSEARCH/barrnap.LFRs.IDs
+
+###########################
+
+#
+bwa mem -t 24 $DB/D6305.genomes.bwa $SAM/summary.BI.megahit.clip.fasta |samtools view -b > $SAM/clip2zymo.bam
+samtools view $SAM/clip2zymo.bam|sed 's/::/\t/'|sort -k2,2 | perl -e 'while(<>){@s=split; @b=split("_",$s[1]);
+  if($bi ne $b[0]||$ri ne $b[2]){$r=1}elsif($gi ne $b[7]){$r++}; ($mLen,$rLen) = (0,0); while($s[6]){
+    $s[6] =~ s/^(\d*)([MIDNSHP=X])//;($mode,$n) = ($2,$1);$n||=1;
+	  if($mode =~/[MINP=X]/){$mLen += $n;}; if($mode =~/[HSMINP=X]/){$rLen += $n;} 
+	 }; print "$b[0]\t$b[2]\t$r\t$s[0]\t$rLen\t$mLen\t$s[3]\n"; $bi=$b[0];$ri=$b[2];$gi=$b[7];
+}'  > $SAM/clip2zymo.stat
+
+# stat all beads to LFRs
+SAM=RCA197B01_2
+perl -e 'open I,"<'$SAM'/clean/fastp.sort.1.fq.idx";while(<I>){
+@s=split;$HS{$s[0]}=($s[2]-$s[1]+1)/4};close I; open I,"<RCA197B01_2/VSEARCH/barrnap.LFRs2zymo.region";while(<I>){
+@s=split;$n=~s/.(\d+)$//;$REF{$s[0]}=$s[1]};close I; $b="0000_0000_0000";$pb=$b;
+while(<>){@s=split;$b=($s[0]=~/0000/)?"0000_0000_0000":$s[0];
+if($pb ne $b){$c=(keys %CT);$r=(keys %RT); printf("%s\t%d\t%d\t%d\n",$pb,$HS{$pb},$c,$r);(%CT,%RT,$ct)=()};
+unless($s[1]=~/\*|MISS/||$s[2]<1){$RT{$REF{$s[1]}}++;$CT{$s[1]}++};$pb=$b;
+}' < $SAM/VSEARCH/contig.LFRs.bwa.stat > $SAM/VSEARCH/contig.LFRs.bwa.sbb2
+cat $SAM/VSEARCH/contig.LFRs.bwa.sbb2|cut -f 2,3,4|sort|uniq -c >  $SAM/VSEARCH/contig.LFRs.bwa.sbb3
+
+# mapping BIs to zymo genome reference
+bwa mem -t 48 $DB/D6305.genomes.bwa $SAM/clean/fastp.sort.old.1.fq $SAM/clean/fastp.sort.old.2.fq|samtools view -b > $SAM/clean/reads2zymo.bam
+
+SAM=RCA197M01_8
+samtools view $SAM/VSEARCH/contig.B01_2.bwa.bam| metabbq beadStat sam -i - -o $SAM/VSEARCH/contig.B01_2.bwa.stat
+perl -e 'open I,"<'$SAM'/clean/fastp.sort.1.fq.idx";while(<I>){
+@s=split;$HS{$s[0]}=($s[2]-$s[1]+1)/4};close I; open I,"<RCA197B01_2/VSEARCH/barrnap.LFRs2zymo.region";while(<I>){
+@s=split;$n=~s/.(\d+)$//;$REF{$s[0]}=$s[1]};close I; $b="0000_0000_0000";$pb=$b;
+while(<>){@s=split;$b=($s[0]=~/0000/)?"0000_0000_0000":$s[0];
+if($pb ne $b){$c=(keys %CT);$r=(keys %RT); printf("%s\t%d\t%d\t%d\n",$pb,$HS{$pb},$c,$r);(%CT,%RT,$ct)=()};
+unless($s[1]=~/\*|MISS/||$s[2]<1){$RT{$REF{$s[1]}}++;$CT{$s[1]}++};$pb=$b;
+}' < $SAM/VSEARCH/contig.B01_2.bwa.stat > $SAM/VSEARCH/contig.B01_2.bwa.sbb2
+cat $SAM/VSEARCH/contig.B01_2.bwa.sbb2|cut -f 2,3,4|sort|uniq -c >  $SAM/VSEARCH/contig.B01_2.bwa.sbb3
+
+```
+
+
+Load data
+```{r}
+tag <- "B16"  #skin
+tag <- "A11"  #soil
+pfx <- paste0("../../Results/RCAs/RCA197FIN/",tag)
+
+clip2nt <- read.table(paste0(pfx,"/summary.BI.megahit.clip.nt.m6"),sep="\t",col.names = c("clip","REF","ident","mlen","mismatch","gap","cStart","cEnd","Rstart","Rend","Evalue","score","cLen","taxid","taxName"))
+clip2lsu <- read.table(paste0(pfx,"/summary.BI.megahit.clip.LSU.m6.more"),sep="\t",quote = "",col.names = c("clip","REF","ident","mlen","mismatch","gap","cStart","cEnd","Rstart","Rend","Evalue","score","cLen","taxName","taxTree"))
+clip2ssu <- read.table(paste0(pfx,"/summary.BI.megahit.clip.SSU.m6.more"),sep="\t",quote = "",comment.char="",col.names = c("clip","REF","ident","mlen","mismatch","gap","cStart","cEnd","Rstart","Rend","Evalue","score","cLen","taxName","taxTree"))
+
+```
+
+Curate
+```{r}
+mdat0 <- rbind(cbind(db="nt",clip2nt[,c(1:13,15)]), cbind(db="lsu",clip2lsu[,c(1:14)]), cbind(db="ssu",clip2ssu[,c(1:14)]))
+chooseTop <- function(d){
+  dt <- d[which(d$score==max(d$score)),]
+  tn <- length(unique(dt$taxName))
+  gn <- sapply(as.character(dt$taxName),function(x) (strsplit(x," "))[[1]][1])
+  sp <- sapply(as.character(dt$taxName),function(x) paste((strsplit(x," "))[[1]][1:2],collapse = "_"))
+  dt$genus <- gn
+  dt$species <- sp
+  dt2 <- unique(dt[,c(1,2,4,12:14,16:17)])
+  dt2$gnDiverse <- length(unique(gn))
+  dt2$spDiverse <- length(unique(sp))
+  return(dt2[1,])
+}
+mdat0S <- ddply(mdat0,c("clip","db"),chooseTop)
+mdat0S <- ddply(mdat0S,c("clip"),transform,dbc=sum(as.numeric(unique(db))-1))
+mdat0S$cLEN <- round(mdat0S$cLen/100-0.49,0) * 100
+```
+
+
+
+#Visualization
+
+
+```{r}
+genusTop20 <- rev(sort(table((mdat0S%>%filter(db=="nt"))$genus)))[1:21]
+mdat1S <- mdat0S
+mdat1S$genus[-which(mdat1S$genus%in%names(genusTop20))] <- "Others"
+ggplot(mdat1S,aes(x=db,fill=genus)) + geom_bar(stat="count",position="fill")+ facet_grid(.~dbc)
+ggplot(mdat1S%>%filter(ident>98),aes(x=db,fill=genus)) + geom_bar(stat="count",position="fill")+ facet_grid(.~dbc)
+
+ggplot(mdat0S%>%filter(ident>97),aes(x=db,fill=genus)) + geom_bar(stat="count",position="fill")+ facet_grid(dbc~cLEN) + guides(fill=F)
+
+
+ggplot(mdatS%>%filter(ident>98),aes(x=db,fill=species)) + geom_bar(stat="count",position="fill")+ 
+  facet_grid(.~dbc) + guides(color=F)
+
+```
+```{r}
+
+
+ggplot(mdatS0,aes(x=factor(rLen1),fill=factor(Refs))) + geom_bar(stat="count",position="stack") +
+  facet_grid(rNum~factor(uType),scale="free",space="free_x") +
+  theme(axis.text.x = element_text(angle=-45,vjust=0))
+
+
+data_m0 <- mdatS0 %>% filter(rNum==1)
+table(data_m0$uType,data_m0$Refs)
+data_m1 <- mdatS0 %>% filter(rNum==1) %>% group_by(rLen1,uType,Refs) %>% summarise(count=length(BI)) %>% mutate(pct=round(100*count/sum(count),1))
+ggplot(data_m1,aes(x=factor(rLen1),y=count,fill=factor(Refs))) + geom_bar(stat="identity",position="stack") +
+  facet_grid(.~factor(uType),scale="free",space="free")
+ggplot(data_m1,aes(x=factor(rLen1),y=pct,fill=factor(Refs))) + geom_bar(stat="identity",position="stack") +
+  facet_grid(.~factor(uType),scale="free",space="free") + 
+  geom_text(aes(label=pct), position=position_stack(vjust=0.5)) + 
+  theme(axis.text.x = element_text(angle=-45,vjust=0))
+
+```
+
+#assess BI 2 zymo
+```{r}
+NA.count <- max(BI2zymo.stat$rpb)
+BI2zymo.stat$rpb[which(BI2zymo.stat$rpb==NA.count)] <- 0
+
+ggplot(BI2zymo.stat,aes(x=factor(rpb),y=count,fill=factor(Refs))) + geom_bar(stat="identity",position="stack") +
+  scale_y_log10() + theme(axis.text.x = element_text(angle=90,vjust=0))
+ggplot(BI2zymo.stat,aes(x=factor(rpb),y=count,fill=factor(Refs))) + geom_bar(stat="identity",position="fill") +
+  theme(axis.text.x = element_text(angle=90,vjust=0))
+```
+
+```{r}
+BI2zymo.stat$LFRS <- as.factor(BI2zymo.stat$LFRs)
+levels(BI2zymo.stat$LFRS)[which(as.numeric(levels(BI2zymo.stat$LFRS))>10)] <- ">=11"
+ggplot(BI2zymo.stat,aes(x=factor(rpb),y=count,fill=LFRS)) + geom_bar(stat="identity",position="stack") +
+  scale_y_log10() + theme(axis.text.x = element_text(angle=90,vjust=0))
+ggplot(BI2zymo.stat,aes(x=factor(rpb),y=count,fill=LFRS)) + geom_bar(stat="identity",position="fill") +
+  theme(axis.text.x = element_text(angle=90,vjust=0))
+```
+
+```{r}
+ggplot(BI2zymo.stat,aes(x=LFRS,y=count,fill=factor(Refs))) + geom_bar(stat="identity",position="fill") +
+  theme(axis.text.x = element_text(angle=90,vjust=0))
+```
+
+基于上面的结论，我们重新筛选那些只能唯一比对到一条LFR的beads进行定量：
+```{bash}
+SAM=RCA197B01_2
+cat $SAM/VSEARCH/contig.LFRs.bwa.sbb1 | perl -e 'while(<>){@s=split;
+  if($s[0]=~/0000/){$rpb=0}else{$rpb=$s[1]}
+  if($s[4] eq "*"){
+    $HS{$rpb}{"LOST"}++
+  }elsif($s[5]==0){
+    $HS{$rpb}{"MULTMULT"}++;
+  }elsif($s[8] ne "*" && $s[8] ne "MISS" && $s[9]>0){
+    $HS{$rpb}{"UNIQMULTI"}++;
+  }else{
+    $HS{$rpb}{$s[4]}++;
+  }
+}; foreach $r(sort {$a<=>$b} keys %HS){foreach $h (sort keys %{$HS{$r}}){print "$r\t$h\t$HS{$r}{$h}\n";}}
+' > $SAM/VSEARCH/contig.LFRs.bwa.uniq.prop
+```
+
+
+```{r}
+tag <- "RCA197M01_2.auto_removed_Ad"
+pfx <- paste0("../../Results/RCAs/RCA197FIN/",tag)
+uniq.prop <- read.table(paste0(pfx,"/VSEARCH/contig.LFRs.bwa.uniq.prop"), col.names = c("rpb","LFR","count"))
+LFR.ID <- read.table(paste0(pfx,"/VSEARCH/barrnap.LFRs.IDs"), col.names = c("BI","f","rRNA","unit","LFR"))
+LFR.mdat <- merge(LFR.ID,rRNA2zymo.stat,by=c("BI","f","rRNA","unit"))
+uniq.anno <- function(d){
+  res <- d[1,c(1:5,8)]
+  if(length(unique(d$Ref))>1){
+    res$Ref <- "MULT"
+  }
+  return(res)
+}
+LFR.mdat.uniq <- ddply(LFR.mdat,"LFR",uniq.anno)
+
+LFR.mdat.prop <- merge(LFR.mdat.uniq,uniq.prop,by="LFR",all.y=T)
+LFR.mdat.prop$Ref[which(LFR.mdat.prop$LFR=="LOST")] <- "LOST"
+LFR.mdat.prop$Ref[which(LFR.mdat.prop$LFR=="MULTMULT")] <- "MULTMULT"
+LFR.mdat.prop$Ref[which(LFR.mdat.prop$LFR=="UNIQMULTI")] <- "UNIQMULTI"
+
+ggplot(LFR.mdat.prop,aes(x=factor(rpb),y=count,fill=Ref)) + geom_bar(stat="identity",position="stack")
+ggplot(LFR.mdat.prop,aes(x=factor(rpb),y=count,fill=Ref)) + geom_bar(stat="identity",position="fill")
+ggplot(LFR.mdat.prop%>%filter(!Ref%in%c("UNIQMULTI","LOST","MULT","MULTMULT")&rpb<150),aes(x=factor(rpb),y=count,fill=Ref)) + geom_bar(stat="identity",position="fill")
+
+```
+
+```{r}
+#Following mdat came from 'zymo.ref.assessment.Rmd':75
+mdat.prop <- merge(mdat,LFR.mdat.prop,by="LFR")
+
+mdat.prop.x <- ddply(mdat.prop,c("Ref.x"),summarise,prop.x=sum(count.x),prop.y=sum(count.y))
+mdat.prop.x <- merge(mdat.prop.x,zymo.copy.2,by.x="Ref.x",by.y="Ref")
+mdat.prop.x2 <- melt(mdat.prop.x[,c(1:5,7,8)],id.vars = c("Ref.x","Species","NRRL"),variable.name = "Measurement",value.name = "count")
+mdat.prop.x2$count <- as.numeric(mdat.prop.x2$count)
+ggplot(mdat.prop.x2,aes(x=Measurement,y=count,fill=Ref.x)) + geom_bar(stat="identity",position="fill") + 
+  coord_flip()
+```
+
+```{r}
+mdat.prop.y <- ddply(mdat.prop,c("Ref.y"),summarise,prop.x=sum(count.x),prop.y=sum(count.y))
+mdat.prop.y <- merge(mdat.prop.y,zymo.copy.2,by.x="Ref.y",by.y="Ref")
+mdat.prop.y2 <- melt(mdat.prop.y[,c(1:5,7,8)],id.vars = c("Ref.y","Species","NRRL"),variable.name = "Measurement",value.name = "count")
+mdat.prop.y2$count <- as.numeric(mdat.prop.y2$count)
+ggplot(mdat.prop.y2,aes(x=Measurement,y=count,fill=Ref.y)) + geom_bar(stat="identity",position="fill") + 
+  coord_flip()
+```
+
+上述结果表明RCA的定量仍然与理论值有较大差距。
+
+adding non-RCA data
+```{bash}
+SAM2=RCA197M01_8
+perl -e 'while(<>){@s=split;
+  if($s[4] eq "*"){
+    $HS{"LOST"}++
+  }elsif($s[5]==0){
+    $HS{"MULTMULT"}++;
+  }elsif($s[8] ne "*" && $s[8] ne "MISS" && $s[9]>0){
+    $HS{"UNIQMULTI"}++
+  }else{
+    $HS{$s[4]}++;
+  }
+}; foreach $h (sort keys %HS){print "$h\t$HS{$h}\n";}
+' < $SAM2/VSEARCH/contig.B01_2.bwa.sbb1 > $SAM2/VSEARCH/contig.B01_2.bwa.uniq.prop
+```
+
+```{r}
+tag2 <- "RCA197M01_8"
+pfx2 <- paste0("../../Results/RCAs/RCA197FIN/",tag2)
+uniq2.prop <- read.table(paste0(pfx2,"/VSEARCH/contig.B01_2.bwa.uniq.prop"), col.names = c("LFR","count"))
+
+LFR.mdat.prop2 <- merge(LFR.mdat.prop,uniq2.prop,by="LFR",all.y=T)
+LFR.mdat.propM <- melt(LFR.mdat.prop2,measure.vars = c("count.x","count.y"),variable.name = "sample",value.name = "count")
+ggplot(LFR.mdat.propM,aes(x=sample,y=count,fill=Ref)) + geom_bar(stat="identity",position="fill")
+
+```
+
+```{r}
+#Following mdat came from 'zymo.ref.assessment.Rmd':75
+mdat.prop2 <- merge(mdat[,1:2],LFR.mdat.prop2,by="LFR")
+
+mdat.prop2.x <- ddply(mdat.prop2,c("Ref.x"),summarise,prop.x=sum(count.x),prop.y=sum(count.y))
+mdat.prop2.x <- merge(mdat.prop2.x,zymo.copy.2,by.x="Ref.x",by.y="Ref")
+mdat.prop2.x2 <- melt(mdat.prop2.x[,c(1:5,7,8)],id.vars = c("Ref.x","Species","NRRL"),variable.name = "Measurement",value.name = "count")
+mdat.prop2.x2$count <- as.numeric(mdat.prop2.x2$count)
+ggplot(mdat.prop2.x2,aes(x=Measurement,y=count,fill=Ref.x)) + geom_bar(stat="identity",position="fill") + 
+  coord_flip()
+```
+
+```{r}
+mdat.prop2.y <- ddply(mdat.prop2,c("Ref.y"),summarise,prop2.x=sum(count.x),prop2.y=sum(count.y))
+mdat.prop2.y <- merge(mdat.prop2.y,zymo.copy.2,by.x="Ref.y",by.y="Ref")
+mdat.prop2.y2 <- melt(mdat.prop2.y[,c(1:5,7,8)],id.vars = c("Ref.y","Species","NRRL"),variable.name = "Measurement",value.name = "count")
+mdat.prop2.y2$count <- as.numeric(mdat.prop2.y2$count)
+ggplot(mdat.prop2.y2,aes(x=Measurement,y=count,fill=Ref.y)) + geom_bar(stat="identity",position="fill") + 
+  coord_flip()
+```
+
+
+```{r}
+mdat.prop3.y <- ddply(mdat.prop2,c("Ref.y","unit"),summarise,prop3.x=sum(count.x),prop3.y=sum(count.y))
+mdat.prop3.y <- merge(mdat.prop3.y,zymo.copy.2,by.x="Ref.y",by.y="Ref")
+mdat.prop3.y2 <- melt(mdat.prop3.y[,c(1:6,8:9)],id.vars = c("Ref.y","Species","unit","NRRL"),variable.name = "Measurement",value.name = "count")
+mdat.prop3.y2$count <- as.numeric(mdat.prop3.y2$count)
+ggplot(mdat.prop3.y2,aes(x=Measurement,y=count,fill=Ref.y)) + geom_bar(stat="identity",position="fill") + 
+  coord_flip() + facet_grid(.~unit)
+```
+
+
+
+#FIN.
