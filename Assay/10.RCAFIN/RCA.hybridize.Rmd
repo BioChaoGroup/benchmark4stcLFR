@@ -1,0 +1,162 @@
+---
+title: "RCA hbridize"
+author: "Chao"
+date: "4/24/2019"
+output: 
+  html_notebook:
+    code_fold: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reshape2)
+library(ggplot2)
+library(plyr)
+library(dplyr)
+library(RColorBrewer)
+```
+
+# Background
+
+Samples involved:
+
+| Sample ID             | lane | barcode | Note    |
+| --------------------- | ---- | ------- | ------- |
+| ALS 16S               | M01  | 1       | RCA     |
+| Zymo 16S              | M01  | 2       | RCA     |
+| ALS ITS               | M01  | 3       | RCA     |
+| 159:160:161=100:10:1  | M01  | 4       | RCA     |
+| 163                   | M01  | 5       | RCA     |
+| 164                   | M01  | 6       | RCA     |
+| ALS ITS 10X dilute    | M01  | 7       | Non-RCA |
+| Zymo 16S 10X dilute   | M01  | 8       | Non-RCA |
+| Zymo 16S-2            | M02  | 1       | RCA     |
+| Zymo 16S-3            | M02  | 2       | RCA     |
+| ALS ITS-2             | M02  | 3       | RCA     |
+| ALS ITS-3             | M02  | 4       | RCA     |
+| Mock16_23S            | M02  | 5       | RCA     |
+| Skin16_23S            | M02  | 6       | RCA     |
+| ALS ITS 10X   dilute  | M02  | 7       | Non-RCA |
+| Zymo 16S 10X   dilute | M02  | 8       | Non-RCA |   
+
+
+
+Zymo mock strains:
+
+| Species                  | Genomic DNA | 16S Only1 | 16S & 18S1 | Genome Copy2 | Cell Number3 |
+| ------------------------ | ----------- | --------- | ---------- | ------------ | ------------ |
+| Pseudomonas aeruginosa   | 12          | 4.2       | 3.6        | 6.1          | 6.1          | +
+| Escherichia coli         | 12          | 10.1      | 8.9        | 8.5          | 8.5          | +
+| Salmonella enterica      | 12          | 10.4      | 9.1        | 8.7          | 8.8          | +
+| Lactobacillus fermentum  | 12          | 18.4      | 16.1       | 21.6         | 21.9         |
+| Enterococcus faecalis    | 12          | 9.9       | 8.7        | 14.6         | 14.6         | +
+| Staphylococcus aureus    | 12          | 15.5      | 13.6       | 15.2         | 15.3         | +
+| Listeria monocytogenes   | 12          | 14.1      | 12.4       | 13.9         | 13.9         | +
+| Bacillus subtilis        | 12          | 17.4      | 15.3       | 10.3         | 10.3         | +
+| Saccharomyces cerevisiae | 2           | NA        | 9.3        | 0.57         | 0.29         |
+| Cryptococcus neoformans  | 2           | NA        | 3.3        | 0.37         | 0.18         |
+
+
+# load 
+```{r}
+B.kmer <- read.table("../../Results/RCAs/RCA197FIN/A02/mash/bMin2.msh.2.tsv",
+                     col.names = c("BB","rpb","kmers"))
+clip.num <- read.table("../../Results/RCAs/RCA197FIN/A02/summary.BI.megahit.clip.num",
+                       col.names = c("BI","len"))
+BI.lst <- read.table("../../Results/RCAs/RCA197FIN/A02/Assemble_BI/ID2.lst",
+                     col.names = c("BI","BB","rpb"))
+```
+
+# Curate
+```{r}
+clip.num2 <- ddply(clip.num,"BI",summarise,mlen=mean(len),num=length(BI))
+mdat <- merge(BI.lst,clip.num2,by="BI",all.x=T)
+mdat$num[which(is.na(mdat$num))] <- 0
+mdat2 <- merge(mdat,B.kmer,by="BB")
+mdat2$kpr <- mdat2$kmers/mdat2$rpb.x
+```
+
+
+```{r}
+ggplot(B.kmer,aes(x=kmers)) + geom_histogram() + scale_x_log10() + annotation_logticks(sides="b")
+
+B.kmer2 <- B.kmer
+B.kmer2$rpbL <- round(B.kmer2$rpb/10-0.49,0) *10
+B.kmer2$rpbL[which(B.kmer2$rpbL>=150)] <- ">=150"
+B.kmer2$rpbL <- factor(B.kmer2$rpbL,levels=c(seq(0,140,10),">=150"))
+B.kmer2$kL <- round(B.kmer2$kmers/100-0.49,0) *100
+B.kmer2$kL[which(B.kmer2$kL>=3000)] <- 3000
+B.kmer2$kL[which(B.kmer2$kL<1000)] <- 900
+B.kmer2$kL <- factor(B.kmer2$kL,levels=c(seq(900,3000,100)))
+
+ggplot(B.kmer2,aes(x=rpb,fill=factor(kL))) + geom_histogram(position="stack") +
+  scale_x_log10() + annotation_logticks(sides="b")
+
+ggplot(B.kmer2,aes(x=rpb,fill=factor(kL))) + geom_histogram(position="fill") +
+  scale_x_log10() + annotation_logticks(sides="b")
+```
+
+```{r}
+ggplot(B.kmer2,aes(x=factor(rpbL),y=kmers)) + geom_boxplot() + 
+  scale_y_continuous(breaks=seq(0,1e4,2000),limits = c(0,1e4))
+```
+
+```{r}
+B.kmer2$kCov <- B.kmer2$rpb*160/B.kmer2$kmers
+
+ggplot(B.kmer2,aes(x=factor(rpbL),y=kCov)) + geom_boxplot() + 
+  scale_y_continuous(breaks=seq(0,30,2))
+
+ggplot(B.kmer2,aes(x=kmers,y=kCov)) + 
+  geom_density_2d()
+```
+
+```{r}
+ggplot(B.kmer2,aes(x=factor(kL),y=kCov)) + geom_boxplot() + 
+  scale_y_continuous(breaks=seq(0,10,2),limits = c(0,10))
+```
+
+```{r}
+B.kmer2S <- ddply(B.kmer2,c("kL","rpbL"),summarise,count=length(BB))
+ggplot(B.kmer2S,aes(x=rpbL,y=kL,fill=log10(count))) + 
+  geom_tile() + scale_fill_gradientn(colors=rev(brewer.pal(11,"Spectral")))
+```
+
+```{r}
+ggplot(mdat2,aes(x=slen,fill=factor(num))) + geom_histogram(position="stack")
+```
+
+```{r}
+ggplot(mdat2%>%filter(num%in%seq(1,2)),aes(x=rpb.x,y=kmers,color=factor(num))) + 
+  geom_density_2d() + 
+  scale_y_continuous(breaks=seq(0,8000,1000)) +
+  scale_x_continuous(breaks=seq(100,500,20))
+```
+
+```{r}
+mdat2$slen <- mdat2$mlen*mdat2$num
+ggplot(mdat2%>%filter(num%in%seq(1,2)),aes(x=kmers,y=slen,color=factor(num))) + 
+  geom_density_2d()
+```
+
+```{r}
+mdat2$kCov <- mdat2$rpb.x*160/mdat2$kmers
+ggplot(mdat2%>%filter(num%in%seq(1,3)),aes(x=kmers,y=kCov,color=factor(num))) + 
+  geom_density_2d() + scale_y_continuous(breaks=seq(4,12))
+```
+
+1000 < kmers < 3000 & kCov > 6
+
+
+```{r}
+mdat3 <- B.kmer2%>%filter(kCov>6&kmers>1000)
+
+ggplot(mdat3,aes(x=rpb,y=kmers)) + geom_density_2d()
+```
+
+
+
+
+
+
+#FIN.

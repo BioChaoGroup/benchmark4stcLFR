@@ -135,6 +135,24 @@ ggplot(LFR.map3,aes(x=type,y=size,fill=Subject.y)) + geom_bar(stat="sum")
 ```
 
 ```{r}
+ggplot(LFR.map3,aes(x=type,y=size,fill=TaxID)) + geom_bar(stat="sum")
+```
+```{r}
+ggplot(LFR.map3,aes(x=type,y=size,fill=TaxID)) + geom_bar(stat="sum",position="fill")
+```
+
+```{r}
+LFR.map3.add <- ddply(LFR.map3,c("type","TaxID"),summarise,size=sum(size))
+tmp <- LFR.map3.add%>%filter(type=="others")
+tmp$type <- "16S18S"
+tmp$size <- c(15.3,3.3,8.7,8.9,16.1,12.4,3.6,9.3,9.1,13.6,0)
+LFR.map3.add <- rbind(LFR.map3.add,tmp)
+ggplot(LFR.map3.add,aes(x=type,y=size,fill=TaxID)) + geom_bar(stat="identity",position="fill")
+
+```
+
+
+```{r}
 test.df <- LFR.map3%>%filter(!is.na(Subject.x))
 ggplot(test.df,aes(x=TaxID,fill=Subject.y)) + geom_bar() +
   coord_flip() + facet_grid(type~.)
@@ -142,10 +160,12 @@ ggplot(test.df,aes(x=TaxID,fill=Subject.y)) + geom_bar() +
 
 
 ```{r}
-LFR.map.stat <- ddply(LFR.map,c("LFR","TaxID","Subject","region","qLen"),summarise,count=sum(size))
-tmp <- matrix(unlist(strsplit(as.character(LFR.map.stat$region),"-")),ncol=2,byrow = T)
-LFR.map.stat$regStart <- as.numeric(tmp[,1])
-LFR.map.stat$regEnd <- as.numeric(tmp[,2])
+LFR.map.stat <- ddply(LFR.map3,c("LFR","TaxID","Subject.x","region","qLen","type"),summarise,count=sum(size))
+tmp <- matrix(unlist(strsplit(as.character(LFR.map.stat$region[which(!is.na(LFR.map.stat$region))]),"-")),ncol=2,byrow = T)
+LFR.map.stat$regStart <- NA
+LFR.map.stat$regStart[which(!is.na(LFR.map.stat$regStart ))] <- as.numeric(tmp[,1])
+LFR.map.stat$regEnd <- NA
+LFR.map.stat$regEnd[which(!is.na(LFR.map.stat$regEnd))] <- as.numeric(tmp[,2])
 
 LFR.map.stat$region <- reorder(LFR.map.stat$region,LFR.map.stat$regStart,mean)
 LFR.map.stat$TaxID <- reorder(LFR.map.stat$TaxID,LFR.map.stat$count,sum)
@@ -153,9 +173,18 @@ LFR.map.stat$TaxID <- reorder(LFR.map.stat$TaxID,LFR.map.stat$count,sum)
 ```
 
 ```{r}
+LFR.map.sum <- ddply(LFR.map.stat%>%filter(count>9),c("TaxID","region"),summarise,count=sum(count))
+ggplot(LFR.map.stat%>%filter(count>9),aes(x=region,y=count)) + 
+  geom_bar(stat="identity",aes(fill=type)) + 
+  geom_text(data=LFR.map.sum,aes(y=count,label=count)) +
+  theme(axis.text.x= element_text(angle = 90,hjust=1,vjust=1)) +
+  facet_grid(.~TaxID,scale="free",space="free")
+```
+
+```{r}
 LFR.map.sum <- ddply(LFR.map.stat%>%filter(qLen>1499),c("TaxID","region"),summarise,count=sum(count))
 ggplot(LFR.map.stat%>%filter(qLen>1499),aes(x=region,y=count)) + 
-  geom_bar(stat="identity",aes(fill=LFR)) + 
+  geom_bar(stat="identity",aes(fill=type)) + 
   geom_text(data=LFR.map.sum,aes(y=count,label=count)) +
   theme(axis.text.x= element_text(angle = 90,hjust=1,vjust=1)) +
   facet_grid(.~TaxID,scale="free",space="free")
@@ -212,16 +241,22 @@ ggplot(b2rm%>%filter(UNIQ>20),aes(x=TaxID,y=UNIQ+MULT)) +
 ```{r}
 LFR.prop <- read.table(paste0(pfx,".LFRs.bwa.prop"), col.names = c("count","LFR"))
 
-LFR.map.prop <- merge(LFR.map,LFR.prop,by="LFR")
+LFR.map.prop <- merge(LFR.map3,LFR.prop,by="LFR")
 
 ```
 
 ```{r}
-LFR.map.prop.sum <- ddply(LFR.map.prop%>%filter(count>999&qLen>1999),c("TaxID","region"),summarise,count=sum(count))
-ggplot(LFR.map.prop%>%filter(count>999&qLen>1999),aes(x=region,y=count)) + 
+LFR.map.prop.sum <- ddply(LFR.map.prop%>%filter(count>99&qLen>1999),c("TaxID","region","type"),summarise,count=sum(count))
+ggplot(LFR.map.prop%>%filter(count>999&qLen>1999),aes(x=region,y=count,color=type)) + 
   geom_bar(stat="identity",aes(fill=LFR)) +
   geom_text(data=LFR.map.prop.sum,aes(y=count,label=count)) +
   guides(fill=F) + facet_grid(TaxID~.,scale="free",space="free") + coord_flip()
+
+ggplot(LFR.map.prop%>%filter(count>99&qLen>1999),aes(x=region,y=count)) + 
+  geom_bar(stat="identity",aes(fill=type)) + 
+  geom_text(data=LFR.map.prop.sum,aes(y=count,label=count)) +
+  theme(axis.text.x= element_text(angle = 90,hjust=1,vjust=1)) +
+  facet_grid(.~TaxID,scale="free",space="free")
 ```
 
 ```{r}
