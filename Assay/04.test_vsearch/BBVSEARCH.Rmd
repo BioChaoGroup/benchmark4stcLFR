@@ -1,0 +1,63 @@
+---
+title: "Statistics of annotation"
+output:
+  html_notebook:
+    code_fold: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(plyr)
+library(ggplot2)
+library(scales)
+library(reshape2)
+library(RColorBrewer)
+do.write <- F
+```
+
+#Function
+```{r}
+
+```
+
+# Prepare
+#directly annotation
+
+
+```{r}
+EE.stat <- read.table("../../Results/instance/APR842_00/clean/fastp.sort.1.fq.idx.stat.random10",header=F,col.names=c("BC","BB","reads"))
+BB.anno <- read.table("../../Results/instance/APR842_00/lv0.sort.merge.derep.nonchimeras.otus.tax.blast6.1st.anno",
+                      header=F)
+colnames(BB.anno)[c(1,2,3,14)] <- c("BC","OTU","RNAME","anno")
+dup.stat <- read.table("../../Results/instance/APR842_00/VSEARCH/read.individual.beads.list.bak",
+                       col.names=c("BC0","BB","dups","uniq"))
+```
+
+# curate
+```{r}
+BB.uniq <- ddply(BB.anno,"BC",summarise,diverse=length(unique(anno)))
+BB.uniq$BC <- sub("BC","",BB.uniq$BC)
+mdat <- merge(EE.stat,BB.uniq,by="BC",all.x=T)
+mdat2 <- merge(mdat,dup.stat,by="BB",all.x=T)
+mdat2$uniq[which(is.na(mdat2$uniq))] <- mdat2$reads[which(is.na(mdat2$uniq))]
+mdat2$diverse[which(is.na(mdat2$diverse))] <- 0
+
+```
+
+# Visual
+```{r}
+ggplot(mdat2,aes(x=uniq,y=diverse)) + stat_density2d() + 
+  geom_point(alpha=.05) + scale_x_log10() + xlab("# of reads/bead") + geom_vline(xintercept = 15,linetype=2) +
+  ylim(c(0,8)) + theme_bw()
+
+ggplot(mdat2,aes(x=uniq,y=diverse)) + stat_density2d(aes(fill=..density..),geom="raster",contour=F) + 
+  geom_point(alpha=.05) + scale_x_log10() + xlab("# of reads/bead") + geom_vline(xintercept = 15,linetype=2) +
+  scale_fill_gradientn(colors=rev(brewer.pal(11,"Spectral"))) + ylim(c(0,8)) + theme_bw()
+```
+
+
+
+
+
+#Fin.

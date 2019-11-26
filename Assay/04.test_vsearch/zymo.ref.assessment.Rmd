@@ -1,0 +1,399 @@
+---
+title: "species level represent sequence generation"
+output:
+  html_notebook:
+    code_fold: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+library(pheatmap)
+
+# Global vars
+DB="../../Source/REF/zymo"
+SAM="RCA197B01_2"
+threads=32
+
+do.write<-F
+```
+
+After obtained LFR contigs, I then map them back to referece.
+```{bash, include=FALSE}
+#0. Mapping rRNA to zymo genome reference
+bwa mem -t 24 $DB/D6305.genomes.bwa $SAM/summary.BI.megahit.rRNA.fasta |samtools view -b > $SAM/rRNA2zymo.bam
+#1. Mapping LFR to zymo genome reference
+for SAM in {RCA197M03_3,RCA197M03_4};do
+  bwa mem -t 24 $DB/D6305.genomes.bwa $SAM/VSEARCH/barrnap.LFRs.fasta |samtools view -b > $SAM/VSEARCH/barrnap.LFRs2zymo.bam
+  #samtools index $SAM/VSEARCH/barrnap.LFRs2zymo.bam
+  perl ../04.test_vsearch/checkRegion.pl ../../Results/ZYMO/D6305.ssrRNA2genome.bed $SAM/VSEARCH/barrnap.LFRs2zymo.bam $SAM/VSEARCH/barrnap.LFRs2zymo.region
+done 
+
+
+#2. barrnap relationshiop
+perl -e 'while(<>){if($_ =~ /\[barrnap\] Found: (\S+) (\S+)_(k\S+) L=(\d+)\/(\d+) /){print "$1\t$2\t$2_$3\t$4\t$5\n"}}' \
+< $SAM/summary.BI.megahit.rRNA.fasta.barrnap > $SAM/summary.BI.megahit.rRNA.fasta.barrnap.stat
+
+grep ">" $SAM/VSEARCH/barrnap.LFRs.fasta|perl -ne 'if($_=~/>(\S+) (\d+S_rRNA::\S+):(\S+)/){print "$1\t$2\n"}' \
+> $SAM/VSEARCH/barrnap.LFRs.ID
+```
+
+
+Load data
+```{r}
+tag <- "RCA197M01_2.auto_removed_Ad"
+tag <- "RCA197M01_2"
+tag <- "RCA199M03_3"
+tag <- "RCA199M03_4"
+
+pfx<-paste0("../../Results/RCAs/RCA197FIN/",tag)
+
+barrnap.stat <- read.table(paste0(pfx,"/summary.BI.megahit.rRNA.fasta.barrnap.stat"),
+                         col.names = c("unit","BI","BIID","fLen","Rlen"))
+LFRID <- read.table(paste0(pfx,"/VSEARCH/barrnap.LFRs.ID"), col.names = c("LFR","BIC"))
+name.uc <- c("RecordType","ClusterNO","size","Percentage","Orientation","NA1","NA2","CIGAR","query","centroid")
+uc.pcL <- read.table(paste0(pfx,"/VSEARCH/barrnap.preclustL.uc"),col.names = name.uc)
+uc.chL <- read.table(paste0(pfx,"/VSEARCH/barrnap.cdhitL.fasta.uc"),col.names = name.uc)
+uc.pcS <- read.table(paste0(pfx,"/VSEARCH/barrnap.preclustS.uc"),col.names = name.uc)
+uc.chS <- read.table(paste0(pfx,"/VSEARCH/barrnap.cdhitS.fasta.uc"),col.names = name.uc)
+
+zymo.copy.num <- read.csv("../../Results/ZYMO/D6305.composition.csv",header=T)
+LFRs2zymo.region.raw <- read.table("../../Results/RCAs/RCA197FIN/RCA197M01_2.auto_removed_Ad/VSEARCH/barrnap.LFRs2zymo.region",
+     col.names = c("LFR","Ref","Region","Mlen","Llen","Rlen","pos","pct"),as.is =T)
+
+reads2LFRs.prop <- read.table(paste0(pfx,"/VSEARCH/contig.LFRs.bwa.prop"), col.names = c("count","LFR"),as.is =T)
+
+```
+
+Curate
+```{r}
+LFRs2zymo.region <- rbind(LFRs2zymo.region.raw, data.frame(LFR="*",Ref="*",Region="missing",Mlen=NA,Llen=NA,Rlen=NA,pos=NA,pct=NA))
+LFRs2zymo.region$mPct <- LFRs2zymo.region$Mlen/LFRs2zymo.region$Llen
+mdat <- merge(LFRs2zymo.region,reads2LFRs.prop,by="LFR",all=T)
+
+zymo.copy.others <- zymo.copy.num[9,]
+zymo.copy.others[1:13] <- c("Others",NA,"*",colSums(zymo.copy.num[9:10,4:12]),"Yeast")
+zymo.copy.2 <- rbind(zymo.copy.num[1:8,],zymo.copy.others)
+
+#for LFRID clusters
+uc.pc <- rbind(uc.pcL,uc.pcS)
+uc.cd <- rbind(uc.chL,uc.chS)
+uc.pc$centroid2 <- unlist(lapply(strsplit(as.character(uc.pc$centroid),"[:_]"),function(x) return(paste(x[c(1,4:9)],collapse = "_"))))
+uc.pc$query2 <- unlist(lapply(strsplit(as.character(uc.pc$query),"[:_]"),function(x) return(paste(x[c(1,4:9)],collapse = "_"))))
+uc.cd$centroid2 <- unlist(lapply(strsplit(as.character(uc.cd$centroid),"[:_]"),function(x) return(paste(x[c(1,4:9)],collapse = "_"))))
+uc.cd$query2 <- unlist(lapply(strsplit(as.character(uc.cd$query),"[:_]"),function(x) return(paste(x[c(1,4:9)],collapse = "_"))))
+
+LFRID$level <- "represent"
+#LFRID$unit <- substr(LFRID$LFR,1,3)
+LFRID$BIC2 <- unlist(lapply(strsplit(as.character(LFRID$BIC),"[:_]"),function(x) return(paste(x[c(1,4:9)],collapse = "_"))))
+
+LFRD0 <- merge(LFRID[,-2],(uc.cd%>%filter(RecordType=="H"))[,11:12],by.x="BIC2",by.y="centroid2")
+LFRD0$level <- "cdhits"
+colnames(LFRD0)[4] <- "BIC2"
+LFRDM0 <- rbind(LFRID[,-2],LFRD0[,-1])
+
+LFRD1 <- merge(LFRDM0,(uc.pc%>%filter(RecordType=="H"))[,11:12],by.x="BIC2",by.y="centroid2")
+LFRD1$level <- "clusters"
+colnames(LFRD1)[4] <- "BIC2"
+
+LFRDM <- rbind(LFRDM0,LFRD1[,-1])
+tmp1 <- as.data.frame(t(vapply(strsplit(as.character(LFRDM$BIC2),"_"),function(x) x[c(1,2,3,4,7)],c(unit="s",BI=0,k="k",flag="f",cType=0))))
+tmp2 <- as.data.frame(t(vapply(strsplit(as.character(LFRDM$BIC2),"_"),function(x) as.numeric(x[c(5:6)]),c(cov=0,len=0))))
+LFRDM <- cbind(LFRDM,tmp1,tmp2)
+multi.BI <- names(which(table(LFRDM$BI)>1))
+#BI.LFR.stat <- ddply(LFRDM%>%filter(BI%in%multi.BI),c("BI"),transform,member=length(unique(LFR)))
+if(do.write){
+  save(mdat,LFRDM,file=paste0(pfx,"/vsearch.RData"))
+  write.table(LFRDM[order(LFRDM$BI),],paste0(pfx,"/VSEARCH/LFR.relation.tsv"),quote=F,row.names = T,col.names = NA)
+}
+```
+
+```{bash,include=FALSE}
+LFRRelationTsv="../../Results/RCAs/RCA197FIN/$SAM/VSEARCH/LFR.relation.tsv"
+LFRRelationStat="../../Results/RCAs/RCA197FIN/$SAM/VSEARCH/LFR.relation.stat"
+perl -e '<>;while(<>){
+  @a=split; next if $a[11]==1; 
+  if($b ne $a[5]){
+    if(@Ls > 1){
+      @Ls = sort @Ls; 
+      for($i=0;$i<@Ls-1;$i++){
+        for($j=$i+1;$j<@Ls;$j++){
+          $HS{$Ls[$i]}{$Ls[$j]}++;
+          $SUM{$Ls[$i]} ++;
+        }
+      }
+    }
+    @Ls=();
+  };
+  push @Ls, @a[1]; $b=$a[5];
+};
+if(@Ls > 1){@Ls = sort @Ls; for($i=0;$i<@Ls-1;$i++){for($j=$i+1;$j<@Ls;$j++){
+      $HS{$Ls[$i]}{$Ls[$j]}++;$SUM{$Ls[$i]} ++;}}}
+foreach $i (sort keys %HS){
+  foreach $j (sort {$HS{$i}{$b}<=>$HS{$i}{$a}} keys %{$HS{$i}}){
+    printf("%s\t%s\t%d\t%.2f\n",$i,$j,$HS{$i}{$j},$HS{$i}{$j}/$SUM{$i});
+  }
+}' < $LFRRelationTsv > $LFRRelationStat
+#
+LFR2region="../../Results/RCAs/RCA197FIN/$SAM/VSEARCH/barrnap.LFRs2zymo.region"
+LFRRelationAnno="../../Results/RCAs/RCA197FIN/$SAM/VSEARCH/LFR.relation.anno"
+perl -e 'open I,"< '$LFR2region'";while(<I>){@s=split;$ANN{$s[0]}{"REF"}=$s[1];$ANN{$s[0]}{"REG"}=$s[2];};close I;
+open I,"< '$LFRRelationStat'";while(<I>){chomp;@s=split;if($ANN{$s[0]}{'REF'} eq $ANN{$s[1]}{'REF'}){$check="SAME"}else{$check="DIFF"};
+print "$_\t$check\t$ANN{$s[0]}{'REF'}\t$ANN{$s[0]}{'REG'}\t$ANN{$s[1]}{'REF'}\t$ANN{$s[1]}{'REG'}\n"}' > $LFRRelationAnno
+```
+
+
+#Visualization
+
+```{r}
+LFRDM$BIC <- unlist(lapply(strsplit(as.character(LFRDM$BIC2),"_"),function(x) return(paste(x[2:7],collapse = "_"))))
+barrnap.stat$BIC <-unlist(lapply(strsplit(as.character(barrnap.stat$BIID),"_"),function(x) return(paste(x[1:6],collapse = "_"))))
+mdat.LFR <- merge(LFRDM,barrnap.stat[,c(4,5,7)],by="BIC")
+#ggplot(barrnap.stat,aes(x=))
+```
+
+```{r}
+ggplot(mdat,aes(x=Region,y=count,fill=LFR)) + geom_bar(stat="identity",position="stack") + facet_wrap(~Ref,scales = "free") + guides(fill=F)
+ggplot(mdat%>%filter(mPct>0.75),aes(x=Region,y=count,fill=LFR)) + geom_bar(stat="identity",position="stack") + facet_wrap(~Ref,scales = "free") + guides(fill=F)
+```
+
+```{r}
+mdat.ref.stat <- ddply(mdat%>%filter(!is.na(count)),c("Ref"),summarise,count=sum(count))
+mdat.ref.stat <- merge(mdat.ref.stat,zymo.copy.2,by="Ref")
+mdat.ref.stat[1,1] <- NA
+mdat.ref.stat.2 <- melt(mdat.ref.stat[,c(1:5,7,8)],id.vars = c("Ref","Species","NRRL"),variable.name = "Measurement",value.name = "count")
+mdat.ref.stat.2$count <- as.numeric(mdat.ref.stat.2$count)
+ggplot(mdat.ref.stat.2%>%filter(Ref!="Escherichia_coli_chromosome"),aes(x=Measurement,y=count,fill=Ref)) + geom_bar(stat="identity",position="fill") + 
+  coord_flip()
+```
+```{r}
+mdat2 <- mdat%>%filter(!is.na(count))
+mdat2$mPct2 <- round(mdat2$mPct-.05,1)
+mdat2.ref.stat <- ddply(mdat2,c("Ref","mPct2"),summarise,count=sum(count))
+mdat2.ref.stat <- merge(mdat2.ref.stat,zymo.copy.2,by="Ref")
+mdat2.ref.stat[1,1] <- NA
+mdat2.ref.stat.2 <- melt(mdat2.ref.stat,id.vars = c("Ref","Species","NRRL","GramStain"),variable.name = "Measurement",value.name = "count")
+mdat2.ref.stat.2$count <- as.numeric(mdat2.ref.stat.2$count)
+ggplot(mdat2.ref.stat.2,aes(x=Measurement,y=count,fill=Ref)) + geom_bar(stat="identity",position="fill")
+
+```
+
+```{r}
+mdat.ref.stat <- ddply(mdat%>%filter(mPct>0.75),c("Ref"),summarise,count=sum(count))
+mdat.ref.stat <- merge(mdat.ref.stat,zymo.copy.2,by="Ref")
+mdat.ref.stat.2 <- melt(mdat.ref.stat,id.vars = c("Ref","Species","NRRL","GramStain"),variable.name = "Measurement",value.name = "count")
+mdat.ref.stat.2$count <- as.numeric(mdat.ref.stat.2$count)
+ggplot(mdat.ref.stat.2,aes(x=Measurement,y=count,fill=Ref)) + geom_bar(stat="identity",position="fill")
+```
+
+
+```{r}
+mdat$unit <- paste0("LFR.",substr(mdat$Region,1,3))
+prop.unit <- ddply(mdat%>%filter(Region!="missing"),c("unit"),summarise,count=sum(count))
+tdat.unit <- mdat[c(1,1),]
+tdat.unit$unit <- c("LFR.16S","LFR.23S") 
+tdat.unit$count <- c(prop.unit$count[1]/sum(prop.unit$count)*mdat$count[1],
+                     prop.unit$count[2]/sum(prop.unit$count)*mdat$count[1])
+mdat.unit <- rbind(tdat.unit,mdat[-1,])
+mdat.unit.stat.0 <- ddply(mdat.unit,c("Ref","unit"),summarise,count=sum(count))
+mdat.unit.stat.1 <- dcast(mdat.unit.stat.0,Ref~unit,value.var = "count")
+mdat.unit.stat.2 <- merge(mdat.unit.stat.1,zymo.copy.2,by="Ref")
+mdat.unit.stat.2$Ref[1] <- NA
+mdat.unit.stat.3 <- melt(mdat.unit.stat.2,id.vars = c("Ref","Species","NRRL","GramStain"),variable.name = "Measurement",value.name = "count")
+mdat.unit.stat.3$count <- as.numeric(mdat.unit.stat.3$count)
+ggplot(mdat.unit.stat.3,aes(x=Measurement,y=count,fill=Ref)) + geom_bar(stat="identity",position="fill")
+```
+
+
+```{r}
+mdat$unit <- paste0("LFR.",substr(mdat$Region,1,3))
+prop.unit <- ddply(mdat%>%filter(Region!="missing"&&mPct>0.75),c("unit"),summarise,count=sum(count))
+tdat.unit <- mdat[c(1,1),]
+tdat.unit$unit <- c("LFR.16S","LFR.23S") 
+tdat.unit$count <- c(prop.unit$count[1]/sum(prop.unit$count)*mdat$count[1],
+                     prop.unit$count[2]/sum(prop.unit$count)*mdat$count[1])
+mdat.unit <- rbind(tdat.unit,mdat[-1,])
+mdat.unit.stat.0 <- ddply(mdat.unit,c("Ref","unit"),summarise,count=sum(count))
+mdat.unit.stat.1 <- dcast(mdat.unit.stat.0,Ref~unit,value.var = "count")
+mdat.unit.stat.2 <- merge(mdat.unit.stat.1,zymo.copy.2,by="Ref")
+mdat.unit.stat.2$Ref[1] <- NA
+mdat.unit.stat.3 <- melt(mdat.unit.stat.2,id.vars = c("Ref","Species","NRRL","GramStain"),variable.name = "Measurement",value.name = "count")
+mdat.unit.stat.3$count <- as.numeric(mdat.unit.stat.3$count)
+ggplot(mdat.unit.stat.3,aes(x=Measurement,y=count,fill=Ref)) + geom_bar(stat="identity",position="fill")
+```
+
+```{r}
+mdat.unit.stat.0 <- ddply(mdat.unit%>%filter(Region!="missing"&mPct>0.75),c("Ref","unit"),summarise,count=sum(count))
+mdat.unit.stat.1 <- dcast(mdat.unit.stat.0,Ref~unit,value.var = "count")
+mdat.unit.stat.2 <- merge(mdat.unit.stat.1,zymo.copy.2,by="Ref")
+mdat.unit.stat.3 <- melt(mdat.unit.stat.2,id.vars = c("Ref","Species","NRRL","GramStain"),variable.name = "Measurement",value.name = "count")
+mdat.unit.stat.3$count <- as.numeric(mdat.unit.stat.3$count)
+ggplot(mdat.unit.stat.3,aes(x=Measurement,y=count,fill=Ref)) + geom_bar(stat="identity",position="fill")
+```
+
+```{r}
+zymo.copy.melt <- melt(zymo.copy.num,id.vars = c("Species","NRRL","Ref","GenomicDNA","GramStain","Ploidy","GC"),variable.name = "Measurement",value.name = "composition")
+mdat.unit.stat.4 <- merge(mdat.unit.stat.0,zymo.copy.melt,by="Ref")
+
+ggplot(mdat.unit.stat.4,aes(x=composition,y=count,shape=unit,color=Species))+ geom_point() + facet_wrap(~Measurement,scale="free")
+```
+
+
+#soil
+```{bash}
+
+blastn -num_threads 32 -perc_identity 98 -qcov_hsp_perc 50 -db \
+$STL/Source/REF/silva132/LSU/SILVA_132_LSURef_tax_RNA.fasta \
+-query RCA197B01_1/VSEARCH/barrnap.cdhitL.fasta \
+-outfmt '6 std qlen' -out RCA197B01_1/VSEARCH/barrnap.LSU.silva.m6 
+
+metabbq anno.pl $STL/Source/REF/silva132/LSU/*txt RCA197B01_1/VSEARCH/barrnap.LSU.silva.m6 \
+> RCA197B01_1/VSEARCH/barrnap.LSU.silva.m6.more
+
+blastn -num_threads 32 -perc_identity 98 -qcov_hsp_perc 50 -db \
+$STL/Source/REF/silva132/SSU/132_SSURef_Nr99_tax_RNA.fasta \
+-query RCA197B01_1/VSEARCH/barrnap.cdhitS.fasta \
+-outfmt '6 std qlen' -out RCA197B01_1/VSEARCH/barrnap.SSU.silva.m6 
+
+metabbq anno.pl $STL/Source/REF/silva132/SSU/*txt RCA197B01_1/VSEARCH/barrnap.SSU.silva.m6 \
+> RCA197B01_1/VSEARCH/barrnap.SSU.silva.m6.more
+
+##### mapping clip fa to sliva
+for SAM in {RCA197M01_3,RCA197M03_1,RCA197M03_2,};do
+  blastn -num_threads 32 -perc_identity 98 -qcov_hsp_perc 50 -db \
+    $STL/Source/REF/silva132/LSU/SILVA_132_LSURef_tax_RNA.fasta \
+    -query $SAM/summary.BI.megahit.clip.fasta \
+    -outfmt '6 std qlen' -out $SAM/summary.BI.megahit.clip.LSU.silva.m6 
+  metabbq anno.pl $STL/Source/REF/silva132/LSU/*txt $SAM/summary.BI.megahit.clip.LSU.silva.m6  \
+    > $SAM/summary.BI.megahit.clip.LSU.silva.m6.more
+  blastn -num_threads 32 -perc_identity 98 -qcov_hsp_perc 50 -db \
+    $STL/Source/REF/silva132/SSU/132_SSURef_Nr99_tax_RNA.fasta \
+    -query $SAM/summary.BI.megahit.clip.fasta \
+    -outfmt '6 std qlen' -out $SAM/summary.BI.megahit.clip.SSU.silva.m6 
+  metabbq anno.pl $STL/Source/REF/silva132/SSU/*txt $SAM/summary.BI.megahit.clip.SSU.silva.m6 \
+   > $SAM/summary.BI.megahit.clip.SSU.silva.m6.more
+done
+
+##### mapping contig fa to sliva
+for SAM in {RCA197M03_1,RCA197M03_2,};do
+  blastn -num_threads 32 -perc_identity 90 -qcov_hsp_perc 50 -db \
+    $STL/Source/REF/silva132/LSU/SILVA_132_LSURef_tax_RNA.fasta \
+    -query $SAM/summary.BI.megahit.contig.fasta \
+    -outfmt '6 std qlen' -out $SAM/summary.BI.megahit.contig.LSU.silva.m6 
+  metabbq anno.pl $STL/Source/REF/silva132/LSU/*txt $SAM/summary.BI.megahit.contig.LSU.silva.m6  \
+    > $SAM/summary.BI.megahit.contig.LSU.silva.m6.more
+  blastn -num_threads 32 -perc_identity 90 -qcov_hsp_perc 50 -db \
+    $STL/Source/REF/silva132/SSU/132_SSURef_Nr99_tax_RNA.fasta \
+    -query $SAM/summary.BI.megahit.contig.fasta \
+    -outfmt '6 std qlen' -out $SAM/summary.BI.megahit.contig.SSU.silva.m6 
+  metabbq anno.pl $STL/Source/REF/silva132/SSU/*txt $SAM/summary.BI.megahit.contig.SSU.silva.m6 \
+   > $SAM/summary.BI.megahit.contig.SSU.silva.m6.more
+done
+
+##### mapping contig fa to blast
+for SAM in {RCA197M01_1,RCA197M03_1,RCA197M03_2};do
+  blastn -num_threads 32 -db $MDB/NCBI/blast_nt/nt \
+    -query $SAM/summary.BI.megahit.clip.fasta \
+    -outfmt '6 std qlen staxid ssciname' -out $SAM/summary.BI.megahit.contig.all.nt.m6 &
+done
+```
+
+#NON-RCA
+```{bash,include=FALSE}
+
+bwa mem -t 24 RCA197M01_2/VSEARCH/contig.LFRs.fasta.index RCA197B01_8/clean/fastp.sort.1.fq \
+RCA197B01_8/clean/fastp.sort.2.fq | samtools view -b -@ 24 > RCA197B01_8/VSEARCH/contig.LFRs.bwa.bam &
+bwa mem -t 24 RCA197M01_2/VSEARCH/contig.LFRs.fasta.index RCA197M01_8/clean/fastp.sort.1.fq \
+RCA197M01_8/clean/fastp.sort.2.fq | samtools view -b -@ 24 > RCA197M01_8/VSEARCH/contig.LFRs.bwa.bam &
+bwa mem -t 24 RCA197M01_2/VSEARCH/contig.LFRs.fasta.index RCA197M03_8/clean/fastp.sort.1.fq \
+RCA197M03_8/clean/fastp.sort.2.fq | samtools view -b -@ 24 > RCA197M03_8/VSEARCH/contig.LFRs.bwa.bam &
+
+metabbq smk -j -np RCA197{B01,M01,M03}_8/VSEARCH/contig.LFRs.bwa.prop
+```
+
+```{r}
+B01_8.2LFRs.prop <- read.table("../../Results/RCAs/RCA197FIN/RCA197M01_8.auto_removed_Ad/VSEARCH/contig.LFRs.bwa.prop", col.names = c("B01_8","LFR"),as.is =T)
+M01_8.2LFRs.prop <- read.table("../../Results/RCAs/RCA197FIN/RCA197M01_8/VSEARCH/contig.LFRs.bwa.prop", col.names = c("M01_8","LFR"),as.is =T)
+M03_8.2LFRs.prop <- read.table("../../Results/RCAs/RCA197FIN/RCA199M03_8/VSEARCH/contig.LFRs.bwa.prop", col.names = c("M03_8","LFR"),as.is =T)
+multi.prop.mdat <- merge(merge(merge(mdat,B01_8.2LFRs.prop,by="LFR"),M01_8.2LFRs.prop,by="LFR"),M03_8.2LFRs.prop,by="LFR")
+multi.prop.mdat$mPct2 <- round(multi.prop.mdat$mPct-.05,1)
+colnames(multi.prop.mdat)[10] <- "B01_2"
+multi.melt <- melt(multi.prop.mdat,measure.vars = c("B01_2","B01_8","M01_8","M03_8"),variable.name = "Sample",value.name = "count")
+multi.ref.stat0 <- ddply(multi.melt,c("Ref","mPct2","unit","Sample"),summarise,count=sum(count))
+zymo.ref.copy <- melt(zymo.copy.2[,c("Ref","CN.16S","CN.16S_and_18S")],id.vars = c("Ref"),variable.name = "Sample",value.name = "count")
+zymo.ref.copy <- rbind(cbind(zymo.ref.copy,unit="LFR.16S"),cbind(zymo.ref.copy,unit="LFR.23S"))
+multi.ref.stat1 <- rbind(data.frame(multi.ref.stat0,type="Sample"),data.frame(zymo.ref.copy,mPct2=1,type="Theoretical"))
+multi.ref.stat1[which(multi.ref.stat1$Ref=="*"),1] <- NA
+multi.ref.stat1$count <- as.numeric(multi.ref.stat1$count)
+
+ggplot(multi.ref.stat1,aes(x=Sample,y=count,fill=Ref)) + geom_bar(stat="identity",position="fill") +
+  facet_grid(type~.,scale="free") + coord_flip()
+
+ggplot(multi.ref.stat1%>%filter(!is.na(Ref)),aes(x=Sample,y=count,fill=Ref)) + geom_bar(stat="identity",position="fill") +
+  facet_grid(type~.,scale="free") + coord_flip()
+
+ggplot(multi.ref.stat1%>%filter(!is.na(Ref)&mPct2>0.6),aes(x=Sample,y=count,fill=Ref)) + geom_bar(stat="identity",position="fill") +
+  facet_grid(type~.,scale="free") + coord_flip()
+```
+
+```{r}
+ggplot(multi.ref.stat1%>%filter(unit!="LFR.mis"),aes(x=Sample,y=count,fill=Ref)) + geom_bar(stat="identity",position="fill") +
+  facet_grid(unit+type~.,scale="free",space="free") + coord_flip()
+```
+
+**correlation**
+```{r}
+multi.ref.stat4 <- ddply(multi.prop.mdat,c("Ref"),summarise,B01_2=sum(B01_2),B01_8=sum(B01_8),M01_8=sum(M01_8),M03_8=sum(M03_8))
+multi.ref.stat5 <- merge(multi.ref.stat4,zymo.copy.2[,c("Ref","CN.16S","CN.16S_and_18S")],by="Ref")
+multi.ref.stat5$CN.16S <- as.numeric(multi.ref.stat5$CN.16S)
+multi.ref.stat5$CN.16S_and_18S <- as.numeric(multi.ref.stat5$CN.16S_and_18S)
+rownames(multi.ref.stat5) <- multi.ref.stat5$Ref
+
+multi.ref.stat6 <- as.matrix(multi.ref.stat5[-1,-1])
+multi.ref.spearman <- cor(multi.ref.stat6,m="s")
+pheatmap(multi.ref.spearman,display_numbers = T)
+```
+
+```{r}
+multi.ref.stat4 <- ddply(multi.prop.mdat%>%filter(mPct>0.8),c("Ref"),summarise,B01_2=sum(B01_2),B01_8=sum(B01_8),M01_8=sum(M01_8),M03_8=sum(M03_8))
+multi.ref.stat5 <- merge(multi.ref.stat4,zymo.copy.2[,c("Ref","CN.16S","CN.16S_and_18S")],by="Ref")
+multi.ref.stat5$CN.16S <- as.numeric(multi.ref.stat5$CN.16S)
+multi.ref.stat5$CN.16S_and_18S <- as.numeric(multi.ref.stat5$CN.16S_and_18S)
+rownames(multi.ref.stat5) <- multi.ref.stat5$Ref
+
+multi.ref.stat6 <- as.matrix(multi.ref.stat5[-1,-1])
+multi.ref.spearman <- cor(multi.ref.stat6,m="s")
+pheatmap(multi.ref.spearman,display_numbers = T)
+```
+
+
+```{r}
+LFRDM.sum <- ddply(LFRDM,"LFR",summarise,size=length(LFR))
+Ref.stat.mPct <- merge(mdat,LFRDM.sum,by="LFR")
+ggplot(Ref.stat.mPct,aes(x=mPct,y=size)) + geom_point() + scale_y_log10()
+```
+
+
+
+#FIN.
+
+#Discarded codes:
+```{bash,include=FALSE}
+#test non-chimeras test
+vsearch --threads 48 --uchime2_denovo $SAM/VSEARCH/barrnap.LFRs.fasta --fasta_width 0 \
+--chimeras $SAM/VSEARCH/barrnap.LFRs.chimeras \
+--nonchimeras $SAM/VSEARCH/barrnap.LFRs.nonchimeras \
+--uchimealns $SAM/VSEARCH/barrnap.LFRs.uchimealns \
+--uchimeout $SAM/VSEARCH/barrnap.LFRs.uchimeout
+
+vsearch --threads 48 --uchime_ref $SAM/VSEARCH/barrnap.LFRs.fasta --fasta_width 0 \
+--db  $DB/D6305.genomes.fasta \
+--chimeras $SAM/VSEARCH/barrnap.LFRs.chimeras \
+--nonchimeras $SAM/VSEARCH/barrnap.LFRs.nonchimeras \
+--uchimealns $SAM/VSEARCH/barrnap.LFRs.uchimealns \
+--uchimeout $SAM/VSEARCH/barrnap.LFRs.uchimeout
+```
+
