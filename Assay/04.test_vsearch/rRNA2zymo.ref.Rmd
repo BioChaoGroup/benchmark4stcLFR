@@ -16,6 +16,7 @@ library(pheatmap)
 # Global vars
 DB="../../Source/REF/zymo"
 SAM="RCA197B01_2"
+SAM="A12"
 threads=32
 
 do.write<-F
@@ -26,16 +27,29 @@ After obtained LFR contigs, I then map them back to referece.
 #0. Mapping rRNA to zymo genome reference
 bwa mem -t 48 $DB/D6305.genomes.bwa $SAM/summary.BI.megahit.rRNA.fasta |samtools view -b > $SAM/rRNA2zymo.bam
 
+#choose 1
 samtools view $SAM/rRNA2zymo.bam|sed 's/::/\t/'|sort -k2,2 | perl -e 'while(<>){@s=split; @b=split("_",$s[1]);
   if($bi ne $b[0]){$r=1}elsif($gi ne $b[7]){$r++}; ($mLen,$rLen) = (0,0); while($s[6]){
     $s[6] =~ s/^(\d*)([MIDNSHP=X])//;($mode,$n) = ($2,$1);$n||=1;
 	  if($mode =~/[MINP=X]/){$mLen += $n;}; if($mode =~/[HSMINP=X]/){$rLen += $n;} 
 	 }; print "$b[0]\t$b[2]\t$r\t$s[0]\t$rLen\t$mLen\t$s[3]\n"; $bi=$b[0];$ri=$b[2];$gi=$b[7];
 }'  > $SAM/rRNA2zymo.stat
-
-grep ">" $SAM/VSEARCH/barrnap.LFRs.fasta|sed 's/>//;s/::/\t/'|sort -k2,2 |perl -e 'while(<>){@s=split; @b=split("_",$s[2]);
-if($bi ne $b[0]){$r=1}elsif($gi ne $b[7]){$r++};$bi=$b[0];$ri=$b[2];
+grep ">" $SAM/VSEARCH/barrnap.LFRs.fasta|sed 's/>//;s/::/\t/'|sort -k3,3 |perl -e 'while(<>){@s=split; @b=split("_",$s[2]);
+if($bi ne $b[0]){$r=1}elsif($gi ne $b[7]){$r++};$bi=$b[0];$gi=$b[2];
 print "$b[0]\t$b[2]\t$r\t$s[1]\t$s[0]\n"}' > $SAM/VSEARCH/barrnap.LFRs.IDs
+
+# choose 2 (@b is shorter)
+samtools view $SAM/rRNA2zymo.bam|sed 's/::/\t/'|sort -k2,2 | perl -e 'while(<>){@s=split; @b=split("_",$s[1]);
+  if($bi ne $b[0]){$r=1}elsif($gi ne $b[3]){$r++}; ($mLen,$rLen) = (0,0); while($s[6]){
+    $s[6] =~ s/^(\d*)([MIDNSHP=X])//;($mode,$n) = ($2,$1);$n||=1;
+	  if($mode =~/[MINP=X]/){$mLen += $n;}; if($mode =~/[HSMINP=X]/){$rLen += $n;} 
+	 }; print "$b[0]\t$b[2]\t$r\t$s[0]\t$rLen\t$mLen\t$s[3]\n"; $bi=$b[0];$ri=$b[2];$gi=$b[3];
+}'  > $SAM/rRNA2zymo.stat
+grep ">" $SAM/VSEARCH/barrnap.LFRs.fasta|sed 's/>//;s/::/\t/'|sort -k3,3 |perl -e 'while(<>){@s=split; @b=split("_",$s[2]);
+if($bi ne $b[0]){$r=1}elsif($gi ne $b[3]){$r++};$bi=$b[0];$gi=$b[3];
+print "$b[0]\t$b[2]\t$r\t$s[1]\t$s[0]\n"}' > $SAM/VSEARCH/barrnap.LFRs.IDs
+
+###########################
 
 #
 bwa mem -t 24 $DB/D6305.genomes.bwa $SAM/summary.BI.megahit.clip.fasta |samtools view -b > $SAM/clip2zymo.bam
@@ -78,6 +92,7 @@ Load data
 ```{r}
 tag <- "RCA197M01_2.auto_removed_Ad"
 tag <- "RCA197M01_2"
+tag <- "A12"
 pfx <- paste0("../../Results/RCAs/RCA197FIN/",tag)
 tag2 <- "RCA197M01_8"
 rRNA2zymo.stat <- read.table(paste0(pfx,"/rRNA2zymo.stat"), col.names = c("BI","f","rRNA","unit","rLen","mLen","Ref"))
@@ -130,7 +145,7 @@ ggplot(data_m,aes(x=factor(rLen1),y=pct,fill=factor(Refs))) + geom_bar(stat="ide
 
 
 ggplot(mdatS0,aes(x=factor(rLen1),fill=factor(Refs))) + geom_bar(stat="count",position="stack") +
-  facet_grid(rNum~factor(uType),scale="free",space="free") + scale_y_log10() +
+  facet_grid(rNum~factor(uType),scale="free",space="free_x") +
   theme(axis.text.x = element_text(angle=-45,vjust=0))
 
 
