@@ -65,10 +65,18 @@ grep ">" $SAM/VSEARCH/contig.LFRs.fasta|sed 's/>//;s/ /\t/' > $SAM/VSEARCH/conti
 
 # Load 
 ```{r}
-SAM="RCA197M01_2"
+SAM="RCA197M01_2.auto_removed_Ad"
 pfx=paste0("../../Results/RCAs/RCA197FIN/",SAM,"/VSEARCH/contig")
 
+clip.heads <- read.table(paste0("../../Results/RCAs/RCA197FIN/",SAM,"/summary.BI.megahit.clip.heads"),
+                         col.names=c("BI","maxKmer","flag","cov","rawLen","cType","Ad","cLen"))
+barrnap.heads <- read.table(paste0("../../Results/RCAs/RCA197FIN/",SAM,"/summary.BI.megahit.rRNA.heads"),
+                         col.names=c("RA","RB","BI","maxKmer","flag","cov","rawLen","cType","Ad","cLen"))
 name.uc <- c("RecordType","ClusterNO","size","Percentage","Orientation","NA1","NA2","CIGAR","query","centroid")
+
+clip.m6 <- read.table(paste0("../../Results/RCAs/RCA197FIN/",SAM,"/summary.BI.megahit.clip.lg500.m6.uniq"),
+                      col.names = c("clip","Subject","pident","len","mismatch","gap","qs","qe","ss","se","eval","score","qLen"))
+
 uc.derep <- read.table(paste0(pfx,".derep.full.uc"),col.names = name.uc)
 uc.clust <- read.table(paste0(pfx,".preclust.uc"),col.names = name.uc)
 uc.chime <- read.table(paste0(pfx,".LFRs.uc"),col.names = name.uc)
@@ -112,6 +120,44 @@ LFR.stat <- ddply(LFRDM,c("LFR"),summarise,size=length(unique(BI)))
 ```
 
 ```{r}
+ggplot(clip.heads%>%filter(cLen >99),aes(x=cLen)) + geom_histogram(binwidth = 0.1) + scale_x_log10() + annotation_logticks(side="b") +
+  xlab("Contig length (treated by RCACLIP)")
+
+```
+
+```{r}
+mdat.heads <- merge(clip.heads,barrnap.heads[,-10],by=c("BI","maxKmer","flag","cov","rawLen","cType","Ad"),all.x = T)
+
+ggplot(mdat.heads,aes(x=cLen,fill=RA)) + geom_histogram(binwidth = 0.1) + scale_x_log10() + annotation_logticks(side="b") +
+  xlab("Contig length (treated by RCACLIP)") 
+```
+
+
+```{r}
+BI.rRNA.stat <- read.table(paste0("../../Results/RCAs/RCA197FIN/",SAM,"/summary.BI.megahit.rRNA.BI.stat"),
+                           col.names = c("BI","findRNA"))
+BI.rRNA.stat <- merge(unique(mdat.heads[,1,F]),BI.rRNA.stat,by="BI",all.x=T)
+BI.rRNA.stat$findRNA[which(is.na(BI.rRNA.stat$findRNA))] <- 0
+BI.rRNA.stat$findRNA <- as.factor(BI.rRNA.stat$findRNA)
+levels(BI.rRNA.stat$findRNA) <- c("None","Only 16S","Only 23S","Found both")
+
+ggplot(BI.rRNA.stat,aes(x="RNA",fill=findRNA)) + geom_bar(stat="count") + coord_polar(theta = 'y') + theme_bw()
+```
+
+
+```{r}
+clip.m6$layer <- round(clip.m6$qLen/100,0)*100
+clip.m6$Identity <- ifelse(clip.m6$pident<98,"<98%",ifelse(clip.m6$pident==100,"100%",
+                    ifelse(clip.m6$pident>99.9,">99.9%",ifelse(clip.m6$pident>99,">99%",">98%"))))
+clip.m6$Identity <- factor(clip.m6$Identity,levels=c("100%",">99.9%",">99%",">98%"))
+ggplot(clip.m6,aes(x=layer,fill=Identity)) + geom_bar(stat="count") + xlab("contig length")
+
+ggplot(clip.m6,aes(x=mismatch)) + geom_histogram()
+
+```
+
+
+```{r}
 pickOne <- function(d){
   d <- d[1,]
   return(d)
@@ -128,11 +174,33 @@ LFR.map3 <- merge(LFR.map2,ddply(LFR.barrnap[,c(1,3)],"LFR",pickOne),by="LFR",al
 LFR.map3 <- LFR.map3[order(LFR.map3$LFR),]
 LFR.map3$type <- ifelse(is.na(LFR.map3$type),"others",as.character(LFR.map3$type))
 
+LFR.all <- merge(LFRDM,LFR.map3,by="LFR")
+if(do.write){
+  write.csv(LFR.all,"../../Results/RCAs/RCA197FIN/RCA197M01_2.auto_removed_Ad/LFR.all.csv")
+}
 ```
 
 ```{r}
 ggplot(LFR.map3,aes(x=type,y=size,fill=Subject.y)) + geom_bar(stat="sum")
 ```
+
+```{r}
+ggplot(LFR.map3,aes(x=type,y=size,fill=TaxID)) + geom_bar(stat="sum")
+```
+```{r}
+ggplot(LFR.map3,aes(x=type,y=size,fill=TaxID)) + geom_bar(stat="sum",position="fill")
+```
+
+```{r}
+LFR.map3.add <- ddply(LFR.map3,c("type","TaxID"),summarise,size=sum(size))
+tmp <- LFR.map3.add%>%filter(type=="others")
+tmp$type <- "16S18S"
+tmp$size <- c(15.3,3.3,8.7,8.9,16.1,12.4,3.6,9.3,9.1,13.6,0)
+LFR.map3.add <- rbind(LFR.map3.add,tmp)
+ggplot(LFR.map3.add,aes(x=type,y=size,fill=TaxID)) + geom_bar(stat="identity",position="fill")
+
+```
+
 
 ```{r}
 test.df <- LFR.map3%>%filter(!is.na(Subject.x))
@@ -142,10 +210,12 @@ ggplot(test.df,aes(x=TaxID,fill=Subject.y)) + geom_bar() +
 
 
 ```{r}
-LFR.map.stat <- ddply(LFR.map,c("LFR","TaxID","Subject","region","qLen"),summarise,count=sum(size))
-tmp <- matrix(unlist(strsplit(as.character(LFR.map.stat$region),"-")),ncol=2,byrow = T)
-LFR.map.stat$regStart <- as.numeric(tmp[,1])
-LFR.map.stat$regEnd <- as.numeric(tmp[,2])
+LFR.map.stat <- ddply(LFR.map3,c("LFR","TaxID","Subject.x","region","qLen","type"),summarise,count=sum(size))
+tmp <- matrix(unlist(strsplit(as.character(LFR.map.stat$region[which(!is.na(LFR.map.stat$region))]),"-")),ncol=2,byrow = T)
+LFR.map.stat$regStart <- NA
+LFR.map.stat$regStart[which(!is.na(LFR.map.stat$regStart ))] <- as.numeric(tmp[,1])
+LFR.map.stat$regEnd <- NA
+LFR.map.stat$regEnd[which(!is.na(LFR.map.stat$regEnd))] <- as.numeric(tmp[,2])
 
 LFR.map.stat$region <- reorder(LFR.map.stat$region,LFR.map.stat$regStart,mean)
 LFR.map.stat$TaxID <- reorder(LFR.map.stat$TaxID,LFR.map.stat$count,sum)
@@ -153,9 +223,18 @@ LFR.map.stat$TaxID <- reorder(LFR.map.stat$TaxID,LFR.map.stat$count,sum)
 ```
 
 ```{r}
+LFR.map.sum <- ddply(LFR.map.stat%>%filter(count>9),c("TaxID","region"),summarise,count=sum(count))
+ggplot(LFR.map.stat%>%filter(count>9),aes(x=region,y=count)) + 
+  geom_bar(stat="identity",aes(fill=type)) + 
+  geom_text(data=LFR.map.sum,aes(y=count,label=count)) +
+  theme(axis.text.x= element_text(angle = 90,hjust=1,vjust=1)) +
+  facet_grid(.~TaxID,scale="free",space="free")
+```
+
+```{r}
 LFR.map.sum <- ddply(LFR.map.stat%>%filter(qLen>1499),c("TaxID","region"),summarise,count=sum(count))
 ggplot(LFR.map.stat%>%filter(qLen>1499),aes(x=region,y=count)) + 
-  geom_bar(stat="identity",aes(fill=LFR)) + 
+  geom_bar(stat="identity",aes(fill=type)) + 
   geom_text(data=LFR.map.sum,aes(y=count,label=count)) +
   theme(axis.text.x= element_text(angle = 90,hjust=1,vjust=1)) +
   facet_grid(.~TaxID,scale="free",space="free")
@@ -212,16 +291,22 @@ ggplot(b2rm%>%filter(UNIQ>20),aes(x=TaxID,y=UNIQ+MULT)) +
 ```{r}
 LFR.prop <- read.table(paste0(pfx,".LFRs.bwa.prop"), col.names = c("count","LFR"))
 
-LFR.map.prop <- merge(LFR.map,LFR.prop,by="LFR")
+LFR.map.prop <- merge(LFR.map3,LFR.prop,by="LFR")
 
 ```
 
 ```{r}
-LFR.map.prop.sum <- ddply(LFR.map.prop%>%filter(count>999&qLen>1999),c("TaxID","region"),summarise,count=sum(count))
-ggplot(LFR.map.prop%>%filter(count>999&qLen>1999),aes(x=region,y=count)) + 
+LFR.map.prop.sum <- ddply(LFR.map.prop%>%filter(count>99&qLen>1999),c("TaxID","region","type"),summarise,count=sum(count))
+ggplot(LFR.map.prop%>%filter(count>999&qLen>1999),aes(x=region,y=count,color=type)) + 
   geom_bar(stat="identity",aes(fill=LFR)) +
   geom_text(data=LFR.map.prop.sum,aes(y=count,label=count)) +
   guides(fill=F) + facet_grid(TaxID~.,scale="free",space="free") + coord_flip()
+
+ggplot(LFR.map.prop%>%filter(count>99&qLen>1999),aes(x=region,y=count)) + 
+  geom_bar(stat="identity",aes(fill=type)) + 
+  geom_text(data=LFR.map.prop.sum,aes(y=count,label=count)) +
+  theme(axis.text.x= element_text(angle = 90,hjust=1,vjust=1)) +
+  facet_grid(.~TaxID,scale="free",space="free")
 ```
 
 ```{r}

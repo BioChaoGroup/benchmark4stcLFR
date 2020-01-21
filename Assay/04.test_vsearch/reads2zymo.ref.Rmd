@@ -1,0 +1,103 @@
+---
+title: "species level represent sequence generation"
+output:
+  html_notebook:
+    code_fold: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+library(pheatmap)
+
+# Global vars
+DB="../../Source/REF/zymo"
+SAM="RCA197B01_2"
+threads=32
+
+do.write<-F
+```
+
+After obtained LFR contigs, I then map them back to referece.
+```{bash, include=FALSE}
+#0. Mapping rRNA to zymo genome reference
+SAM="RCA197B01_2"
+SAM="RCA197M03_8"
+
+bwa mem -t 48 $DB/D6305.genomes.bwa $SAM/clean/fastp.sort.1.fq $SAM/clean/fastp.sort.2.fq | samtools view -b > $SAM/clean/reads2zymo.bam
+samtools view $SAM/clean/reads2zymo.bam|sed 's/\//\t/'|perl -e 'while(<>){
+  @s=split;$b=($s[1]=~/0000/)?"0000_0000_0000":$s[1];
+  if($bi ne $b){
+    foreach $h(keys %HS){
+      print "$bi\t$ct\t$h\t$HS{$h}{0}\t$HS{$h}{5}\n";
+    }
+    %HS=();$ct=0;
+	}; $s[3]=~s/\.\d+$//;
+	$HS{$s[3]}{0}++; $HS{$s[3]}{5}+=($s[5]>=50)?1:0 ;$ct++; $bi=$b;
+}'  > $SAM/clean/reads2zymo.stat
+
+cat $SAM/clean/reads2zymo.stat|perl -e '$b="0000_0000_0000";$pb=$b;
+while(<>){@s=split;$b=$s[0];
+if($pb ne $b){if($pb=~/0000/){foreach $r (keys %T0){ printf("%s\t%d\t%s\t%d\t%s\t%d\n",$pb,$T0{$r},$r,$T0{$r},$r,$T5{$r});}
+}else{
+@c0=(keys %T0);@c5=(keys %T5);($r0,$r5,$n0,$n5)=();
+if(@c0>1){$r0="MULT";$n0=0}else{$r0=($c0[0])?$c0[0]:"MISS";$n0=$T0{$r0}};
+if(@c5>1){$r5="MULT";$n5=0}else{$r5=($c5[0])?$c5[0]:"MISS";$n5=$T5{$r5}};
+printf("%s\t%d\t%s\t%d\t%s\t%d\n",$pb,$ct,$r0,$n0,$r5,$n5);};(%T0,%T5,$ct)=()};
+unless($s[2] eq "*"){$T0{$s[2]}=$s[3];if($s[4]>0){$T5{$s[2]}=$s[4]}};$ct=$s[1];$pb=$b;
+}' > $SAM/clean/reads2zymo.ssbb2
+cat $SAM/clean/reads2zymo.ssbb2|cut -f 2,3|sort -n|uniq -c >  $SAM/clean/reads2zymo.MQ0.prop &
+cat $SAM/clean/reads2zymo.ssbb2|cut -f 2,5|sort -n|uniq -c >  $SAM/clean/reads2zymo.MQ5.prop &
+```
+
+
+Load data
+```{r}
+tag1 <- "RCA197M01_2.auto_removed_Ad"
+tag2 <- "RCA199M03_8"
+
+BMQ0.prop <- read.table(paste0("../../Results/RCAs/RCA197FIN/",tag1,"/clean/reads2zymo.MQ0.prop"), col.names = c("count","rpb","Ref"),fill=NA,as.is=T)
+BMQ5.prop <- read.table(paste0("../../Results/RCAs/RCA197FIN/",tag1,"/clean/reads2zymo.MQ5.prop"), col.names = c("count","rpb","Ref"),fill=NA,as.is=T)
+MMQ0.prop <- read.table(paste0("../../Results/RCAs/RCA197FIN/",tag2,"/clean/reads2zymo.MQ0.prop"), col.names = c("count","rpb","Ref"),fill=NA,as.is=T)
+MMQ5.prop <- read.table(paste0("../../Results/RCAs/RCA197FIN/",tag2,"/clean/reads2zymo.MQ5.prop"), col.names = c("count","rpb","Ref"),fill=NA,as.is=T)
+
+```
+
+Curate
+```{r}
+BMQ0.prop$Ref[which(BMQ0.prop$Ref=="")] <- "MISS"
+MMQ0.prop$Ref[which(MMQ0.prop$Ref=="")] <- "MISS"
+
+MQ.dat <- rbind(cbind(merge(BMQ0.prop,BMQ5.prop,by=c("rpb","Ref"),all=T),sample="B01_2"),
+                cbind(merge(MMQ0.prop,MMQ5.prop,by=c("rpb","Ref"),all=T),sample="M03_8"))
+colnames(MQ.dat)[3:4] <- c("MQ0","MQ5")
+MQ.dat$MQ0[which(is.na(MQ.dat$MQ0))] <- 0
+MQ.dat$MQ5[which(is.na(MQ.dat$MQ5))] <- 0
+
+MQd <- merge(MQ.dat,zymo.copy.2[,c(1,3,4,5,7)],by="Ref",all.x=T)
+
+MQm <- melt(MQd,measure.vars = c("MQ0","MQ5","GenomicDNA","CN.16S","GenomeCopy"),variable.name = "measurement",value.name = "count")
+MQm$count <- as.numeric(MQm$count)
+```
+
+
+#Visualization
+
+
+```{r}
+ggplot(MQm%>%filter(!is.na(Species)),aes(x=measurement,y=count,fill=Species)) + geom_bar(stat="identity",position="fill")+ facet_grid(.~sample)
+```
+
+
+```{r}
+ggplot(MQd%>%filter(Ref!="MULT"),aes(x=rpb,y=MQ0,fill=Species)) + geom_bar(stat="identity",position="fill") + xlim(c(0,150))
+```
+
+```{r}
+ggplot(MQd%>%filter(Ref!="MULT"),aes(x=rpb,y=MQ5,fill=Species)) + geom_bar(stat="identity",position="fill") + xlim(c(0,150))
+
+```
+

@@ -77,6 +77,27 @@ sh sort.sh
 
 ```
 
+#patch
+```{bash}
+for j in {3..8};
+do
+  echo 'cat ../../Results/RCAs/New_RCA197FIN_test/origin/RCA197L0{1,2}\_'$j'/clean/fastp.sort.1.fq | paste - - - - | sort -T ./tmp -k2,2 -t "/" | tr "\t" "\n" > RCA197M01\_'$j'/clean/fastp.sort.1.fq'
+  echo 'cat ../../Results/RCAs/New_RCA197FIN_test/origin/RCA197L0{1,2}\_'$j'/clean/fastp.sort.2.fq | paste - - - - | sort -T ./tmp -k2,2 -t "/" | tr "\t" "\n" > RCA197M01\_'$j'/clean/fastp.sort.2.fq'
+done > sort.sh
+for j in {1..8};
+do
+  echo 'cat ../../Results/RCAs/New_RCA197FIN_test/origin/RCA197L0{3,4}\_'$j'/clean/fastp.sort.1.fq | paste - - - - | sort -T ./tmp -k2,2 -t "/" | tr "\t" "\n" > RCA197M01\_'$j'/clean/fastp.sort.1.fq'
+  echo 'cat ../../Results/RCAs/New_RCA197FIN_test/origin/RCA197L0{3,4}\_'$j'/clean/fastp.sort.2.fq | paste - - - - | sort -T ./tmp -k2,2 -t "/" | tr "\t" "\n" > RCA197M01\_'$j'/clean/fastp.sort.2.fq'
+done >> sort.sh
+for j in {1..8};
+do
+  echo 'cat ../../Results/RCAs/New_RCA197FIN_test/origin/RCA199L0{1,2}\_'$j'/clean/fastp.sort.1.fq | paste - - - - | sort -T ./tmp -k2,2 -t "/" | tr "\t" "\n" > RCA197M01\_'$j'/clean/fastp.sort.1.fq'
+  echo 'cat ../../Results/RCAs/New_RCA197FIN_test/origin/RCA199L0{1,2}\_'$j'/clean/fastp.sort.2.fq | paste - - - - | sort -T ./tmp -k2,2 -t "/" | tr "\t" "\n" > RCA197M01\_'$j'/clean/fastp.sort.2.fq'
+done >> sort.sh
+
+```
+
+
 
 # blast select scaf to nt
 ```{bash,eval=FALSE}
@@ -134,6 +155,19 @@ BB.stat <- merge(BB.stat,phe.df,by="ID")
 ggplot(BB.stat,aes(x=rpb,y=count,group=ID,color=Note,linetype=dilute)) + geom_line(size=1) + 
   xlim(c(0,100)) + facet_grid(sample~.) +
   scale_y_log10() + annotation_logticks(sides="l")
+```
+```{r}
+BB.stat$layer <- ifelse(BB.stat$rpb<10,BB.stat$rpb,ifelse(BB.stat$rpb<20,"10-19",ifelse(BB.stat$rpb<50,"21-49",
+                   ifelse(BB.stat$rpb<100,"51-99",">=100"))))
+BB.stat$layer <- factor(BB.stat$layer,levels=c(seq(1,9),"10-19","21-49","51-99",">=100"))
+
+BB2.stat <- ddply(BB.stat%>%filter(ID=="M01_2"),c("layer"),summarise,count=sum(count))
+BB2.stat$color <- NA
+BB2.stat$color[which(BB2.stat$layer==">=100")] <- "pick"
+ggplot(BB2.stat,aes(x=layer,y=count,fill=color)) + 
+  geom_bar(stat="identity",position="stack") + scale_y_log10() +
+  annotation_logticks(sides="l") + xlab("#Reads per bead") + ylab("#Beads") +
+  theme(axis.text.x = element_text(angle=-45,hjust=0,vjust=1))
 ```
 
 ```{r}
