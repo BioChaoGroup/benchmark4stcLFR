@@ -5,7 +5,7 @@ tmp: "./tmp"
 # int cutoff of freq number for select beads; 0 means output all beads
 beadSelect: 10
 distCutoff: 0.04
-divideSH: 4
+divideSH: 5
 
 BB_LIST: "../../Source/REF/barcode.list"
 REF_GEN: "../../Source/REF/fungal7mix/MIX7.fa"
@@ -15,7 +15,7 @@ REF_ID: "../../Source/REF/fungal7mix/MIX7.faID"
 
 REF_nt: "$MDB/NCBI/blast_nt/nt"
 REF_silva: "../../Source/REF/silva132/combine/SILVA_132_SSU_LSU_tax_DNA.blast"
-sampleType: "F" # F(ungi) or B(acteria)
+sampleType: "B" # F(ungi) or B(acteria)
 
 ### adapters
 AdRCA: AAGTCGGACGCTGATAAGGTCGCCATGCCTCTCAGTACTCCGACTT
@@ -40,6 +40,10 @@ method:
 
 ### params
 
+#### raw data
+i_seqPair: 2
+i_rdLen: 100
+
 #### mash dist params
 p_dist_k: 31
 p_dist_s: 2000
@@ -48,8 +52,8 @@ p_dist_min: 0.02
 p_dist_max: 0.04
 
 #### cluster cutoff
-p_cluster_minR: 10
-p_cluster_maxR: 30
+p_cluster_minR: 5
+p_cluster_maxR: 9999
 p_cluster_topB: 0
 p_cluster_ranP: 0
 
@@ -63,14 +67,17 @@ p_rpc_min: 100
 p_bpc_min: 0
 
 #Assembly
+p_asm_minKmers: 1000
+p_asm_minKmerCoverage: 5
 p_asm_min: 500
 p_asm_mem: 10000000000
-p_asm_cpu: 4
+p_asm_cpu: 1
 
 #VSEARCH
 p_VS_clust_id: 0.98
 p_VS_cdhit_id: 0.98
-
+p_VS_clust_Sid: 0.98
+p_VS_clust_Lid: 0.95
 #Circos
 p_cc_zoom: 1
 p_cc_cut:  97
