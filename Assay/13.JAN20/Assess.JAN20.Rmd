@@ -1,0 +1,1047 @@
+---
+title: "JAN20 DATA ASSESSMENT"
+author: "Chao"
+date: "1/21/2020"
+output: 
+  html_notebook:
+    code_fold: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reshape2)
+library(ggplot2)
+library(plyr)
+library(dplyr)
+library(RColorBrewer)
+library(configr)
+library(tools)
+```
+
+# Background
+
+Samples involved:
+
+| ID | lane | barcode | Kindom | RCA | Location    |
+| -- | ---- | ------- | -------| --- | ----------- |
+| U1 | FF1  | 1,17    | Bac    | RCA | Urine       |
+| S1 | FF1  | 3,4     | Bac    | RCA | Soil spot A |
+| O1 | FF1  | 5,22    | Bac    | RCA | Soil spot B |
+| M1 | FF1  | 7       | Bac    | RCA | Mock        |
+| Z1 | FF1  | 8       | Bac    | RCA | ZYMO 8      |
+
+Zymo mock strains:
+
+| Species                  | Genomic DNA | 16S Only1 | 16S & 18S1 | Genome Copy2 | Cell Number3 |
+| ------------------------ | ----------- | --------- | ---------- | ------------ | ------------ |
+| Pseudomonas aeruginosa   | 12          | 4.2       | 3.6        | 6.1          | 6.1          | +
+| Escherichia coli         | 12          | 10.1      | 8.9        | 8.5          | 8.5          | +
+| Salmonella enterica      | 12          | 10.4      | 9.1        | 8.7          | 8.8          | +
+| Lactobacillus fermentum  | 12          | 18.4      | 16.1       | 21.6         | 21.9         |
+| Enterococcus faecalis    | 12          | 9.9       | 8.7        | 14.6         | 14.6         | +
+| Staphylococcus aureus    | 12          | 15.5      | 13.6       | 15.2         | 15.3         | +
+| Listeria monocytogenes   | 12          | 14.1      | 12.4       | 13.9         | 13.9         | +
+| Bacillus subtilis        | 12          | 17.4      | 15.3       | 10.3         | 10.3         | +
+| Saccharomyces cerevisiae | 2           | NA        | 9.3        | 0.57         | 0.29         |
+| Cryptococcus neoformans  | 2           | NA        | 3.3        | 0.37         | 0.18         |
+
+**For the first time, grab data from HPC**
+```{bash,eval=FALSE}
+#get BB.stat
+res=../../Results/JAN20/ORI
+rsync -atvP --files-from=$res/tmp.file.lst ngb8:$remote/Results/JAN20/ORI/ $res/
+```
+
+```{bash}
+res=../../Results/JAN20/ORI
+ls $res/|grep FF
+```
+
+```{bash}
+res=../../Results/JAN20/ORI
+for i in `ls $res|grep FF`;do 
+  awk -v i=$i '{print i"\t"$0}' $res/$i/clean/BB.stat;
+done > $res/SUM.BB.stat
+```
+
+# load 
+
+```{r}
+metadata <- read.csv("../../Results/JAN20/metadata.csv")
+```
+
+```{r}
+metadata.df <- (read.table("../../Results/JAN20/dataInfo.tsv",
+                          col.names=c("SID","barcode","lane","tag","path")))[,1:4]
+
+BB.stat <- read.table("../../Results/JAN20/ORI/SUM.BB.stat",
+                         col.names = c("tag","count","rpb","cumsum"))
+contig.tsv <- read.table("../../Results/RCAs/RCA197FIN/A42/summary.BI.megahit.contig.tsv",
+                         col.names = c("BI","id","flag","cov","len"))
+B.kmer <- read.table("../../Results/RCAs/RCA197FIN/A02/mash/bMin2.msh.2.tsv",
+                     col.names = c("BB","rpb","kmers"))
+#clip.num <- read.table("../../Results/RCAs/RCA197FIN/A42/summary.BI.megahit.clip.num",                       col.names = c("BI","len"))
+
+clip2zymo <- read.table("../../Results/RCAs/RCA197FIN/A42/clip2zymo.stat",
+                       col.names = c("BI","id","flag","cov","len0","clip","len","ref","cigar","match","fLen","NM"))
+clip2zymo.region <- read.table("../../Results/RCAs/RCA197FIN/A42/summary.BI.megahit.clip.zymo.region",
+                       col.names = c("BI","id","flag","cov","len0","clip","len","ref","region","match","fLen","regionLen","regionPos","PosPct"))
+rnahead.stat <- read.table("../../Results/RCAs/RCA197FIN/A42/summary.BI.megahit.rRNA.stat",
+                       col.names = c("BI","id","len","start","end","unit"))
+BI.lst <- read.table("../../Results/RCAs/RCA197FIN/A42/Assemble_BI/ID.lst",
+                     col.names = c("BI0","BB","kmers","rpb"))
+
+BI.freq.tsv <- read.table("../../Results/RCAs/RCA197FIN/A42/mash/BI.msh.freq.tsv", sep="\t",
+                           col.names = c("BB","rpb","kmers","bins","hash","hash1","hash2"))
+```
+```{r}
+BI.freq.tsv0 <- BI.freq.tsv
+BI.freq.tsv0$rpbin <- round(BI.freq.tsv0$rpb/BI.freq.tsv0$bins,0)
+BI.freq.tsv0$kCov <- BI.freq.tsv0$rpb*140/BI.freq.tsv0$kmers
+
+ggplot(BI.freq.tsv0,aes(x=factor(bins),y=kmers)) + geom_boxplot()
+ggplot(BI.freq.tsv0%>%filter(rpbin<100),aes(x=factor(rpbin),y=kCov)) + geom_boxplot()
+```
+
+
+# Curate
+```{r}
+metadata.df$SAM <- substr(metadata.df$SID,1,1)
+BB.mdat <- merge(metadata.df,BB.stat,by="tag")
+BI.lst$BI <- sprintf("BI%08d",BI.lst$BI0)
+#mdat.ctg <- merge(merge(BI.lst,contig.tsv,by="BI"),B.kmer[,-2],by="BB")
+mdat.ctg <- merge(merge(BI.lst,contig.tsv,by="BI"),BI.freq.tsv[,-c(2:3)],by="BB")
+mdat.ctg$cov0 <- round(mdat.ctg$cov/2-0.49,0) * 2
+mdat.ctg$len0 <- round(mdat.ctg$len/500-0.49,0) * 500
+mdat.ctg$kCov <- mdat.ctg$rpb*140/mdat.ctg$kmers
+mdat.ctg$kCov0 <- round(mdat.ctg$kCov,0)
+mdat.ctg$h12 <- round(mdat.ctg$hash1/mdat.ctg$hash2,0)
+mdat.ctg$rpbin <- round(mdat.ctg$rpb/mdat.ctg$bins,0)
+
+ggplot(mdat.ctg%>%filter(cov0<50),aes(x=factor(cov0),y=len,fill=factor(flag))) + geom_boxplot()
+ggplot(mdat.ctg,aes(x=factor(len0),y=kCov,fill=factor(flag))) + geom_boxplot()
+ggplot(mdat.ctg,aes(x=factor(kCov0),y=len,fill=factor(flag))) + geom_boxplot()
+ggplot(mdat.ctg%>%filter(h12<20),aes(x=factor(h12),y=len,fill=factor(flag))) + geom_boxplot()
+ggplot(mdat.ctg%>%filter(rpbin<100),aes(x=factor(rpbin),y=len,fill=factor(flag))) + geom_boxplot()
+```
+```{r}
+ggplot(mdat.ctg%>%filter(bins<49),aes(x=factor(bins),y=len,fill=factor(flag))) + geom_boxplot()
+```
+
+#BB.stat
+```{r}
+ggplot(BB.mdat,aes(x=rpb,y=count,color=SAM,group=tag)) + geom_line() + 
+  scale_y_log10() + scale_x_log10() + annotation_logticks()
+```
+
+
+```{r}
+BI.num <- as.data.frame(table(mdat.ctg$BI))
+colnames(BI.num) <- c("BI","member")
+mdat.ctg3 <- merge(mdat.ctg,BI.num,by="BI")
+mdat.ctg3$weight <- 1/mdat.ctg3$member
+mdat.ctg3$member[which(mdat.ctg3$member>3)] <- "4&more"
+mdat.ctg3$cov0 <- round(mdat.ctg3$cov,0)
+mdat.ctg3$kCov0 <- round(mdat.ctg3$kCov,0)
+
+ddply(mdat.ctg3,"member",summarise,num=sum(weight))
+
+ggplot(mdat.ctg3%>%filter(cov0<30),aes(x=factor(cov0),y=len,fill=factor(flag))) + geom_boxplot() + 
+  facet_grid(member~.)
+
+```
+
+```{r}
+mdat.ctg3$kmer0 <- round(mdat.ctg3$kmers/100,0)*100
+ggplot(mdat.ctg3%>%filter(kmers<3999),aes(x=factor(kmer0),y=len,fill=factor(flag))) + geom_boxplot() + 
+  facet_grid(member~.)
+
+mdat.ctg3$rpb0 <- round(mdat.ctg3$rpb/10,0)*10
+ggplot(mdat.ctg3%>%filter(rpb<299),aes(x=factor(rpb0),y=len,fill=factor(flag))) + geom_boxplot() + 
+  facet_grid(member~.)
+```
+
+结合clip比对信息：
+```{r}
+cmdat <- merge(merge(mdat.ctg[,-c(9,11,13)],clip2zymo[,c(1,2,5:7,8:12)],by=c("BI","id")),
+               clip2zymo.region[,c("BI","id","region")],by=c("BI","id"))
+cmdat$pct <- cmdat$match/cmdat$len
+cmdat$len100 <- round(cmdat$len/100,0)*100
+```
+集合barrnap预测信息：
+```{r}
+rnahead.stat$rnaLen <- rnahead.stat$end-rnahead.stat$start+1
+rnahead.stat$rnaPct <- rnahead.stat$rnaLen/rnahead.stat$len
+
+cmdat <- merge(cmdat,rnahead.stat[,c(1,2,6:8)],by=c("BI","id"),all.x=T)
+cmdat$rnaPct[which(is.na(cmdat$unit))] <- 0
+levels(cmdat$unit) <- c("16S","23S","5S","mis")
+cmdat$unit[which(is.na(cmdat$unit))] <- "mis"
+```
+
+```{r}
+ggplot(cmdat,aes(x=pct,fill=factor(len100))) + geom_histogram() + scale_x_continuous(breaks = seq(0,1,0.2))
+```
+
+根据比对coverage来判断
+
+
+```{r}
+ggplot(cmdat%>%filter(pct<0.9),aes(x=len)) + geom_histogram()
+
+```
+
+```{r}
+hybFun <- function(d){
+  rN <- length(unique(d$species))
+  res <- d[1,c("BI"),F]
+  res$Rpb <- rN
+  return(res)
+}
+
+cmdat$species <- sapply(strsplit(as.character(cmdat$ref),".",fixed = T),function(x) return(x[[1]]))
+hybStat <- ddply(cmdat,"BI",hybFun)
+hybStat$hyb <- ifelse(hybStat$Rpb>1,T,F)
+cmstat <- merge(cmdat,hybStat,by="BI")
+cmstat$kCov0 <- round(cmstat$rpb*140/cmstat$kmers,0)
+cmstat$rpb0 <- round(cmstat$rpb/10,0) * 10
+cmstat$kmers00 <- round(cmstat$kmers/100,0) * 100
+cmstat$regUnit <- substr(cmstat$region,1,3)
+
+ggplot(cmstat,aes(x=species,fill=factor(Rpb))) + geom_bar(stat="count") + theme(axis.text.x = element_text(angle=90,vjust=0))
+ggplot(cmstat,aes(x=species,fill=factor(Rpb))) + geom_bar(stat="count",position="fill") + theme(axis.text.x = element_text(angle=90,vjust=0))
+ggplot(cmstat,aes(x=unit,fill=factor(Rpb))) + geom_bar(stat="count") + theme(axis.text.x = element_text(angle=90,vjust=0))
+ggplot(cmstat,aes(x=unit,fill=factor(Rpb))) + geom_bar(stat="count",position="fill") + theme(axis.text.x = element_text(angle=90,vjust=0))
+ggplot(cmstat%>%filter(rpb0<300),aes(x=factor(rpb0),fill=factor(Rpb))) + geom_bar(stat="count",position="fill") + theme(axis.text.x = element_text(angle=90,vjust=0))
+
+ggplot(cmstat,aes(x=fLen,color=regUnit,linetype=hyb)) + geom_density(size=1,alpha=.7) + facet_grid(regUnit~.,scale="free_y")
+ggplot(cmstat,aes(x=fLen,color=unit,linetype=hyb)) + geom_density(size=1,alpha=.7) + facet_grid(unit~.,scale="free_y")
+ggplot(cmstat,aes(x=rnaPct,color=unit,linetype=hyb)) + geom_density(size=1,alpha=.7) + facet_grid(unit~.,scale="free_y")
+ggplot(cmstat,aes(x=pct,color=unit,linetype=hyb)) + geom_density(size=1,alpha=.7) + facet_grid(unit~.,scale="free_y") + scale_x_continuous(breaks=seq(0,1,.2))
+ggplot(cmstat,aes(x=pct,color=unit,linetype=hyb)) + geom_density(size=1,alpha=.7) + facet_grid(unit~.,scale="free_y") + scale_x_continuous(breaks=seq(0,1,.2))
+
+
+ggplot(cmstat,aes(x=kCov0,fill=hyb)) + geom_bar(stat="count",position="stack")
+ggplot(cmstat,aes(x=kCov0,fill=hyb)) + geom_bar(stat="count",position="fill")
+ggplot(cmstat%>%filter(cov<30),aes(x=cov0,fill=hyb)) + geom_bar(stat="count",position="stack")
+ggplot(cmstat%>%filter(cov<30),aes(x=cov0,fill=hyb)) + geom_bar(stat="count",position="fill")
+
+ggplot(cmstat,aes(x=factor(rpb0),fill=hyb)) + geom_bar(stat="count",position="fill") + 
+  theme(axis.text.x = element_text(angle=90,vjust=0))
+
+```
+
+taxonomy percentage:
+```{r}
+zymo.copy.num <- data.frame(species=c("Pseudomonas_aeruginosa","Escherichia_coli","Salmonella_enterica","Lactobacillus_fermentum",
+  "Enterococcus_faecalis","Staphylococcus_aureus","Listeria_monocytogenes","Bacillus_subtilis","Saccharomyces_cerevisiae","Cryptococcus_neoformans"),
+  TC16S18S=c(3.6,8.9,9.1,16.1,8.7,13.6,12.4,15.3,9.3,3.3),copyNum=c(4,7,7,5,4,6,6,10,109,60))
+
+cmstat$species <- as.factor(cmstat$species)
+levels(cmstat$species) <- c(NA,"Bacillus_subtilis","Cryptococcus_neoformans","Enterococcus_faecalis","Escherichia_coli","Escherichia_coli",
+                            "Lactobacillus_fermentum","Listeria_monocytogenes","Pseudomonas_aeruginosa","Saccharomyces_cerevisiae",
+                            "Salmonella_enterica","Staphylococcus_aureus")
+ggplot(zymo.copy.num,aes(x="zymo",y=TC16S18S,fill=species)) + geom_bar(stat="identity",position="fill") + ylab("16S & 18S")
+ggplot(cmstat%>%filter(rpb<300),aes(x=factor(rpb0),fill=species)) + geom_bar(stat="count",position="fill") + 
+  theme(axis.text.x = element_text(angle=90,vjust=0))
+
+
+ggplot(zymo.copy.num%>%filter(!species%in%c("Saccharomyces_cerevisiae","Cryptococcus_neoformans")),
+       aes(x="zymo",y=TC16S18S,fill=species)) + geom_bar(stat="identity",position="fill") + ylab("16S & 18S")
+ggplot(cmstat%>%filter(rpb<300&!species%in%c("Saccharomyces_cerevisiae","Cryptococcus_neoformans")),aes(x=factor(rpb0),fill=species)) +
+  geom_bar(stat="count",position="fill") + 
+  theme(axis.text.x = element_text(angle=90,vjust=0))
+ggplot(cmstat%>%filter(rpb<300&!species%in%c("Saccharomyces_cerevisiae","Cryptococcus_neoformans")),aes(x=factor(rpb0))) + 
+  geom_bar(stat="count") + theme(axis.text.x = element_text(angle=90,vjust=0))
+
+ggplot(cmstat%>%filter(unit!="5S"&rpb<300&!species%in%c("Saccharomyces_cerevisiae","Cryptococcus_neoformans")),aes(x=factor(rpb0),fill=species)) +
+  geom_bar(stat="count",position="fill") + theme(axis.text.x = element_text(angle=90,vjust=0)) + facet_grid(unit~.)
+
+ggplot(cmstat%>%filter(unit!="5S"&!species%in%c("Saccharomyces_cerevisiae","Cryptococcus_neoformans")),aes(x="all",fill=species)) +
+  geom_bar(stat="count",position="fill") + theme(axis.text.x = element_text(angle=90,vjust=0)) + facet_grid(unit~.)
+
+```
+
+
+```{r}
+cmstat.clean <- cmstat%>%filter(ref2!="hybridize")
+cmstat.clean$kCov0 <- round(cmstat.clean$rpb*140/cmstat.clean$kmers,0)
+cmstat.clean$kmers0 <- round(cmstat.clean$kmers/100,0) * 100
+cmstat.clean$rpb0 <- round(cmstat.clean$rpb/10,0) * 10
+
+ggplot(cmstat.clean%>%filter(kCov0<20),aes(x=factor(kCov0),fill=factor(ref2))) + geom_bar(stat="count")
+ggplot(cmstat.clean%>%filter(kCov0<20),aes(x=factor(kCov0),fill=factor(ref2))) + geom_bar(stat="count",position="fill")
+ggplot(cmstat.clean%>%filter(kmers<3000),aes(x=factor(kmers0),fill=factor(ref2))) + geom_bar(stat="count",position="fill")
+ggplot(cmstat.clean%>%filter(rpb<300),aes(x=factor(rpb0),fill=factor(ref2))) + geom_bar(stat="count")
+ggplot(cmstat.clean%>%filter(rpb<300),aes(x=factor(rpb0),fill=factor(ref2))) + geom_bar(stat="count",position="fill")
+
+```
+
+```{r}
+cmdat2 <- cmdat
+cmdat2$kCov0 <- round(cmdat2$rpb*140/cmdat2$kmers,0)
+cmdat2$rpb0 <- round(cmdat2$rpb/10,0) * 10
+cmdat2$len00 <- round(cmdat2$len/100,0) * 100
+cmdat2$kmers00 <- round(cmdat2$kmers/100,0) * 100
+cmdat2$kmerLen <- substr(cmdat2$id,1,4)
+
+ggplot(cmdat2%>%filter(kCov0<20),aes(x=factor(kCov0),fill=factor(ref2))) + geom_bar(stat="count",position="fill")
+ggplot(cmdat2%>%filter(rpb<300),aes(x=factor(rpb0),fill=factor(ref2))) + geom_bar(stat="count",position="fill")
+ggplot(cmdat2%>%filter(rpb<300),aes(x=factor(ref2),fill=factor(rpb0))) + geom_bar(stat="count",position="fill")
+ggplot(cmdat2,aes(x=factor(len00),fill=factor(ref2))) + geom_bar(stat="count")
+ggplot(cmdat2,aes(x=factor(len00),fill=factor(ref2))) + geom_bar(stat="count",position="fill")
+
+ggplot(cmdat2,aes(x=factor(len00),y=pct)) + geom_boxplot()
+ggplot(cmdat2,aes(x=factor(len00),y=pct,fill=factor(flag))) + geom_boxplot() + scale_y_continuous(breaks=seq(0,1,0.2))
+ggplot(cmdat2,aes(x=factor(cov0),y=pct,fill=factor(flag))) + geom_boxplot() + scale_y_continuous(breaks=seq(0,1,0.2))
+
+```
+
+```{r}
+ggplot(cmdat2%>%filter(rpb<300),aes(x=factor(rpb0),fill=factor(ref2))) + geom_bar(stat="count",position="fill")
+
+```
+
+
+模型
+```{r}
+Exp.rpb <- sum(BB.stat$rpb*BB.stat$count)/sum(BB.stat$count)
+Exp.rpb0 <- round(Exp.rpb,0)
+
+BB.stat$prob <- BB.stat$count/(1.2*sum(BB.stat$count))
+mock.dat <- data.frame(rpb=seq(0,49),
+                       pois=(dpois(seq(0,49),1)+dpois(seq(0,49),2)+dpois(seq(0,49),3))/3,
+                       norm=dnorm(seq(0,49),mean=5,sd=15))
+mock.dat$p2 <- mock.dat$pois*0.8+mock.dat$norm*0.2
+mock.dat <- merge(mock.dat,BB.stat[,c(2,4)],by="rpb",all.x=T)
+mmock <- melt(mock.dat,id.vars = "rpb",variable.name = "method",value.name = "p")
+ggplot(mmock,aes(x=rpb,y=p,color=method)) + geom_line() + geom_point()
+```
+
+```{r}
+sdat.ctg <- ddply(mdat.ctg,c("BI","rpb","flag"),summarise,len=sum(len))
+sdat.ctg$len0 <- round(sdat.ctg$len/500-0.49,0) * 500
+
+sdat.ctg2 <- ddply(sdat.ctg,c("rpb","flag","len0"),summarise,count=length(BI))
+sdat.ctg2 <- ddply(sdat.ctg2,c("flag","len0"),transform,frac=count/sum(count))
+
+ggplot(sdat.ctg2%>%filter(len0>499&len0<2000),aes(x=rpb,y=frac,color=factor(len0))) + geom_line() + facet_grid(flag~.,scale="free") + xlim(0,200)
+```
+
+```{r}
+ggplot(B.kmer,aes(x=kmers)) + geom_histogram() + scale_x_log10() + annotation_logticks(sides="b")
+
+B.kmer2 <- B.kmer
+B.kmer2$rpbL <- round(B.kmer2$rpb/10-0.49,0) *10
+B.kmer2$rpbL[which(B.kmer2$rpbL>=150)] <- ">=150"
+B.kmer2$rpbL <- factor(B.kmer2$rpbL,levels=c(seq(0,140,10),">=150"))
+B.kmer2$kL <- round(B.kmer2$kmers/100-0.49,0) *100
+B.kmer2$kL[which(B.kmer2$kL>=3000)] <- 3000
+B.kmer2$kL[which(B.kmer2$kL<1000)] <- 900
+B.kmer2$kL <- factor(B.kmer2$kL,levels=c(seq(900,3000,100)))
+
+ggplot(B.kmer2,aes(x=rpb,fill=factor(kL))) + geom_histogram(position="stack") +
+  scale_x_log10() + annotation_logticks(sides="b")
+
+ggplot(B.kmer2,aes(x=rpb,fill=factor(kL))) + geom_histogram(position="fill") +
+  scale_x_log10() + annotation_logticks(sides="b")
+```
+
+```{r}
+ggplot(B.kmer2,aes(x=factor(rpbL),y=kmers)) + geom_boxplot() + 
+  scale_y_continuous(breaks=seq(0,1e4,2000),limits = c(0,1e4))
+```
+
+```{r}
+B.kmer2$kCov <- B.kmer2$rpb*160/B.kmer2$kmers
+
+ggplot(B.kmer2,aes(x=factor(rpbL),y=kCov)) + geom_boxplot() + 
+  scale_y_continuous(breaks=seq(0,30,2))
+
+ggplot(B.kmer2,aes(x=kmers,y=kCov)) + 
+  geom_density_2d()
+```
+
+```{r}
+ggplot(B.kmer2,aes(x=factor(kL),y=kCov)) + geom_boxplot() + 
+  scale_y_continuous(breaks=seq(0,10,2),limits = c(0,10))
+```
+
+```{r}
+B.kmer2S <- ddply(B.kmer2,c("kL","rpbL"),summarise,count=length(BB))
+ggplot(B.kmer2S,aes(x=rpbL,y=kL,fill=log10(count))) + 
+  geom_tile() + scale_fill_gradientn(colors=rev(brewer.pal(11,"Spectral")))
+```
+
+```{r}
+ggplot(mdat2,aes(x=slen,fill=factor(num))) + geom_histogram(position="stack")
+```
+
+```{r}
+ggplot(mdat2%>%filter(num%in%seq(1,2)),aes(x=rpb.x,y=kmers,color=factor(num))) + 
+  geom_density_2d() + 
+  scale_y_continuous(breaks=seq(0,8000,1000)) +
+  scale_x_continuous(breaks=seq(100,500,20))
+```
+
+```{r}
+mdat2$slen <- mdat2$mlen*mdat2$num
+ggplot(mdat2%>%filter(num%in%seq(1,2)),aes(x=kmers,y=slen,color=factor(num))) + 
+  geom_density_2d()
+```
+
+```{r}
+mdat2$kCov <- mdat2$rpb.x*160/mdat2$kmers
+ggplot(mdat2%>%filter(num%in%seq(1,3)),aes(x=kmers,y=kCov,color=factor(num))) + 
+  geom_density_2d() + scale_y_continuous(breaks=seq(4,12))
+```
+
+1000 < kmers < 3000 & kCov > 6
+
+
+```{r}
+mdat3 <- B.kmer2%>%filter(kCov>6&kmers>1000)
+
+ggplot(mdat3,aes(x=rpb,y=kmers)) + geom_density_2d()
+```
+#Beads counts
+```{r}
+BB.info <- read.csv("../../Results/JAN20/STAT/statinfo.csv")
+ggplot(BB.info,aes(x=ID,y=isoBeads)) + geom_bar(stat="identity")
+```
+
+#barnnap RSU (LSU & SSU) information
+```{bash}
+#test
+metabbq stat RSU -l SAM/S1/VSEARCH/barrnap.LSU.fasta -s SAM/S1/VSEARCH/barrnap.SSU.fasta -o SAM/S1/stat/barrnap.RSU.stat
+# batch beta
+metabbq smk -j -npk SAM/{{U,O,S,M,Z}{1,2,3},{S,O,M,Y}{4,5,6}}/stat/barrnap.RSU.stat
+
+mkln ../../Results/JAN20/STAT
+
+for i in {{U,O,S,M,Z}{1,2,3},{S,O,M,Y}{4,5,6}};do 
+  awk -v n=$i '{print n"\t"$0}' SAM/$i/stat/barrnap.RSU.stat;
+done > STAT/barrnap.RSU.stat
+
+for i in {S,O,M,Y}{4,5,6};do 
+  awk -v n=$i '{print n"\t"$0}' SAM/$i/stat/barrnap.bac.RUS.stat;
+done > STAT/barrnap.bac.RSU.stat
+```
+
+**curate**
+```{r}
+t.stat <- read.table("../../Results/JAN20/STAT/barrnap.RSU.stat",
+   col.names=c("SID","BI","No","unit","kmer","flag","multi","aLen","cType","Ad","cLen","sPos","ePos","dir"))
+t.abn.stat <- read.table("../../Results/JAN20/STAT/barrnap.bac.RSU.stat",
+   col.names=c("SID","BI","No","unit","kmer","flag","multi","aLen","cType","Ad","cLen","sPos","ePos","dir"))
+
+if(exists("../../Results/JAN20/STAT/BU.RData")){
+  load("../../Results/JAN20/STAT/BU.RData")
+}{
+  library(doSNOW)
+  sFun <- function(d){
+    res <- ddply(d,"BI",summarise,
+                 aLen=aLen[1],cLen=cLen[1],bLen=sum(ePos-sPos+1),
+                 BU=paste0(sort(unique(unit)),collapse = "&"))
+    return(res)
+  }
+  cl <- makeCluster(6, type = "SOCK")
+  registerDoSNOW(cl)
+  BU.stat <- ddply(t.stat,c("SID"),sFun,.parallel=T)
+  BU.abn <- ddply(t.abn.stat,c("SID"),sFun,.parallel=T)
+  stopCluster(cl)
+  save(BU.stat,BU.abn,file="./../Results/JAN20/STAT/BU.RData")
+}
+
+```
+
+**stat**
+```{r}
+BU.count <- ddply(BU.stat,c("SID","BU"),summarise,count=length(BI))
+
+ggplot(BU.stat,aes(x=SID,fill=BU)) +geom_bar()
+ggplot(BU.stat,aes(x=SID,fill=BU)) +geom_bar(position="fill")
+```
+
+比较对真菌样本进行细菌RNA预测的结果：
+```{r}
+BU.abnct <- ddply(BU.abn,c("SID","BU"),summarise,count=length(BI))
+
+BU.comb <- rbind(cbind(predict="RIGHT",t.stat), cbind(predict="WRONG",t.abn.stat))
+BU.ABN <- rbind(cbind(predict="RIGHT",BU.stat), cbind(predict="WRONG",BU.abn))
+BU.ABNCT <- rbind(cbind(predict="RIGHT",BU.count), cbind(predict="WRONG",BU.abnct))
+
+ggplot(BU.ABN,aes(x=SID,fill=BU)) +geom_bar() + facet_grid(.~predict,space="free",scale="free")
+
+```
+
+
+```{r}
+ggplot(t.stat,aes(x=SID,fill=cType)) +geom_bar()
+ggplot(t.stat,aes(x=SID,fill=cType)) +geom_bar(position="fill")
+
+```
+
+```{r}
+BU.stat$SAM <- substr(BU.stat$SID,1,1)
+BU.stat$LAN <- substr(BU.stat$SID,2,2)
+BU.stat$KDM <- ifelse(BU.stat$LAN%in%c(1,2,3),"BAC","FUG")
+BU.stat$rep <- as.character(as.numeric(BU.stat$LAN) + ifelse(BU.stat$LAN%in%c(1,2,3),0,-3))
+ggplot(BU.stat,aes(x=bLen,group=SID,color=BU,linetype=LAN)) + geom_density() + 
+  xlim(c(0,5000)) + facet_wrap(~KDM+BU,ncol=3,scales="free")
+```
+
+```{r}
+ggplot(BU.stat,aes(x=cLen,group=SID,color=BU,linetype=rep)) + geom_density() + 
+  xlim(c(0,5000)) + facet_wrap(~KDM+BU,ncol=3,scales="free")
+
+```
+
+
+```{r}
+BU.ABN$SAM <- substr(BU.ABN$SID,1,1)
+BU.ABN$LAN <- substr(BU.ABN$SID,2,2)
+BU.ABN$KDM <- ifelse(BU.ABN$LAN%in%c(1,2,3),"BAC","FUG")
+BU.ABN$BU <- factor(BU.ABN$BU,levels=c("16S","16S&23S","23S","18S","18S&28S","28S"))
+ggplot(BU.ABN,aes(x=cLen,group=SID,color=BU,linetype=LAN)) + geom_density() + 
+  xlim(c(0,5000)) + facet_wrap(~KDM+BU,ncol=3,scales="free")
+
+```
+
+
+```{r}
+t.sp.df <- t.stat
+t.sp.df$SAM <- substr(t.sp.df$SID,1,1)
+t.sp.df$LAN <- substr(t.sp.df$SID,2,2)
+t.sp.df$KDM <- ifelse(t.sp.df$LAN%in%c(1,2,3),"BAC","FUG")
+t.sp.df$unit <- factor(t.sp.df$unit,levels=c("16S","23S","18S","28S"))
+ggplot(t.sp.df,aes(x=cLen,group=SID,color=unit,linetype=LAN)) + geom_density() + 
+  xlim(c(0,5000)) + facet_wrap(~KDM+unit,ncol=2,scales="free")
+
+```
+
+```{r, eval=FALSE}
+t.ABN <- BU.comb
+t.ABN$SAM <- substr(t.ABN$SID,1,1)
+t.ABN$LAN <- substr(t.ABN$SID,2,2)
+t.ABN$KDM <- ifelse(t.ABN$LAN%in%c(1,2,3),"BAC","FUG")
+t.ABN$unit <- factor(t.ABN$unit,levels=c("16S","23S","18S","28S"))
+ggplot(t.ABN,aes(x=cLen,group=SID,color=unit,linetype=LAN)) + geom_density() + 
+  xlim(c(0,5000)) + facet_wrap(~KDM+unit,ncol=2,scales="free")
+
+#Peaks of prediction for 23S and 28S in Fungi are slightly different. Others are similar.
+```
+
+
+
+
+
+#stat blast annotation of clips fasta to silva database
+```{bash}
+# batch beta
+metabbq smk -j -npk SAM/{{U,O,S,M,Z}{1,2,3},{S,O,M,Y}{4,5,6}}/stat/summary.BI.megahit.clip.slv.stat.beads
+
+for i in {{U,O,S,M,Z}{1,2,3},{S,O,M,Y}{4,5,6}};do 
+  awk -v n=$i '{print n"\t"$0}' SAM/$i/stat/summary.BI.megahit.clip.slv.stat.clips;
+done > ../../Results/JAN20/STAT/megahit.clip.slv.stat.clips
+
+#
+for i in {{U,O,S,M,Z}{1,2,3},{S,O,M,Y}{4,5,6}};do 
+  awk -v n=$i '{print n"\t"$0}' SAM/$i/stat/summary.BI.megahit.clip.slv.stat.beads;
+done > ../../Results/JAN20/STAT/megahit.clip.slv.stat.beads
+
+```
+
+
+```{r}
+RDFile <- "../../Results/JAN20/STAT/clipSLV.RData"
+if(file.exists(RDFile)){
+  if(md5sum(RDFile)=="c0733f17cbc0fa33947d76f96c185dec"){ 
+    load(RDFile)
+  }else{
+    warning("md5sum check mismatch! U better check again.")
+  }
+}else{
+  comm.names <- c("saccver", "pident", "length", "mismatch", "gapopen", "qstart", 
+          "qend", "sstart", "send", "evalue", "bitscore", "qlen", "name", "taxid", "rank", "path")
+  clip.slv.stat.clip <- read.table("../../Results/JAN20/STAT/megahit.clip.slv.stat.clips",
+    sep="\t",as.is = T,quote = "",comment.char="",
+    col.names=c("SID","BNo","unit", "maxIdent", "delta", "range", "cLv","cName", "qaccver",
+    paste0(rep(c("SSU","LSU"),each=length(comm.names)),".",rep(comm.names,2))))
+  
+  clip.slv.stat.bead <-read.table("../../Results/JAN20/STAT/megahit.clip.slv.stat.beads",
+    sep="\t",as.is = T,quote = "",comment.char="",
+    col.names = c("SID","BB", "clips", "clv", "cName","path"))
+  
+  save(clip.slv.stat.clip,clip.slv.stat.bead,file=RDFile)
+  
+  # md5sum(RDFile)
+  # save the md5sum value to line 559.
+
+}
+#
+clip.slv.sc <- clip.slv.stat.clip[,c(1:8,11:16,19:24,27:32,35:40)]
+csdf <- merge(metadata,clip.slv.sc,by="SID")
+csdf$BB <- substr(csdf$BNo,1,10)
+csdf$SAM<- substr(csdf$SID,1,1)
+
+pFun <- function(x){
+  res <- rep(NA,8)
+  if(is.na(x)|x==""){
+    return(res)
+  }else{
+    y <- unlist(strsplit(x,";"))
+    res[1:length(y)] <- y
+    return(res)
+  }
+}
+the.names <- c("k","p","c","o","f","g","s","t")
+SSU.path <- as.data.frame(t(sapply(clip.slv.stat.clip$SSU.path,pFun,USE.NAMES=F)))
+colnames(SSU.path) <- the.names
+SSU.path.df <- cbind(csdf[,1:6],SSU.path)
+LSU.path <- as.data.frame(t(sapply(clip.slv.stat.clip$LSU.path,pFun,USE.NAMES=F)))
+colnames(LSU.path) <- the.names
+LSU.path.df <- cbind(csdf[,1:6],LSU.path)
+
+
+# pick trust anno
+trust.SSU.id <- which(csdf$unit%in%c("SSU","Either")|(csdf$unit=="BOTH"&csdf$SSU.pident>=csdf$LSU.pident))
+trust.SSU.df <- cbind(csdf[trust.SSU.id,c(1:7,37,38,13:24)],SSU.path[trust.SSU.id,])
+colnames(trust.SSU.df) <- sub("SSU.","",colnames(trust.SSU.df))
+
+trust.LSU.id <- which(csdf$unit=="LSU"|(csdf$unit=="BOTH"&csdf$SSU.pident<csdf$LSU.pident))
+trust.LSU.df <- cbind(csdf[trust.LSU.id,c(1:7,37,38,25:36)],LSU.path[trust.LSU.id,])
+colnames(trust.LSU.df) <- sub("LSU.","",colnames(trust.LSU.df))
+
+trust.csdf <- rbind(trust.SSU.df,trust.LSU.df)
+```
+
+Clip lengths:
+```{r}
+p <- ggplot(csdf,aes(x=SSU.qlen,color=lane))
+p + geom_density() + facet_wrap(~kindom+SAM,ncol=3,scale="free")
+```
+
+
+Unit detection:
+```{r}
+csdf$unit <- factor(csdf$unit,levels=c("Both","SSU","LSU","Either","UNK","NONE"))
+p <- ggplot(csdf,aes(x=SID,fill=unit))
+p + geom_bar(position="stack")
+p + geom_bar(position="fill")
+
+```
+
+Length dist in each unit:
+```{r}
+p <- ggplot(csdf%>%filter(unit%in%c("Both","SSU","LSU","NONE")))
+p + geom_density(aes(x=range,color=unit,linetype=lane)) + facet_wrap(~kindom+SAM,ncol=3,scale="free")
+p + geom_density(aes(x=delta,color=unit,linetype=lane)) + facet_wrap(~kindom+SAM,ncol=3,scale="free")
+
+```
+
+
+Length dist of 'Both' unit:
+```{r}
+p <- ggplot(csdf%>%filter(unit=="Both"),aes(x=range,fill=lane))
+p + geom_histogram(position="dodge") + facet_wrap(~kindom+SAM,ncol=3,scale="free")
+```
+
+```{r}
+# csdf$SSU.rank2 <- ifelse(is.na(csdf$SSU.taxid),"missing",ifelse(csdf$SSU.name%in%c("uncultured bacterium",""),"UNK",csdf$SSU.rank))
+# csdf$LSU.rank2 <- ifelse(is.na(csdf$LSU.taxid),"missing",ifelse(csdf$LSU.name%in%c("uncultured bacterium",""),"UNK",csdf$LSU.rank))
+s.rank.sc <- ddply(csdf,colnames(csdf)[c(1:5,24)],summarise,count=length(BNo))
+l.rank.sc <- ddply(csdf,colnames(csdf)[c(1:5,36)],summarise,count=length(BNo))
+colnames(s.rank.sc)[6] <- "rank"; colnames(l.rank.sc)[6] <- "rank"
+rank.sc <- rbind(cbind(group="SSU",s.rank.sc),cbind(group="LSU",l.rank.sc))
+rank.sc$rank <- factor(rank.sc$rank,levels=c("missing","UNK","no rank","kingdom","phylum","class","order","family","genus","species","subspecies","varietas","forma"))
+ggplot(rank.sc,aes(x=group,y=count,fill=rank)) +
+  geom_bar(stat="identity",position="stack") + 
+  theme(axis.text.x = element_text(angle = -90, hjust = -1, vjust = .5)) +
+  facet_grid(.~SID,scale="free",space="free")
+ggplot(rank.sc,aes(x=group,y=count,fill=rank)) + geom_bar(stat="identity",position="fill") +
+  facet_grid(.~SID,scale="free",space="free")
+
+```
+
+
+length distribution of each 'unit':
+```{r}
+ggplot(csdf,aes(x=delta,color=unit,linetype=lane)) +geom_density() +
+  facet_wrap(~kindom+SAM,ncol=3,scale="free") + ggtitle("delta dist")
+unit.pos.sc <- ddply(csdf%>%filter(delta>0),
+                     colnames(csdf)[c(1:5,7)],summarise,count=length(BNo))
+ggplot(unit.pos.sc,aes(x=SID,y=count,fill=unit)) + geom_bar(stat="identity",position="stack") +
+  ggtitle("unit dist with delta >0")
+```
+
+```{r}
+csdf$shortLen <- ifelse(csdf$SSU.length<csdf$LSU.length,csdf$SSU.length,csdf$LSU.length)
+csdf$minIdent <- ifelse(csdf$SSU.pident<csdf$LSU.pident,csdf$SSU.pident,csdf$LSU.pident)
+
+csdf$dlt <- ifelse(
+  csdf$SSU.qstart<csdf$LSU.qstart,
+  ifelse(csdf$SSU.qend<csdf$LSU.qend,csdf$LSU.qstart-csdf$SSU.qend,csdf$LSU.qstart-csdf$LSU.qend),
+  ifelse(csdf$LSU.qend<csdf$SSU.qend,csdf$SSU.qstart-csdf$LSU.qend,csdf$SSU.qstart-csdf$SSU.qend)
+)
+ggplot(csdf,aes(x=dlt/shortLen,y=minIdent)) + 
+  #stat_density2d(geom="raster",h=c(100,100),contour=F) + 
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
+  facet_wrap(~kindom+SAM,ncol=3,scale="free") + 
+  ggtitle("Proportion of delta and range over short aligned length")
+```
+
+```{r}
+ggplot(csdf,aes(x=delta,y=range)) + 
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
+  facet_wrap(~kindom+SAM,ncol=3,scale="free") + 
+  ggtitle("Distribution of delta and range")
+```
+
+```{r}
+ggplot(csdf%>%filter(SSU.qlen>999),aes(x=delta,y=range)) + 
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
+  facet_wrap(~kindom+SAM,ncol=3,scale="free") + 
+  ggtitle("Distribution of delta and range with clips > 1kb")
+```
+
+
+compare of length
+```{r, warning=FALSE}
+ggplot(csdf,aes(x=SSU.length,y=LSU.length)) + 
+  #stat_density2d(geom="raster",h=c(100,100),contour=F) + 
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
+  facet_wrap(~kindom+SAM,ncol=3,scale="free")
+```
+
+```{r, warning=FALSE}
+ggplot(csdf%>%filter(unit=="BOTH"),aes(x=SSU.pident,y=LSU.pident)) + 
+  #stat_density2d(geom="raster",h=c(100,100),contour=F) + 
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
+  facet_wrap(~kindom+SAM,ncol=3,scale="free") + 
+  scale_x_continuous(breaks=seq(90,100,2),limits=c(90,100)) +
+  scale_y_continuous(breaks=seq(90,100,2),limits=c(90,100))
+```
+
+```{r}
+csidf <- csdf
+csidf$SSU.pident[which(is.na(csidf$SSU.pident))] <- 89
+csidf$LSU.pident[which(is.na(csidf$LSU.pident))] <- 89
+
+ggplot(csidf,aes(x=SSU.pident,y=LSU.pident)) + 
+  #stat_density2d(geom="raster",h=c(100,100),contour=F) + 
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
+  facet_wrap(~kindom+SAM,ncol=3,scale="free") + 
+  scale_x_continuous(breaks=seq(90,100,2),limits=c(88,100)) +
+  scale_y_continuous(breaks=seq(90,100,2),limits=c(88,100)) +
+  ggtitle("Comaprison of identity of SSU and LSU")
+```
+
+```{r}
+ggplot(csdf%>%filter(SSU.qlen>999),aes(x=SSU.pident,y=LSU.pident)) + 
+  #stat_density2d(geom="raster",h=c(100,100),contour=F) + 
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
+  facet_wrap(~kindom+SAM,ncol=3,scale="free") + 
+  scale_x_continuous(breaks=seq(90,100,2),limits=c(90,100)) +
+  scale_y_continuous(breaks=seq(90,100,2),limits=c(90,100)) +
+  ggtitle("Comaprison of identity of SSU and LSU with clips > 1kb")
+```
+
+```{r}
+ggplot(csdf%>%filter(SSU.qlen<=999),aes(x=SSU.pident,y=LSU.pident)) + 
+  #stat_density2d(geom="raster",h=c(100,100),contour=F) + 
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
+  facet_wrap(~kindom+SAM,ncol=3,scale="free") + 
+  scale_x_continuous(breaks=seq(90,100,2),limits=c(90,100)) +
+  scale_y_continuous(breaks=seq(90,100,2),limits=c(90,100)) +
+  ggtitle("Comaprison of identity of SSU and LSU with clips < 1kb")
+```
+
+```{r}
+csidf$SSU.length[which(is.na(csidf$SSU.length))] <- 0
+csidf$LSU.length[which(is.na(csidf$LSU.length))] <- 0
+
+ggplot(csidf,aes(x=SSU.length,y=LSU.length)) + 
+  #stat_density2d(geom="raster",h=c(100,100),contour=F) + 
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
+  facet_wrap(~kindom+SAM,ncol=3,scale="free") + 
+  scale_x_continuous(breaks=seq(0,3000,200),limits=c(0,2000)) +
+  scale_y_continuous(breaks=seq(0,3000,200),limits=c(0,2000)) +
+  ggtitle("Comaprison of length of SSU and LSU")
+```
+From above figure, we can choose alignment with length > 500 as valid hits.
+
+Try 3d density plot:
+```{r}
+library(plotly)
+kd <- csdf%>%filter(SID=="Z1")
+kd$SSU.ident <- round(kd$SSU.pident,1)
+kd$LSU.ident <- round(kd$LSU.pident,1)
+kd$clip.len <- round(kd$SSU.qlen/10,0)*10
+kds <- ddply(kd,colnames(kd)[c(2:5,39:41)],summarise,count=length(SID))
+
+ggplot(kds,aes(x=count)) + geom_density() +scale_x_log10() + annotation_logticks(sides="b")
+
+color11 <- RColorBrewer::brewer.pal("Spectral",n=11)
+
+fig <- plot_ly(
+  kds%>%filter(count>5), x = ~SSU.ident, y = ~LSU.ident, z = ~clip.len,
+  size=~log10(count), sizes = c(1, 50),
+  marker=list(symbol = 'circle', sizemode = 'diameter',
+              color = ~log10(count), colorbar=list(title='Colorbar'), colorscale='Rainbow',
+    reversescale =F,
+              opacity = 0.5, line = list(width=0))
+               )
+fig <- fig %>% add_markers()
+fig <- fig %>% layout(scene = list(xaxis = list(title = 'SSU identity'),
+                                   yaxis = list(title = 'LSU identity'),
+                                   zaxis = list(title = 'clip length'))
+)
+
+htmlwidgets::saveWidget(as_widget(fig), "index.html")
+```
+
+if both units' identity very high, how similar their annotation are:
+```{r}
+kc <- csdf%>%filter(SID=="Z1")
+kc$SSU.ident <- round(kc$SSU.pident,1)
+kc$LSU.ident <- round(kc$LSU.pident,1)
+
+kcs <- ddply(kc,colnames(kc)[c(2:5,11,39:40)],summarise,count=length(SID))
+
+ggplot(kcs,aes(x=count)) + geom_density() +scale_x_log10() + annotation_logticks(sides="b")
+
+color11 <- RColorBrewer::brewer.pal("Spectral",n=11)
+
+fig <- plot_ly(
+  kcs%>%filter(count>2), x = ~SSU.ident, y = ~LSU.ident, z = ~cLv,
+  size=~log(count), sizes = c(0, 30), color = ~log(count),
+  marker=list(symbol = 'circle', sizemode = 'diameter',
+              colorbar=list(title='Colorbar'), colorscale='Rainbow',
+    reversescale =F,
+              opacity = 0.3, line = list(width=0))
+               )
+fig <- fig %>% add_markers()
+fig <- fig %>% layout(scene = list(xaxis = list(title = 'SSU identity'),
+                                   yaxis = list(title = 'LSU identity'),
+                                   zaxis = list(title = 'cLV'))
+)
+
+htmlwidgets::saveWidget(as_widget(fig), "index.html")
+```
+
+```{r}
+iidf <- csdf
+iidf$ii <- round(csdf$SSU.pident*csdf$LSU.pident,0)/100
+
+ggplot(iidf,aes(x=ii,y=cLv),aes(x=ii,y=cLv)) + 
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
+  facet_wrap(~kindom+SAM,ncol=3) + 
+  scale_x_continuous(breaks=seq(80,100,2),limits=c(80,100)) +
+  scale_y_continuous(breaks=seq(-1,7,2)) +
+  xlab("SSU.pident * LSU.pident") + ylab("cLv") + 
+  ggtitle("Comaprison of identity^2 of and cLv")
+```
+
+
+################################################################################
+# Bead scale:
+################################################################################
+  
+distinguish detected units for each bead:  
+```{r}
+bsdf <- 
+table(csdf$unit)
+csdf.both <- csdf%>%filter(unitCheck=="both")
+ggplot(csdf.both,aes(x=delta,color=lane)) + geom_density() + facet_wrap(~kindom+SAM,ncol=3,scale="free")
+ggplot(csdf.both,aes(x=range,color=lane)) + geom_density() + facet_wrap(~kindom+SAM,ncol=3,scale="free")
+
+
+```
+
+```{r}
+ggplot(csdf,aes(x=maxIdent,color=unit,linetype=lane)) + 
+  geom_density() + facet_wrap(~kindom+SAM,ncol=3,scale="free")
+
+```
+
+
+```{r}
+csdf$trustRank <- ifelse(csdf$SSU.pident>=csdf$LSU.pident,csdf$SSU.rank,csdf$LSU.rank)
+csdf$trustRank[which(is.na(csdf$trustRank))] <- "UNK"
+csdf$trustRank[which(csdf$trustRank=="")] <- "missing"
+csdf$trustRank <- factor(csdf$trustRank,c("UNK","missing","no rank","kingdom","phylum","class","order","family","genus","species","subspecies","varietas","forma"))
+tr.sc <- ddply(csdf,c(colnames(csdf)[c(1:5)],"trustRank"),summarise,count=length(BNo))
+tr.sc$trustRank <- factor(tr.sc$trustRank,levels(csdf$trustRank))
+#plot:
+ggplot(tr.sc,aes(x=SID,y=count,fill=trustRank)) + geom_bar(stat="identity",position="stack")
+ggplot(tr.sc,aes(x=SID,y=count,fill=trustRank)) + geom_bar(stat="identity",position="fill")
+
+```
+
+Identity:
+```{r}
+ggplot(csdf,aes(x=SSU.pident,color=lane)) + geom_density() + facet_wrap(~kindom+SAM,ncol=3,scale="free")
+ggplot(csdf,aes(x=LSU.pident,color=lane)) + geom_density() + facet_wrap(~kindom+SAM,ncol=3,scale="free")
+ggplot(csdf,aes(x=maxIdent,color=lane)) + geom_density() + facet_wrap(~kindom+SAM,ncol=3,scale="free")
+```
+
+Aligned length:
+```{r}
+csdf$maxLen <- ifelse(csdf$SSU.pident>=csdf$LSU.pident,csdf$SSU.length,csdf$LSU.length)
+
+ggplot(csdf,aes(x=SSU.length,color=lane)) + geom_density() + facet_wrap(~kindom+SAM,ncol=3,scale="free")
+ggplot(csdf,aes(x=LSU.length,color=lane)) + geom_density() + facet_wrap(~kindom+SAM,ncol=3,scale="free")
+ggplot(csdf,aes(x=maxLen,color=lane)) + geom_density() + facet_wrap(~kindom+SAM,ncol=3,scale="free")
+ggplot(csdf,aes(x=range,color=lane)) + geom_density() + facet_wrap(~kindom+SAM,ncol=3,scale="free")
+
+```
+
+**identity under each rank:**
+```{r,warning=FALSE}
+ggplot(csdf,aes(x=SSU.pident,color=SSU.rank2,linetype=lane)) + geom_density() +
+  facet_wrap(~kindom+SAM,ncol=3,scale="free") + scale_x_continuous(breaks=seq(90,100,2))
+ggplot(csdf,aes(x=LSU.pident,color=LSU.rank2,linetype=lane)) + geom_density() +
+  facet_wrap(~kindom+SAM,ncol=3,scale="free") + scale_x_continuous(breaks=seq(90,100,2))
+ggplot(csdf,aes(x=maxIdent,color=trustRank,linetype=lane)) + geom_density() +
+  facet_wrap(~kindom+SAM,ncol=3,scale="free") + scale_x_continuous(breaks=seq(90,100,2))
+
+```
+
+
+**length under each rank:**
+```{r,warning=FALSE}
+ggplot(csdf,aes(x=SSU.length,color=SSU.rank2,linetype=lane)) + geom_density() +
+  facet_wrap(~kindom+SAM,ncol=3,scale="free")
+ggplot(csdf,aes(x=LSU.length,color=LSU.rank2,linetype=lane)) + geom_density() +
+  facet_wrap(~kindom+SAM,ncol=3,scale="free")
+ggplot(csdf,aes(x=maxLen,color=trustRank,linetype=lane)) + geom_density() +
+  facet_wrap(~kindom+SAM,ncol=3,scale="free")
+
+csdf$trustRank2 <- ifelse(csdf$trustRank%in%c("subspecies","varietas","forma"),"<species",as.character(csdf$trustRank))
+csdf$trustRank2 <- factor(csdf$trustRank2,levels = c(levels(csdf$trustRank)[1:10],"<species"))
+  
+ggplot(csdf%>%filter(trustRank2!="<species"),aes(x=range,color=trustRank2,linetype=lane)) + geom_density() +
+  facet_wrap(~kindom+SAM,ncol=3,scale="free")
+```
+
+
+```{r}
+ggplot(csdf%>%filter(trustRank2!="<species"),aes(x=LSU.qlen,color=trustRank2,linetype=lane)) + geom_density() + xlab("clipLength") +
+  facet_wrap(~kindom+SAM,ncol=3,scale="free")
+```
+
+```{r}
+ggplot(csdf,aes(x=maxIdent,color=unit,linetype=rep)) + geom_density() + 
+  facet_wrap(~kindom+SAM,ncol=3,scale="free") + xlim(c(95,100))
+```
+
+```{r}
+ggplot(csdf,aes(x=range,color=unit,linetype=rep)) + geom_density() + 
+  facet_wrap(~kindom+SAM,ncol=3,scale="free")
+```
+
+
+```{r}
+csdf$delta0 <- ifelse(is.na(csdf$delta),0,csdf$delta)
+ggplot(csdf,aes(x=delta0/range,color=unit,linetype=rep)) + geom_density() + 
+  facet_wrap(~kindom+SAM,ncol=3,scale="free") + xlim(c(-1,1))
+```
+
+```{r}
+ggplot(csdf,aes(x=delta0,color=unit,linetype=rep)) + geom_density() + 
+  facet_wrap(~kindom+SAM,ncol=3,scale="free")
+```
+
+clips identity of SSU and LSU
+```{r}
+
+```
+
+*View in BB scale*
+
+
+```{r,warning=FALSE}
+csbdf <- merge(metadata,clip.slv.stat.bead,by="SID")
+csbdf$SAM <- substr(csbdf$SID,1,1)
+
+ggplot(csbdf,aes(x=factor(clips),fill=factor(clv))) + geom_bar() + 
+  facet_wrap(~kindom+SAM,ncol=3,scale="free")
+ggplot(csbdf,aes(x=factor(clips),fill=factor(clv))) + geom_bar(position="fill") + 
+  facet_wrap(~kindom+SAM,ncol=3,scale="free")
+```
+
+
+
+**taxonomies distribution**
+```{r}
+ggplot(SSU.path.df,aes(x=SID,fill=k)) + geom_bar(position="stack")
+ggplot(LSU.path.df,aes(x=SID,fill=k)) + geom_bar(position="stack")
+ggplot(SSU.path.df,aes(x=SID,fill=k)) + geom_bar(position="fill")
+ggplot(LSU.path.df,aes(x=SID,fill=k)) + geom_bar(position="fill")
+
+```
+
+Trust tax distribution
+```{r}
+zymo.df <- trust.csdf%>%filter(SAM=="Z")
+top10.zymo <- names(rev(sort(table(zymo.df$s)))[1:12])
+zymo.df$Tax <- ifelse(zymo.df$s%in%top10.zymo,as.character(zymo.df$s),"Others")
+ggplot(zymo.df,aes(x=SID,fill=Tax)) + geom_bar(position="fill") 
+```
+
+```{r}
+mock.df <- trust.csdf%>%filter(SAM=="M")
+top10.mock <- names(rev(sort(table(mock.df$s)))[1:12])
+mock.df$Tax <- ifelse(mock.df$s%in%top10.mock,as.character(mock.df$s),"Others")
+ggplot(mock.df,aes(x=SID,fill=Tax)) + geom_bar(position="fill") 
+
+```
+
+```{r}
+yeast.df <- trust.csdf%>%filter(SAM=="Y")
+top10.yeast <- names(rev(sort(table(yeast.df$s)))[1:12])
+yeast.df$Tax <- ifelse(yeast.df$s%in%top10.yeast,as.character(yeast.df$s),"Others")
+ggplot(yeast.df,aes(x=SID,fill=Tax)) + geom_bar(position="fill") 
+
+```
+
+```{r}
+top.p <- rev(sort(table(c(as.character(SSU.path$p),as.character(LSU.path$p)))))[1:100]
+SSU.path.df$tp <- factor(SSU.path.df$p,levels=names(top.p)[1:21])
+LSU.path.df$tp <- factor(LSU.path.df$p,levels=names(top.p)[1:21])
+
+ggplot(SSU.path.df,aes(x=SID,fill=tp)) + geom_bar(position="stack")
+ggplot(LSU.path.df,aes(x=SID,fill=tp)) + geom_bar(position="stack")
+
+```
+
+identity > 99%
+```{r}
+table(csdf$SSU.pident>99)
+table(csdf$LSU.pident>99)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+#FIN.
