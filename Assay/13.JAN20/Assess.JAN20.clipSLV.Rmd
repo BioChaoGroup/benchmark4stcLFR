@@ -85,8 +85,8 @@ RDFile0 <- "../../Results/JAN20/STAT/clipSLV.ACB.RData" #c87dd3d0c227e3839d2139d
 RDFile1 <- "../../Results/JAN20/STAT/clipSLV.A.RData"
 RDFile2<- "../../Results/JAN20/STAT/clipSLV.CB.RData"
 if(file.exists(RDFile1)||file.exists(RDFile1)){
-  load(md5(RDFile1,"cecfc29638b006356982cb7350500f4e"))
-  load(md5(RDFile2,"82646a09493231046cec04185e01e518"))
+  load(md5(RDFile1,"4035d72341ae92c5abc5c46c8c6e0d46"))
+  load(md5(RDFile2,"035ca071b8f6b0bcd4beb1d7be26983e"))
 }else{
   message("Not found RData file. Creating ...",appendLF = F)
   comm.names <- c("saccver", "pident", "length", "mismatch", "gapopen", "qstart", 
@@ -105,7 +105,7 @@ if(file.exists(RDFile1)||file.exists(RDFile1)){
   
   clip.slv.stat.bead <-read.table("../../Results/JAN20/STAT/megahit.clip.slv.stat.beads",
     sep="\t",as.is = T,quote = "",comment.char="",
-    col.names = c("SID","BB", "clips", "clv", "cName","path"))
+    col.names = c("SID","BB", "clips","annos", "clv", "cName","path"))
   
   save(clip.slv.stat.anno,file=RDFile1)
   tools::md5sum(RDFile1)
@@ -121,11 +121,14 @@ Data curation:
 ```{r}
 #
 #clip.slv.sc <- clip.slv.stat.clip[,c(1:8,11:16,19:24,27:32,35:40)]
-name.csdf <- colnames(clip.slv.stat.clip)[c(1:9,12:17,20:25,28:33,36:41)]
+name.csdf <- head(colnames(clip.slv.stat.clip),-1)
 clip.slv.sc <- merge(metadata,clip.slv.stat.clip,by="SID")
 csdf <- clip.slv.sc[,c(colnames(metadata)[c(3,1:2,4:5)],name.csdf[-1])]
+csdf$SID <- droplevels(csdf$SID)
 csdf$BB <- substr(csdf$BNo,1,10)
 csdf$SAM<- substr(csdf$SID,1,1)
+csdf$samType <- ifelse(csdf$SAM%in%c("M","Z"),"mock",
+                       ifelse(csdf$SAM%in%c("O","S"),"soil",ifelse(csdf$SAM%in%c("Y","U"),"single",NA)))
 
 pFun <- function(x){
   res <- c(rep(NA,8),-1,-1)
@@ -140,49 +143,33 @@ pFun <- function(x){
     return(res)
   }
 }
+
 the.names <- c("k","p","c","o","f","g","s","t","lv","clv")
-SSU.path <- as.data.frame(t(sapply(clip.slv.sc$SSU.path,pFun,USE.NAMES=F)))
-colnames(SSU.path) <- the.names
-SSU.path.df <- cbind(csdf[,1:6],SSU.path)
-LSU.path <- as.data.frame(t(sapply(clip.slv.sc$LSU.path,pFun,USE.NAMES=F)))
-colnames(LSU.path) <- the.names
-LSU.path.df <- cbind(csdf[,1:6],LSU.path)
+clv.path <- as.data.frame(t(sapply(clip.slv.sc$cTax,pFun,USE.NAMES=F)))
+colnames(clv.path) <- the.names
+clv.path.df <- cbind(csdf[,1:6],clv.path)
+```
+
+Sum clips to beads:
+```{r}
+clip.slv.sb <- merge(metadata,clip.slv.stat.bead,by="SID")
+cbdf <- merge(bb_clips,clip.slv.sb,by=c("SID","BB"))
+cbdf$SID <- droplevels(cbdf$SID)
+
+```
 
 
-# pick trust anno
-trust.SSU.id <- which(csdf$unit%in%c("SSU","Either")|(csdf$unit=="BOTH"&csdf$SSU.pident>=csdf$LSU.pident))
-trust.SSU.df <- cbind(csdf[trust.SSU.id,c(1:7,37,38,13:24)],SSU.path[trust.SSU.id,])
-colnames(trust.SSU.df) <- sub("SSU.","",colnames(trust.SSU.df))
+Basic numbers:
+```{r}
+ggplot(cbdf,aes(x=SID,fill=factor(clips))) + geom_bar(position="stack")
 
-trust.LSU.id <- which(csdf$unit=="LSU"|(csdf$unit=="BOTH"&csdf$SSU.pident<csdf$LSU.pident))
-trust.LSU.df <- cbind(csdf[trust.LSU.id,c(1:7,37,38,25:36)],LSU.path[trust.LSU.id,])
-colnames(trust.LSU.df) <- sub("LSU.","",colnames(trust.LSU.df))
+cbdf$anno10 <- factor(ifelse(cbdf$annos>10,">10",cbdf$annos),levels=c(seq(1,10),">10"))
+ggplot(cbdf,aes(x=SID,fill=anno10)) + geom_bar(position="stack")
 
-trust.csdf <- rbind(trust.SSU.df,trust.LSU.df)
-
-DSFile <- "../../Results/JAN20/STAT/csds.RData"
-if(file.exists(DSFile)){
-  if(md5sum(DSFile)=="ffa5052dbd5022e80e574e38744fa160"){ 
-    message("Found DSata file. Loading ...",appendLF = F)
-    load(DSFile)
-    message(" done")
-  }else{
-    warning("md5sum check mismatch! U better check again.")
-  }
-}else{
-  message("Not found RData file. Creating ...",appendLF = F)
-  library(doSNOW)
-  sFun <- function(d){
-    res <- unique(d)
-    return(res)
-  }
-  cl <- makeCluster(6, type = "SOCK")
-  registerDoSNOW(cl)
-  csds <- ddply(csdf[,c(1:22,26:34,38,39)],c("SID"),sFun,.parallel=T)
-  stopCluster(cl)
-  save(csds,file=DSFile) # tools::md5sum(DSFile)
-  message(" done")
-}
+ggplot(cbdf,aes(x=factor(clips),fill=anno10)) + geom_bar(position="stack") + 
+  facet_wrap(~kindom+SAM,scale="free_x")
+ggplot(cbdf,aes(x=factor(clips),fill=anno10)) + geom_bar(position="fill") + 
+  facet_wrap(~kindom+SAM,scale="free_x")
 ```
 
 Clip lengths:
@@ -196,7 +183,7 @@ Unit detection:
 
 ```{r}
 csdf$unit <- factor(csdf$unit,levels=c("Both","Either","UNK","SSU","LSU","NONE"))
-table(csdf$unit)
+table(csdf$unit,csdf$SID)
 BID.2U <- unique(csdf$BB[which(csdf$unit%in%c("Both","Either","UNK"))])
 ```
 
@@ -210,50 +197,34 @@ p + geom_bar(position="fill")
 
 direction detection:
 ```{r}
-clip.both <- clip.slv.sc%>%filter(unit=="Both")
-
-head(rev(sort(table(clip.both$cName))),20)
-
-clip.both$RSU <- factor(clip.both$cName,levels=names(rev(sort(table(clip.both$cName))))[1:10])
-clip.both$SAM <- substr(clip.both$SID,1,1)
-ggplot(clip.both,aes(x=RSU,fill=factor(cLv))) +geom_bar(position="stack") + 
+#patLv <- c("-----x-----","-S>+","+<S-","-S>]+","+[<S-","[S>]+","+[<S]", "-L>+","+<L-","-L>]+","+[<L-","[L>]+","+[<L]")
+csdf$Rpat <- factor(csdf$pattern,levels=names(rev(sort(table(csdf$pattern))))[1:20])
+ggplot(csdf,aes(x=unit,fill=Rpat)) +geom_bar(position="stack") + 
   facet_wrap(~kindom+SAM,ncol=3,scales="free") +coord_flip()
 ```
 
 
 
-Length dist of 'Both' unit:
+Aligned length dist of 'Both' unit:
 ```{r}
-p <- ggplot(csdf%>%filter(unit=="Both"),aes(x=range,color=lane))
+both.df <- csdf%>%filter(unit=="Both")
+p <- ggplot(both.df,aes(x=minRange,color=lane))
 p + geom_density() + facet_wrap(~kindom+SAM,ncol=3,scale="free")
 ```
 
+consist tax level
 ```{r}
-ggplot(csdf%>%filter(unit=="Both"),aes(x=cLv,color=lane)) +
-  geom_density() + facet_wrap(~kindom+SAM,ncol=3,scale="free")
+ggplot(csdf,aes(x=clv,color=unit,linetype=lane)) +
+  geom_density() + facet_wrap(~kindom+samType,ncol=3,scale="free") + 
+  ggplot("density of consist tax level in each unit")
+
+ggplot(both.df,aes(x=SID,fill=factor(clv))) + geom_bar(position="stack") +
+  ggtitle("barplot of consist tax level in each unit")
 ```
 
+ Delta distribution of each 'unit':
 ```{r}
-# csdf$SSU.rank2 <- ifelse(is.na(csdf$SSU.taxid),"missing",ifelse(csdf$SSU.name%in%c("uncultured bacterium",""),"UNK",csdf$SSU.rank))
-# csdf$LSU.rank2 <- ifelse(is.na(csdf$LSU.taxid),"missing",ifelse(csdf$LSU.name%in%c("uncultured bacterium",""),"UNK",csdf$LSU.rank))
-s.rank.sc <- ddply(csdf,colnames(csdf)[c(1:5,24)],summarise,count=length(BNo))
-l.rank.sc <- ddply(csdf,colnames(csdf)[c(1:5,36)],summarise,count=length(BNo))
-colnames(s.rank.sc)[6] <- "rank"; colnames(l.rank.sc)[6] <- "rank"
-rank.sc <- rbind(cbind(group="SSU",s.rank.sc),cbind(group="LSU",l.rank.sc))
-rank.sc$rank <- factor(rank.sc$rank,levels=c("missing","UNK","no rank","kingdom","phylum","class","order","family","genus","species","subspecies","varietas","forma"))
-ggplot(rank.sc,aes(x=group,y=count,fill=rank)) +
-  geom_bar(stat="identity",position="stack") + 
-  theme(axis.text.x = element_text(angle = -90, hjust = -1, vjust = .5)) +
-  facet_grid(.~SID,scale="free",space="free")
-ggplot(rank.sc,aes(x=group,y=count,fill=rank)) + geom_bar(stat="identity",position="fill") +
-  facet_grid(.~SID,scale="free",space="free")
-
-```
-
-
-length distribution of each 'unit':
-```{r}
-ggplot(csdf,aes(x=delta,color=unit,linetype=lane)) +geom_density() +
+ggplot(csdf,aes(x=minDelta,color=unit,linetype=lane)) +geom_density() +
   facet_wrap(~kindom+SAM,ncol=3,scale="free") + ggtitle("delta dist")
 unit.pos.sc <- ddply(csdf%>%filter(delta>0),
                      colnames(csdf)[c(1:5,7)],summarise,count=length(BNo))
@@ -261,15 +232,26 @@ ggplot(unit.pos.sc,aes(x=SID,y=count,fill=unit)) + geom_bar(stat="identity",posi
   ggtitle("unit dist with delta >0")
 ```
 
+pattern and unit
+```{r}
+csdf$patX <- ifelse(grepl("x",csdf$pattern),"x",ifelse(grepl("+",csdf$pattern),"+","other"))
+csdf$patD <- ifelse(grepl("<.*>|>.*<",csdf$pattern),"diff","same")
+
+ggplot(csdf,aes(x=unit,fill=patX)) + geom_bar(position="stack") + facet_wrap(~kindom+SAM,scales = "free_x") +
+  ggtitle("barplot of consist tax level in each unit")
+
+ggplot(csdf,aes(x=unit,fill=patD)) + geom_bar(position="fill") + facet_wrap(~kindom+SAM,scales = "free_x") +
+  ggtitle("barplot of consist tax level in each unit")
+
+ggplot(csdf%>%filter(unit=="Both"),aes(x=patX,fill=patD)) + geom_bar(position="fill") + facet_wrap(~kindom+SAM,scales = "free_x") +
+  ggtitle("barplot of consist tax level in each unit")
+```
+
+
 ```{r}
 csdf$shortLen <- ifelse(csdf$SSU.length<csdf$LSU.length,csdf$SSU.length,csdf$LSU.length)
 csdf$minIdent <- ifelse(csdf$SSU.pident<csdf$LSU.pident,csdf$SSU.pident,csdf$LSU.pident)
 
-csdf$dlt <- ifelse(
-  csdf$SSU.qstart<csdf$LSU.qstart,
-  ifelse(csdf$SSU.qend<csdf$LSU.qend,csdf$LSU.qstart-csdf$SSU.qend,csdf$LSU.qstart-csdf$LSU.qend),
-  ifelse(csdf$LSU.qend<csdf$SSU.qend,csdf$SSU.qstart-csdf$LSU.qend,csdf$SSU.qstart-csdf$SSU.qend)
-)
 ggplot(csdf,aes(x=dlt/shortLen,y=minIdent)) + 
   #stat_density2d(geom="raster",h=c(100,100),contour=F) + 
   stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
