@@ -1,0 +1,54 @@
+---
+title: "zymo reference build"
+output:
+  html_notebook:
+    code_fold: hide
+---
+
+zymo infomation : `stLFR4META - 文档\Experiments\ZymoBIOMICS Microbial Community DNA Standard D6305`
+
+Zymo mock strains:
+
+| Species                  | Genomic DNA | 16S Only1 | 16S & 18S1 | Genome Copy2 | Cell Number3 |
+| ------------------------ | ----------- | --------- | ---------- | ------------ | ------------ |
+| Pseudomonas aeruginosa   | 12          | 4.2       | 3.6        | 6.1          | 6.1          | +
+| Escherichia coli         | 12          | 10.1      | 8.9        | 8.5          | 8.5          | +
+| Salmonella enterica      | 12          | 10.4      | 9.1        | 8.7          | 8.8          | +
+| Lactobacillus fermentum  | 12          | 18.4      | 16.1       | 21.6         | 21.9         |
+| Enterococcus faecalis    | 12          | 9.9       | 8.7        | 14.6         | 14.6         | +
+| Staphylococcus aureus    | 12          | 15.5      | 13.6       | 15.2         | 15.3         | +
+| Listeria monocytogenes   | 12          | 14.1      | 12.4       | 13.9         | 13.9         | +
+| Bacillus subtilis        | 12          | 17.4      | 15.3       | 10.3         | 10.3         | +
+| Saccharomyces cerevisiae | 2           | NA        | 9.3        | 0.57         | 0.29         |
+| Cryptococcus neoformans  | 2           | NA        | 3.3        | 0.37         | 0.18         |
+
+
+set global vars (bash):
+```{bash}
+SAM=RCA197B01_2
+
+threads=16
+DB=../../Source/REF/zymo
+RES=../../Results/ZYMO
+```
+A list of manuals for check:
+> Samtools: http://www.htslib.org/doc/samtools.html
+> bwa: http://bio-bwa.sourceforge.net/bwa.shtml
+> bed format: https://asia.ensembl.org/info/website/upload/bed.html
+
+Mapping 16S, 28S sequences back to genome.
+```
+bwa mem -t $threads -a $DB/D6305.genomes.bwa $DB/D6305.ssrRNA.fasta |samtools view -b \
+| samtools sort > $RES/D6305.ssrRNA2genome.bam
+
+bwa mem -t $threads -a $DB/D6305.genomes.bwa $DB/D6305.markers.fa |samtools view -b \
+| samtools sort > $RES/D6305.16S_23S.2genome.bam
+
+samtools view $RES/D6305.16S_23S.2genome.bam| perl sam2bed.pl -s - -o $RES/D6305.ssrRNA2genome.bed
+```
+
+call snv:
+```
+grep --no-group-separator -A1 "16S_1" $DB/D6305.ssrRNA.fasta > $RES/D6305.16S_1.fasta
+mafft --thread 32 --auto --inputorder $RES/D6305.16S_1.fasta > $RES/D6305.16S_1.mafft.fa
+```
