@@ -1,6 +1,7 @@
 /Results
 *.html
 *tmp*
+.Rhistory
 DATA 
 DB
 .snakemake
