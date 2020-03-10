@@ -65,13 +65,14 @@ grep ">" $SAM/VSEARCH/contig.LFRs.fasta|sed 's/>//;s/ /\t/' > $SAM/VSEARCH/conti
 
 # Load 
 ```{r}
-SAM="RCA197M01_2.auto_removed_Ad"
+SAM="A42"
 pfx=paste0("../../Results/RCAs/RCA197FIN/",SAM,"/VSEARCH/contig")
 
 clip.heads <- read.table(paste0("../../Results/RCAs/RCA197FIN/",SAM,"/summary.BI.megahit.clip.heads"),
-                         col.names=c("BI","maxKmer","flag","cov","rawLen","cType","Ad","cLen"))
+                         col.names=c("BI","maxKmer","No","flag","cov","rawLen","cType","Ad","cLen"))
 barrnap.heads <- read.table(paste0("../../Results/RCAs/RCA197FIN/",SAM,"/summary.BI.megahit.rRNA.heads"),
-                         col.names=c("RA","RB","BI","maxKmer","flag","cov","rawLen","cType","Ad","cLen"))
+                         col.names=c("unit","BI","maxKmer","No","flag","cov","rawLen","cType","cLen","range"))
+
 name.uc <- c("RecordType","ClusterNO","size","Percentage","Orientation","NA1","NA2","CIGAR","query","centroid")
 
 clip.m6 <- read.table(paste0("../../Results/RCAs/RCA197FIN/",SAM,"/summary.BI.megahit.clip.lg500.m6.uniq"),

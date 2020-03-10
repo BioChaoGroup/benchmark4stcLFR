@@ -279,13 +279,13 @@ done
 
 ##### mapping contig fa to sliva
 for SAM in {RCA197M03_1,RCA197M03_2,};do
-  blastn -num_threads 32 -perc_identity 90 -qcov_hsp_perc 50 -db \
+  blastn -num_threads 32 -qcov_hsp_perc 50 -db \
     $STL/Source/REF/silva132/LSU/SILVA_132_LSURef_tax_RNA.fasta \
     -query $SAM/summary.BI.megahit.contig.fasta \
     -outfmt '6 std qlen' -out $SAM/summary.BI.megahit.contig.LSU.silva.m6 
   metabbq anno.pl $STL/Source/REF/silva132/LSU/*txt $SAM/summary.BI.megahit.contig.LSU.silva.m6  \
     > $SAM/summary.BI.megahit.contig.LSU.silva.m6.more
-  blastn -num_threads 32 -perc_identity 90 -qcov_hsp_perc 50 -db \
+  blastn -num_threads 32 -qcov_hsp_perc 50 -db \
     $STL/Source/REF/silva132/SSU/132_SSURef_Nr99_tax_RNA.fasta \
     -query $SAM/summary.BI.megahit.contig.fasta \
     -outfmt '6 std qlen' -out $SAM/summary.BI.megahit.contig.SSU.silva.m6 

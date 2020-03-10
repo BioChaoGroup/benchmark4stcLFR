@@ -59,23 +59,253 @@ Zymo mock strains:
 
 # load 
 ```{r}
+
+BB.stat <- read.table("../../Results/RCAs/RCA197FIN/A42/clean/BB.stat",
+                         col.names = c("count","rpb","cumsum"))
+contig.tsv <- read.table("../../Results/RCAs/RCA197FIN/A42/summary.BI.megahit.contig.tsv",
+                         col.names = c("BI","id","flag","cov","len"))
 B.kmer <- read.table("../../Results/RCAs/RCA197FIN/A02/mash/bMin2.msh.2.tsv",
                      col.names = c("BB","rpb","kmers"))
-clip.num <- read.table("../../Results/RCAs/RCA197FIN/A02/summary.BI.megahit.clip.num",
-                       col.names = c("BI","len"))
-BI.lst <- read.table("../../Results/RCAs/RCA197FIN/A02/Assemble_BI/ID2.lst",
-                     col.names = c("BI","BB","rpb"))
+#clip.num <- read.table("../../Results/RCAs/RCA197FIN/A42/summary.BI.megahit.clip.num",                       col.names = c("BI","len"))
+
+clip2zymo <- read.table("../../Results/RCAs/RCA197FIN/A42/clip2zymo.stat",
+                       col.names = c("BI","id","flag","cov","len0","clip","len","ref","cigar","match","fLen","NM"))
+clip2zymo.region <- read.table("../../Results/RCAs/RCA197FIN/A42/summary.BI.megahit.clip.zymo.region",
+                       col.names = c("BI","id","flag","cov","len0","clip","len","ref","region","match","fLen","regionLen","regionPos","PosPct"))
+rnahead.stat <- read.table("../../Results/RCAs/RCA197FIN/A42/summary.BI.megahit.rRNA.stat",
+                       col.names = c("BI","id","len","start","end","unit"))
+BI.lst <- read.table("../../Results/RCAs/RCA197FIN/A42/Assemble_BI/ID.lst",
+                     col.names = c("BI0","BB","kmers","rpb"))
+
+BI.freq.tsv <- read.table("../../Results/RCAs/RCA197FIN/A42/mash/BI.msh.freq.tsv", sep="\t",
+                           col.names = c("BB","rpb","kmers","bins","hash","hash1","hash2"))
 ```
+```{r}
+BI.freq.tsv0 <- BI.freq.tsv
+BI.freq.tsv0$rpbin <- round(BI.freq.tsv0$rpb/BI.freq.tsv0$bins,0)
+BI.freq.tsv0$kCov <- BI.freq.tsv0$rpb*140/BI.freq.tsv0$kmers
+
+ggplot(BI.freq.tsv0,aes(x=factor(bins),y=kmers)) + geom_boxplot()
+ggplot(BI.freq.tsv0%>%filter(rpbin<100),aes(x=factor(rpbin),y=kCov)) + geom_boxplot()
+```
+
 
 # Curate
 ```{r}
-clip.num2 <- ddply(clip.num,"BI",summarise,mlen=mean(len),num=length(BI))
-mdat <- merge(BI.lst,clip.num2,by="BI",all.x=T)
-mdat$num[which(is.na(mdat$num))] <- 0
-mdat2 <- merge(mdat,B.kmer,by="BB")
-mdat2$kpr <- mdat2$kmers/mdat2$rpb.x
+BI.lst$BI <- sprintf("BI%08d",BI.lst$BI0)
+#mdat.ctg <- merge(merge(BI.lst,contig.tsv,by="BI"),B.kmer[,-2],by="BB")
+mdat.ctg <- merge(merge(BI.lst,contig.tsv,by="BI"),BI.freq.tsv[,-c(2:3)],by="BB")
+mdat.ctg$cov0 <- round(mdat.ctg$cov/2-0.49,0) * 2
+mdat.ctg$len0 <- round(mdat.ctg$len/500-0.49,0) * 500
+mdat.ctg$kCov <- mdat.ctg$rpb*140/mdat.ctg$kmers
+mdat.ctg$kCov0 <- round(mdat.ctg$kCov,0)
+mdat.ctg$h12 <- round(mdat.ctg$hash1/mdat.ctg$hash2,0)
+mdat.ctg$rpbin <- round(mdat.ctg$rpb/mdat.ctg$bins,0)
+
+ggplot(mdat.ctg%>%filter(cov0<50),aes(x=factor(cov0),y=len,fill=factor(flag))) + geom_boxplot()
+ggplot(mdat.ctg,aes(x=factor(len0),y=kCov,fill=factor(flag))) + geom_boxplot()
+ggplot(mdat.ctg,aes(x=factor(kCov0),y=len,fill=factor(flag))) + geom_boxplot()
+ggplot(mdat.ctg%>%filter(h12<20),aes(x=factor(h12),y=len,fill=factor(flag))) + geom_boxplot()
+ggplot(mdat.ctg%>%filter(rpbin<100),aes(x=factor(rpbin),y=len,fill=factor(flag))) + geom_boxplot()
+```
+```{r}
+ggplot(mdat.ctg%>%filter(bins<49),aes(x=factor(bins),y=len,fill=factor(flag))) + geom_boxplot()
 ```
 
+
+
+```{r}
+BI.num <- as.data.frame(table(mdat.ctg$BI))
+colnames(BI.num) <- c("BI","member")
+mdat.ctg3 <- merge(mdat.ctg,BI.num,by="BI")
+mdat.ctg3$weight <- 1/mdat.ctg3$member
+mdat.ctg3$member[which(mdat.ctg3$member>3)] <- "4&more"
+mdat.ctg3$cov0 <- round(mdat.ctg3$cov,0)
+mdat.ctg3$kCov0 <- round(mdat.ctg3$kCov,0)
+
+ddply(mdat.ctg3,"member",summarise,num=sum(weight))
+
+ggplot(mdat.ctg3%>%filter(cov0<30),aes(x=factor(cov0),y=len,fill=factor(flag))) + geom_boxplot() + 
+  facet_grid(member~.)
+
+```
+
+```{r}
+mdat.ctg3$kmer0 <- round(mdat.ctg3$kmers/100,0)*100
+ggplot(mdat.ctg3%>%filter(kmers<3999),aes(x=factor(kmer0),y=len,fill=factor(flag))) + geom_boxplot() + 
+  facet_grid(member~.)
+
+mdat.ctg3$rpb0 <- round(mdat.ctg3$rpb/10,0)*10
+ggplot(mdat.ctg3%>%filter(rpb<299),aes(x=factor(rpb0),y=len,fill=factor(flag))) + geom_boxplot() + 
+  facet_grid(member~.)
+```
+
+结合clip比对信息：
+```{r}
+cmdat <- merge(merge(mdat.ctg[,-c(9,11,13)],clip2zymo[,c(1,2,5:7,8:12)],by=c("BI","id")),
+               clip2zymo.region[,c("BI","id","region")],by=c("BI","id"))
+cmdat$pct <- cmdat$match/cmdat$len
+cmdat$len100 <- round(cmdat$len/100,0)*100
+```
+集合barrnap预测信息：
+```{r}
+rnahead.stat$rnaLen <- rnahead.stat$end-rnahead.stat$start+1
+rnahead.stat$rnaPct <- rnahead.stat$rnaLen/rnahead.stat$len
+
+cmdat <- merge(cmdat,rnahead.stat[,c(1,2,6:8)],by=c("BI","id"),all.x=T)
+cmdat$rnaPct[which(is.na(cmdat$unit))] <- 0
+levels(cmdat$unit) <- c("16S","23S","5S","mis")
+cmdat$unit[which(is.na(cmdat$unit))] <- "mis"
+```
+
+```{r}
+ggplot(cmdat,aes(x=pct,fill=factor(len100))) + geom_histogram() + scale_x_continuous(breaks = seq(0,1,0.2))
+```
+
+根据比对coverage来判断
+
+
+```{r}
+ggplot(cmdat%>%filter(pct<0.9),aes(x=len)) + geom_histogram()
+
+```
+
+```{r}
+hybFun <- function(d){
+  rN <- length(unique(d$species))
+  res <- d[1,c("BI"),F]
+  res$Rpb <- rN
+  return(res)
+}
+
+cmdat$species <- sapply(strsplit(as.character(cmdat$ref),".",fixed = T),function(x) return(x[[1]]))
+hybStat <- ddply(cmdat,"BI",hybFun)
+hybStat$hyb <- ifelse(hybStat$Rpb>1,T,F)
+cmstat <- merge(cmdat,hybStat,by="BI")
+cmstat$kCov0 <- round(cmstat$rpb*140/cmstat$kmers,0)
+cmstat$rpb0 <- round(cmstat$rpb/10,0) * 10
+cmstat$kmers00 <- round(cmstat$kmers/100,0) * 100
+cmstat$regUnit <- substr(cmstat$region,1,3)
+
+ggplot(cmstat,aes(x=species,fill=factor(Rpb))) + geom_bar(stat="count") + theme(axis.text.x = element_text(angle=90,vjust=0))
+ggplot(cmstat,aes(x=species,fill=factor(Rpb))) + geom_bar(stat="count",position="fill") + theme(axis.text.x = element_text(angle=90,vjust=0))
+ggplot(cmstat,aes(x=unit,fill=factor(Rpb))) + geom_bar(stat="count") + theme(axis.text.x = element_text(angle=90,vjust=0))
+ggplot(cmstat,aes(x=unit,fill=factor(Rpb))) + geom_bar(stat="count",position="fill") + theme(axis.text.x = element_text(angle=90,vjust=0))
+ggplot(cmstat%>%filter(rpb0<300),aes(x=factor(rpb0),fill=factor(Rpb))) + geom_bar(stat="count",position="fill") + theme(axis.text.x = element_text(angle=90,vjust=0))
+
+ggplot(cmstat,aes(x=fLen,color=regUnit,linetype=hyb)) + geom_density(size=1,alpha=.7) + facet_grid(regUnit~.,scale="free_y")
+ggplot(cmstat,aes(x=fLen,color=unit,linetype=hyb)) + geom_density(size=1,alpha=.7) + facet_grid(unit~.,scale="free_y")
+ggplot(cmstat,aes(x=rnaPct,color=unit,linetype=hyb)) + geom_density(size=1,alpha=.7) + facet_grid(unit~.,scale="free_y")
+ggplot(cmstat,aes(x=pct,color=unit,linetype=hyb)) + geom_density(size=1,alpha=.7) + facet_grid(unit~.,scale="free_y") + scale_x_continuous(breaks=seq(0,1,.2))
+ggplot(cmstat,aes(x=pct,color=unit,linetype=hyb)) + geom_density(size=1,alpha=.7) + facet_grid(unit~.,scale="free_y") + scale_x_continuous(breaks=seq(0,1,.2))
+
+
+ggplot(cmstat,aes(x=kCov0,fill=hyb)) + geom_bar(stat="count",position="stack")
+ggplot(cmstat,aes(x=kCov0,fill=hyb)) + geom_bar(stat="count",position="fill")
+ggplot(cmstat%>%filter(cov<30),aes(x=cov0,fill=hyb)) + geom_bar(stat="count",position="stack")
+ggplot(cmstat%>%filter(cov<30),aes(x=cov0,fill=hyb)) + geom_bar(stat="count",position="fill")
+
+ggplot(cmstat,aes(x=factor(rpb0),fill=hyb)) + geom_bar(stat="count",position="fill") + 
+  theme(axis.text.x = element_text(angle=90,vjust=0))
+
+```
+
+taxonomy percentage:
+```{r}
+zymo.copy.num <- data.frame(species=c("Pseudomonas_aeruginosa","Escherichia_coli","Salmonella_enterica","Lactobacillus_fermentum",
+  "Enterococcus_faecalis","Staphylococcus_aureus","Listeria_monocytogenes","Bacillus_subtilis","Saccharomyces_cerevisiae","Cryptococcus_neoformans"),
+  TC16S18S=c(3.6,8.9,9.1,16.1,8.7,13.6,12.4,15.3,9.3,3.3),copyNum=c(4,7,7,5,4,6,6,10,109,60))
+
+cmstat$species <- as.factor(cmstat$species)
+levels(cmstat$species) <- c(NA,"Bacillus_subtilis","Cryptococcus_neoformans","Enterococcus_faecalis","Escherichia_coli","Escherichia_coli",
+                            "Lactobacillus_fermentum","Listeria_monocytogenes","Pseudomonas_aeruginosa","Saccharomyces_cerevisiae",
+                            "Salmonella_enterica","Staphylococcus_aureus")
+ggplot(zymo.copy.num,aes(x="zymo",y=TC16S18S,fill=species)) + geom_bar(stat="identity",position="fill") + ylab("16S & 18S")
+ggplot(cmstat%>%filter(rpb<300),aes(x=factor(rpb0),fill=species)) + geom_bar(stat="count",position="fill") + 
+  theme(axis.text.x = element_text(angle=90,vjust=0))
+
+
+ggplot(zymo.copy.num%>%filter(!species%in%c("Saccharomyces_cerevisiae","Cryptococcus_neoformans")),
+       aes(x="zymo",y=TC16S18S,fill=species)) + geom_bar(stat="identity",position="fill") + ylab("16S & 18S")
+ggplot(cmstat%>%filter(rpb<300&!species%in%c("Saccharomyces_cerevisiae","Cryptococcus_neoformans")),aes(x=factor(rpb0),fill=species)) +
+  geom_bar(stat="count",position="fill") + 
+  theme(axis.text.x = element_text(angle=90,vjust=0))
+ggplot(cmstat%>%filter(rpb<300&!species%in%c("Saccharomyces_cerevisiae","Cryptococcus_neoformans")),aes(x=factor(rpb0))) + 
+  geom_bar(stat="count") + theme(axis.text.x = element_text(angle=90,vjust=0))
+
+ggplot(cmstat%>%filter(unit!="5S"&rpb<300&!species%in%c("Saccharomyces_cerevisiae","Cryptococcus_neoformans")),aes(x=factor(rpb0),fill=species)) +
+  geom_bar(stat="count",position="fill") + theme(axis.text.x = element_text(angle=90,vjust=0)) + facet_grid(unit~.)
+
+ggplot(cmstat%>%filter(unit!="5S"&!species%in%c("Saccharomyces_cerevisiae","Cryptococcus_neoformans")),aes(x="all",fill=species)) +
+  geom_bar(stat="count",position="fill") + theme(axis.text.x = element_text(angle=90,vjust=0)) + facet_grid(unit~.)
+
+```
+
+
+```{r}
+cmstat.clean <- cmstat%>%filter(ref2!="hybridize")
+cmstat.clean$kCov0 <- round(cmstat.clean$rpb*140/cmstat.clean$kmers,0)
+cmstat.clean$kmers0 <- round(cmstat.clean$kmers/100,0) * 100
+cmstat.clean$rpb0 <- round(cmstat.clean$rpb/10,0) * 10
+
+ggplot(cmstat.clean%>%filter(kCov0<20),aes(x=factor(kCov0),fill=factor(ref2))) + geom_bar(stat="count")
+ggplot(cmstat.clean%>%filter(kCov0<20),aes(x=factor(kCov0),fill=factor(ref2))) + geom_bar(stat="count",position="fill")
+ggplot(cmstat.clean%>%filter(kmers<3000),aes(x=factor(kmers0),fill=factor(ref2))) + geom_bar(stat="count",position="fill")
+ggplot(cmstat.clean%>%filter(rpb<300),aes(x=factor(rpb0),fill=factor(ref2))) + geom_bar(stat="count")
+ggplot(cmstat.clean%>%filter(rpb<300),aes(x=factor(rpb0),fill=factor(ref2))) + geom_bar(stat="count",position="fill")
+
+```
+
+```{r}
+cmdat2 <- cmdat
+cmdat2$kCov0 <- round(cmdat2$rpb*140/cmdat2$kmers,0)
+cmdat2$rpb0 <- round(cmdat2$rpb/10,0) * 10
+cmdat2$len00 <- round(cmdat2$len/100,0) * 100
+cmdat2$kmers00 <- round(cmdat2$kmers/100,0) * 100
+cmdat2$kmerLen <- substr(cmdat2$id,1,4)
+
+ggplot(cmdat2%>%filter(kCov0<20),aes(x=factor(kCov0),fill=factor(ref2))) + geom_bar(stat="count",position="fill")
+ggplot(cmdat2%>%filter(rpb<300),aes(x=factor(rpb0),fill=factor(ref2))) + geom_bar(stat="count",position="fill")
+ggplot(cmdat2%>%filter(rpb<300),aes(x=factor(ref2),fill=factor(rpb0))) + geom_bar(stat="count",position="fill")
+ggplot(cmdat2,aes(x=factor(len00),fill=factor(ref2))) + geom_bar(stat="count")
+ggplot(cmdat2,aes(x=factor(len00),fill=factor(ref2))) + geom_bar(stat="count",position="fill")
+
+ggplot(cmdat2,aes(x=factor(len00),y=pct)) + geom_boxplot()
+ggplot(cmdat2,aes(x=factor(len00),y=pct,fill=factor(flag))) + geom_boxplot() + scale_y_continuous(breaks=seq(0,1,0.2))
+ggplot(cmdat2,aes(x=factor(cov0),y=pct,fill=factor(flag))) + geom_boxplot() + scale_y_continuous(breaks=seq(0,1,0.2))
+
+```
+
+```{r}
+ggplot(cmdat2%>%filter(rpb<300),aes(x=factor(rpb0),fill=factor(ref2))) + geom_bar(stat="count",position="fill")
+
+```
+
+
+模型
+```{r}
+Exp.rpb <- sum(BB.stat$rpb*BB.stat$count)/sum(BB.stat$count)
+Exp.rpb0 <- round(Exp.rpb,0)
+
+BB.stat$prob <- BB.stat$count/(1.2*sum(BB.stat$count))
+mock.dat <- data.frame(rpb=seq(0,49),
+                       pois=(dpois(seq(0,49),1)+dpois(seq(0,49),2)+dpois(seq(0,49),3))/3,
+                       norm=dnorm(seq(0,49),mean=5,sd=15))
+mock.dat$p2 <- mock.dat$pois*0.8+mock.dat$norm*0.2
+mock.dat <- merge(mock.dat,BB.stat[,c(2,4)],by="rpb",all.x=T)
+mmock <- melt(mock.dat,id.vars = "rpb",variable.name = "method",value.name = "p")
+ggplot(mmock,aes(x=rpb,y=p,color=method)) + geom_line() + geom_point()
+```
+
+```{r}
+sdat.ctg <- ddply(mdat.ctg,c("BI","rpb","flag"),summarise,len=sum(len))
+sdat.ctg$len0 <- round(sdat.ctg$len/500-0.49,0) * 500
+
+sdat.ctg2 <- ddply(sdat.ctg,c("rpb","flag","len0"),summarise,count=length(BI))
+sdat.ctg2 <- ddply(sdat.ctg2,c("flag","len0"),transform,frac=count/sum(count))
+
+ggplot(sdat.ctg2%>%filter(len0>499&len0<2000),aes(x=rpb,y=frac,color=factor(len0))) + geom_line() + facet_grid(flag~.,scale="free") + xlim(0,200)
+```
 
 ```{r}
 ggplot(B.kmer,aes(x=kmers)) + geom_histogram() + scale_x_log10() + annotation_logticks(sides="b")
