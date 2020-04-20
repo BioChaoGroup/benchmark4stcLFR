@@ -16,22 +16,22 @@ REF_ID: "../../Source/REF/fungal7mix/MIX7.faID"
 
 REF_nt: "$MDB/NCBI/blast_nt/nt"
 REF_silva: "../../Source/REF/silva132/combine/SILVA_132_SSU_LSU_tax_DNA.blast"
-sampleType: "B" # F(ungi) or B(acteria)
+sampleType: "F" # F(ungi) or B(acteria)
 
 closeRef:
-    blastdb: "$LFR/Source/REF/zymo/D6305.rRNA.fa"
-    bwa_db: "$LFR/Source/REF/zymo/D6305.rRNA.fa"
+    blastdb: "$LFR/Source/REF/fungi/sanger/sanger.mock7.rRNA.fa"
+    bwa_db: "$LFR/Source/REF/fungi/sanger/sanger.mock7.rRNA.fa"
     bed: "$LFR/Source/REF/zymo/D6305.fix.rRNA.barrnap.bed"
 
 ### adapters
 AdRCA: AAGTCGGACGCTGATAAGGTCGCCATGCCTCTCAGTACTCCGACTT
-AdFw: AGAGTTTGATCATGGCTCAG #SgF
-AdRv: AAGGAGGTGATCCAGCCGCA #3'pH
+AdFw: GCCAGCAACCGCGGTAA #SSU515Fngs
+AdRv: GGTCCGTGTTTCAAGACG #TW13
 A_primer_list_to_remove: ""
 A_primer_fa_to_find: "./primers.fa"
 ### Primers
-pmrFwd: 
-pmrRev: 
+pmrFwd: GCCAGCAACCGCGGTAA
+pmrRev: GGTCCGTGTTTCAAGACG
 
 ### method selection
 method:
@@ -54,10 +54,6 @@ fastp_process: 0
 stLFR_pos1: 100
 stLFR_pos2: 116
 stLFR_pos3: 132
-
-### clean fq randomly donwsize (test)
-clean_ds_pieces: 50
-clean_ds_keep_files: 5
 
 #### mash dist params
 p_dist_k: 31

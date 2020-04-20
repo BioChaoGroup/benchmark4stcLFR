@@ -107,6 +107,8 @@ metabbq smk -j --resources mem=120 -np SAM/{{U,S,O,M,Z}{1,2,3},{S,O,M,Y}{4,5,6},
 
 RCA isolate assemble:
 ```bash
+metabbq smk -j -np SAM/{{U,S,O,M,Z}{1,2,3},{S,O,M,Y}{4,5,6}}/summary.BI.megahit.clip.fasta
+
 metabbq smk -j -np SAM/{{U,S,O,M,Z}{1,2,3},{S,O,M,Y}{4,5,6}}/summary.BI.megahit.rRNA.fasta
 
 metabbq smk -j -npk SAM/{{U,O,M,Z}{1,2,3},S{1,2},{S,O,M,Y}{4,5,6}}/VSEARCH/barrnap.RSUs.fasta
@@ -124,4 +126,88 @@ metabbq smk --config sampleType=F -j -npk SAM/{S,O,M,Y}{4,5,6}/summary.BI.megahi
 ```bash
 metabbq stat RSU -l SAM/S1/VSEARCH/barrnap.LSU.fasta -s SAM/S1/VSEARCH/barrnap.SSU.fasta -o SAM/S1/stat/barrnap.RSU.stat
 metabbq smk -j -npk SAM/{{U,O,S,M,Z}{1,2,3},{S,O,M,Y}{4,5,6}}/stat/barrnap.RSU.stat
+```
+
+# get fungal mock ref
+```bash
+cd $LFR/Source/REF/fungi
+zcat */*.fsa_nt.gz | awk '{if($0~/>gi/){split($0,a,"|");print ">"a[4]a[5]}else{print $0}}' > merge/contig_14.fa
+makeblastdb -dbtype nucl -in merge/contig_14.fa
+#next step
+for i in */*.fsa_nt.gz;do
+	zcat $i | awk '{if($0~/>gi/){split($0,a,"|");print ">"a[4]a[5]}else{print $0}}' > ${i/_nt.gz}
+	samtools faidx ${i/_nt.gz}
+	barrnap --kingdom euk --threads 16 --reject 0.1 ${i/_nt.gz} | tee ${i/fsa_nt.gz/barrnap}
+	perl getRegion.pl < ${i/fsa_nt.gz/barrnap} > ${i/fsa_nt.gz/rRNAregion}
+	cat  ${i/fsa_nt.gz/rRNAregion}| xargs -n 2 samtools faidx ${i/_nt.gz} > ${i/fsa_nt.gz/rna.fa}
+done
+
+
+```
+#test: range of rpb or kmers for assemble
+```bash
+mkln ../../Results/JAN20/TEST
+mkdir TEST/Z1
+ln -s ../../SAM/Z1/clean TEST/Z1/
+
+metabbq smk --config p_cluster_minR=10 p_cluster_maxR=99 p_cluster_ranP=100 -j -npk TEST/Z1/mash/BI.1.fq
+metabbq smk --config p_asm_minKmers=0 p_asm_minKmerCoverage=1 -j -npk TEST/Z1/batch.assemble.BI.sh
+ metabbq smk --force --config p_asm_min=200 -j -pk TEST/Z1/summary.BI.megahit.clip.fasta
+
+for i in Z{1,2,3};do
+	mkdir -p SAM/$i/CLIP && vsearch --threads 8 --cluster_fast SAM/$i/summary.BI.megahit.clip.fasta --iddef $def --id 0.99 --strand both --fasta_width 0 --centroids SAM/$i/CLIP/preclust$def.fa -uc SAM/$i/CLIP/preclust$def.uc --sizeout &> SAM/$i/CLIP/preclust$def.log \
+	&& awk -F "_" '/>/{if($9>1499&&$10>1){p=1}else{p=0}} (p==1){print}' SAM/$i/CLIP/preclust$def.fa > SAM/$i/CLIP/preclust$def\_1.5k.fasta \
+	&& quast.py -t 8 SAM/$i/summary.BI.megahit.clip_1.5k.fasta -R $LFR/Source/REF/zymo/D6305.rRNA.fa -o SAM/$i/summary.BI.megahit.clip_1.5k_quast &
+done
+
+def=4
+for i in M{4,5,6};do
+	vsearch --threads 8 --cluster_fast SAM/$i/summary.BI.megahit.clip.fasta --iddef $def --id 0.99 --strand both --fasta_width 0 --centroids SAM/$i/CLIP/preclust$def.fa -uc SAM/$i/CLIP/preclust$def.uc --sizeout &> SAM/$i/CLIP/preclust$def.log &&
+	awk -F "_|;size=" '/>/{if($9>1999&&$10>1){p=1}else{p=0}} (p==1){print}' SAM/$i/CLIP/preclust$def.fa > SAM/$i/CLIP/preclust$def\_2k.fasta &&  quast.py -t 8 SAM/$i/CLIP/preclust$def\_2k.fasta -R $LFR/Source/REF/fungi/merge/contig_8.fa -o SAM/$i/CLIP/preclust$def\_2k_quast &
+done
+
+ quast.py -t 32 TEST/Z1/summary.BI.megahit.clip.fasta -R $LFR/Source/REF/zymo/D6305.rRNA.fa -o TEST/Z1/summary.BI.megahit.clip.fasta_quast
+```
+
+**Check fungal reference ranges:
+```bash
+for i in Z{1,2,3};do
+	blastn -num_threads 8 -db $LFR/Source/REF/zymo/D6305.rRNA.fa -query SAM/$i/summary.BI.megahit.clip.fasta -outfmt '6 std qlen qcov' -out SAM/$i/summary.BI.megahit.clip2zymo.m6 &
+done
+for i in M{4,5,6};do
+	blastn -num_threads 8 -db $LFR/Source/REF/fungi/merge/contig_8.fa -query SAM/$i/summary.BI.megahit.clip.fasta -outfmt '6 std qlen qcov' -out SAM/$i/summary.BI.megahit.clip2ref8.m6 &
+done
+
+blastn -num_threads 32 -db $LFR/Source/REF/fungi/merge/contig_14.fa -query SAM/M5/summary.BI.megahit.clip.fasta -outfmt '6 std qlen' -out SAM/M5/summary.BI.megahit.clip2F14.m6
+```
+```r
+library(dplyr)
+library(plyr)
+data <- read.table("SAM/M4/summary.BI.megahit.clip2F14.m6")
+data$s <- ifelse(data$V9<data$V10,data$V9,data$V10)
+data$e <- ifelse(data$V9<data$V10,data$V10,data$V9)
+data$pre <- c("",as.character(data$V1[2:nrow(data)-1]))
+data$new <- ifelse(data$V1==data$pre,F,T)
+
+sdf <- ddply(data%>%filter(V4>1500&V3>99),"V2",summarise,freq=length(V2),meanLength=mean(e-s+1),
+#sdf <- ddply(data%>%filter(new==T),"V2",summarise,freq=length(V2),meanLength=mean(e-s+1),
+					minStart=min(s),Q1Start=quantile(s,.25),meanStart=mean(s),
+					meanEnd=mean(e),Q3End=quantile(s,.75),maxEnd=max(e))
+sdf
+mean((sdf%>%filter(freq>999))$freq)
+
+rdf <- ddply(data%>%filter(new==T),"V2",summarise,freq=length(V2),meanLength=mean(e-s+1),
+					minStart=min(s),Q1Start=quantile(s,.25),meanStart=mean(s),
+					meanEnd=mean(e),Q3End=quantile(s,.75),maxEnd=max(e))
+```
+
+#ITSx
+```bash
+for i in Z{1,2,3};do
+	ITSx -t F --cpu 4 -i SAM/$i/CLIP/preclust$def\_2k.fasta -o SAM/$i/CLIP/preclust$def\_2k_ITSx &
+done
+for i in M{4,5,6};do
+	ITSx -t F --cpu 4 -i SAM/$i/CLIP/preclust$def\_2k.fasta -o SAM/$i/CLIP/preclust$def\_2k_ITSx &
+done
+
 ```
