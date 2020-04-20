@@ -15,7 +15,6 @@ library(plyr)
 library(dplyr)
 library(RColorBrewer)
 library(configr)
-library(tools)
 ```
 
 # Background
@@ -45,6 +44,23 @@ Zymo mock strains:
 | Saccharomyces cerevisiae | 2           | NA        | 9.3        | 0.57         | 0.29         |
 | Cryptococcus neoformans  | 2           | NA        | 3.3        | 0.37         | 0.18         |
 
+**stat on HPC**
+```{bash}
+
+
+for i in SAM/??/mash/BI.msh.tsv;do 
+  awk '{b=sprintf("%0.0f",$3/100)*100;print $2"\t"b}'  $i|sort|uniq -c|sort -nk2 -nk3 > ${i/mash/stat} &
+done
+
+
+#sum
+for i in `ls SAM`;do 
+ awk -v n=$i '{print n"\t"$0}' SAM/$i/stat/BI.msh.tsv;
+done > STAT/BI.msh.tsv
+
+```
+
+
 **For the first time, grab data from HPC**
 ```{bash,eval=FALSE}
 #get BB.stat
@@ -62,6 +78,8 @@ res=../../Results/JAN20/ORI
 for i in `ls $res|grep FF`;do 
   awk -v i=$i '{print i"\t"$0}' $res/$i/clean/BB.stat;
 done > $res/SUM.BB.stat
+
+
 ```
 
 # load 
@@ -74,8 +92,20 @@ metadata <- read.csv("../../Results/JAN20/metadata.csv")
 metadata.df <- (read.table("../../Results/JAN20/dataInfo.tsv",
                           col.names=c("SID","barcode","lane","tag","path")))[,1:4]
 
-BB.stat <- read.table("../../Results/JAN20/ORI/SUM.BB.stat",
+basic.ORI.tsv <- read.table("../../Results/JAN20/STAT/ORI.basic.log",header = T)
+basic.SAM.S.tsv <- read.table("../../Results/JAN20/STAT/SAM.basic.single.log",header = T)
+basic.SAM.R.tsv <- read.table("../../Results/JAN20/STAT/SAM.basic.RCA.log",header = T)
+basic.SAM.N.tsv <- read.table("../../Results/JAN20/STAT/SAM.basic.NOR.log",header = T)
+
+ORI.BB.stat <- read.table("../../Results/JAN20/STAT/ORI.BB.stat",
                          col.names = c("tag","count","rpb","cumsum"))
+BB.stat <- ORI.BB.stat
+SAM.BB.stat <- read.table("../../Results/JAN20/STAT/SAM.BB.stat",
+                         col.names = c("tag","count","rpb","cumsum"))
+BI.msh.tsv <- read.table("../../Results/JAN20/STAT/BI.msh.tsv",
+                         col.names = c("SID","count","rpb","kmers"))
+```
+```{r}
 contig.tsv <- read.table("../../Results/RCAs/RCA197FIN/A42/summary.BI.megahit.contig.tsv",
                          col.names = c("BI","id","flag","cov","len"))
 B.kmer <- read.table("../../Results/RCAs/RCA197FIN/A02/mash/bMin2.msh.2.tsv",
@@ -94,20 +124,102 @@ BI.lst <- read.table("../../Results/RCAs/RCA197FIN/A42/Assemble_BI/ID.lst",
 BI.freq.tsv <- read.table("../../Results/RCAs/RCA197FIN/A42/mash/BI.msh.freq.tsv", sep="\t",
                            col.names = c("BB","rpb","kmers","bins","hash","hash1","hash2"))
 ```
-```{r}
-BI.freq.tsv0 <- BI.freq.tsv
-BI.freq.tsv0$rpbin <- round(BI.freq.tsv0$rpb/BI.freq.tsv0$bins,0)
-BI.freq.tsv0$kCov <- BI.freq.tsv0$rpb*140/BI.freq.tsv0$kmers
-
-ggplot(BI.freq.tsv0,aes(x=factor(bins),y=kmers)) + geom_boxplot()
-ggplot(BI.freq.tsv0%>%filter(rpbin<100),aes(x=factor(rpbin),y=kCov)) + geom_boxplot()
-```
 
 
 # Curate
 ```{r}
 metadata.df$SAM <- substr(metadata.df$SID,1,1)
-BB.mdat <- merge(metadata.df,BB.stat,by="tag")
+metadata.df$lane <- substr(metadata.df$SID,2,2)
+metadata.df$RCA <- ifelse(metadata.df$lane%in%seq(1,6),T,F)
+metadata.df$kingdom <- ifelse(metadata.df$lane%in%c(1,2,3,7,8,9),"B","F")
+
+metadata$SAM <- substr(metadata$SID,1,1)
+metadata$lane <- substr(metadata$SID,2,2)
+metadata$RCA <- ifelse(metadata$lane%in%seq(1,6),T,F)
+metadata$kingdom <- ifelse(metadata$lane%in%c(1,2,3,7,8,9),"B","F")
+
+SAM.BB.reads <- ddply(SAM.BB.stat,"tag",summarise,BB.reads=sum(count*rpb))
+```
+
+```{r}
+basic.ori.df2 <- merge(metadata.df,basic.ORI.tsv,by.x="tag",by.y=".ID")
+rn <- colnames(basic.SAM.R.tsv)
+basic.SAM.N.tsv$ASM.clips <- NA
+basic.sam.df2 <- merge(unique(metadata.df[,c(1,3,5:7)]),
+  rbind(basic.SAM.S.tsv[,rn],basic.SAM.R.tsv,basic.SAM.N.tsv),
+  by.x="SID",by.y=".ID")
+basic.sam.df2 <- merge(basic.sam.df2,SAM.BB.reads,by.x="SID",by.y="tag")
+```
+
+```{r p1}
+p1.1 <- ggplot(basic.ori.df2,aes(x=SID)) +
+  geom_bar(aes(y=fastp.before_filtering.total_reads),position="stack",stat="identity",fill=NA,color="black") +
+  geom_bar(aes(y=fastp.after_filtering.total_reads),position="stack",stat="identity",fill="grey50",alpha=.5) +
+  ggtitle("Beofre/after filter reads number")
+p1.1
+
+rm.name <- c("fastp.before_filtering.read1_mean_length","fastp.before_filtering.read2_mean_length")
+basic.ori.df3 <- melt(basic.ori.df2[,-which(colnames(basic.ori.df2)%in%rm.name)],
+                      id.vars = colnames(basic.ori.df2)[1:7],
+                      variable.name = "var",value.name = "val")
+ggplot(basic.ori.df3,aes(x=lane,y=val)) + geom_boxplot() + coord_flip() +
+  facet_wrap(~var,ncol=5,scale="free")
+ggplot(basic.ori.df3,aes(x=kingdom,y=val)) + geom_boxplot() + coord_flip() +
+  facet_wrap(~var,ncol=5,scale="free")
+```
+
+```{r p2}
+selectSID <- c("Z1","Z2","Z3","M4","M5","M6",paste0(rep(c("S","O"),each=6),rep(seq(1,6),2)))
+p2.1 <- ggplot(basic.sam.df2%>%filter(SID%in%selectSID),aes(x=SID)) +
+  geom_bar(aes(y=QC.reads/1e6),stat="identity",fill=NA,color="black") +
+  geom_bar(aes(y=BB.reads/1e6),stat="identity",fill="grey50",color=NA) +
+  geom_bar(aes(y=BB.singleton/1e6),stat="identity",fill="brown1",color=NA) +
+  ylab("# reads/ Mb")
+p2.1
+
+bsd2.stat <- ddply(basic.sam.df2%>%filter(SID%in%selectSID),
+   "RCA",summarise,QC.reads=mean(QC.reads),BB.reads=mean(BB.reads),BB.singleton=mean(BB.singleton),
+   read.pct=mean(BB.reads)/mean(QC.reads),singleton.pct=mean(BB.singleton)/mean(QC.reads))
+bsd2.stat
+p2.2 <- ggplot(bsd2.stat,aes(x="mean")) +
+  geom_bar(aes(y=QC.reads/1e6),stat="identity",fill=NA,color="black") +
+  geom_bar(aes(y=BB.reads/1e6),stat="identity",fill="grey50",color=NA) +
+  geom_bar(aes(y=BB.singleton/1e6),stat="identity",fill="brown1",color=NA,width=.85) +
+  ylab("# reads/ Mb")
+p2.2
+
+basic.sam.df3 <- melt(basic.sam.df2,
+   id.vars = colnames(basic.sam.df2)[1:5], variable.name = "var",value.name = "val")
+
+ggplot(basic.sam.df2,aes(x=SID)) +
+  geom_bar(aes(y=QC.reads),stat="identity",fill=NA,color="black") +
+  geom_bar(aes(y=BB.reads),stat="identity",fill="grey50",color=NA) +
+  geom_bar(aes(y=BB.singleton),stat="identity",fill="brown1",color=NA)
+
+
+BB.stat <- melt(ddply(basic.sam.df2,"SID",summarise,BB.detect=BB.reads/QC.reads,BB.sing=BB.singleton/BB.reads),
+                id.vars = "SID",variable.name = "var",value.name = "pecentage")
+ddply(BB.stat,"var",summarise,pct=mean(pecentage))
+ddply(basic.sam.df2,c("kingdom","SID"),summarise,ASM.pct=ASM.beads/BB.beads)
+```
+
+```{r}
+ggplot(basic.sam.df2,aes(x=SID)) +
+  geom_bar(aes(y=ASM.beads),stat="identity",fill=NA,color="black") +
+  geom_bar(aes(y=ASM.clips),stat="identity",fill="grey50",color=NA)
+
+ggplot(basic.sam.df2%>%filter(lane%in%seq(1,6)),aes(x=SID)) +
+  geom_bar(aes(y=BB.beads),stat="identity",fill=NA,color="black") +
+  geom_bar(aes(y=ASM.beads),stat="identity",fill="grey50",color=NA) +
+  geom_bar(aes(y=ASM.clips),stat="identity",fill="brown1",color=NA)
+
+ggplot(ddply(basic.sam.df2%>%filter(lane%in%seq(1,6)),c("kingdom","SID"),summarise,pct=ASM.beads/BB.beads),
+       aes(x=kingdom,y=pct)) +geom_boxplot()
+```
+
+
+```{r }
+BB.mdat <- merge(metadata.df,ORI.BB.stat,by="tag")
 BI.lst$BI <- sprintf("BI%08d",BI.lst$BI0)
 #mdat.ctg <- merge(merge(BI.lst,contig.tsv,by="BI"),B.kmer[,-2],by="BB")
 mdat.ctg <- merge(merge(BI.lst,contig.tsv,by="BI"),BI.freq.tsv[,-c(2:3)],by="BB")
@@ -117,23 +229,89 @@ mdat.ctg$kCov <- mdat.ctg$rpb*140/mdat.ctg$kmers
 mdat.ctg$kCov0 <- round(mdat.ctg$kCov,0)
 mdat.ctg$h12 <- round(mdat.ctg$hash1/mdat.ctg$hash2,0)
 mdat.ctg$rpbin <- round(mdat.ctg$rpb/mdat.ctg$bins,0)
-
+```
+```{r p4}
 ggplot(mdat.ctg%>%filter(cov0<50),aes(x=factor(cov0),y=len,fill=factor(flag))) + geom_boxplot()
 ggplot(mdat.ctg,aes(x=factor(len0),y=kCov,fill=factor(flag))) + geom_boxplot()
 ggplot(mdat.ctg,aes(x=factor(kCov0),y=len,fill=factor(flag))) + geom_boxplot()
 ggplot(mdat.ctg%>%filter(h12<20),aes(x=factor(h12),y=len,fill=factor(flag))) + geom_boxplot()
 ggplot(mdat.ctg%>%filter(rpbin<100),aes(x=factor(rpbin),y=len,fill=factor(flag))) + geom_boxplot()
-```
-```{r}
 ggplot(mdat.ctg%>%filter(bins<49),aes(x=factor(bins),y=len,fill=factor(flag))) + geom_boxplot()
 ```
 
 #BB.stat
-```{r}
-ggplot(BB.mdat,aes(x=rpb,y=count,color=SAM,group=tag)) + geom_line() + 
-  scale_y_log10() + scale_x_log10() + annotation_logticks()
+```{r bb}
+# Get unbarcoded reads number
+basic.sam.df2$UB.reads <- basic.sam.df2$QC.reads - basic.sam.df2$BB.reads
+sam.BB0.dat <- merge(metadata,basic.sam.df2[,c("SID","UB.reads","UB.reads")],by="SID")
+colnames(sam.BB0.dat)[8:9] <- c("count","rpb")
+sam.BB0.dat$rpb <- 0
+sam.BB0.dat$cumsum <- NA
+#
+sam.BB.mdat <- rbind(sam.BB0.dat,merge(metadata,SAM.BB.stat,by.x="SID",by.y="tag"))
+sam.BB.mdat$reads <- ifelse(sam.BB.mdat$rpb<2,sam.BB.mdat$count,sam.BB.mdat$count*sam.BB.mdat$rpb)
+#
+p5.1 <- ggplot(sam.BB.mdat%>%filter(SID%in%selectSID),aes(x=rpb,y=count,color=SAM,linetype=kingdom,group=SID)) + geom_line(size=1,alpha=.5) + 
+  scale_y_log10() + scale_x_log10() + annotation_logticks() +
+  xlab("reads/bead") + ylab("# Beads")
+p5.1
+
+p5.2 <- ggplot(sam.BB.mdat%>%filter(SID%in%selectSID&rpb!=0),aes(x=rpb,y=reads,color=SAM,linetype=kingdom,group=SID)) + geom_line(size=1,alpha=.5) + 
+  scale_x_log10() +annotation_logticks(sides = "b") +
+  xlab("reads/bead") + ylab("# reads") + theme_bw()
+p5.2
 ```
 
+**kmers**
+```{r p6}
+BI.msh.df <- merge(metadata,BI.msh.tsv,by="SID")
+quanFun <- function(d,x){
+  if(nrow(d)>1){
+    var <- d[,which(colnames(d)==x)]
+    d <- d[order(var),]
+    n=sum(d$count)
+    d$cumsum <- cumsum(d$count)
+    i05 <- which(d$cumsum>n/40)[1] -1 
+    i25 <- which(d$cumsum>n/4)[1] -1 
+    i50 <- which(d$cumsum>n/2)[1] -1
+    i75 <- which(d$cumsum>n*3/4)[1] -1 
+    i95 <- which(d$cumsum>n*39/40)[1] -1 
+    res <- d[1,]
+    if(i05==0){i05=1}
+    if(i25==0){i25=1}
+    if(i50==0){i50=1}
+    if(i75==0){i75=1}
+    if(i95==0){i95=1}
+    res$kmer.min <- var[i05]
+    res$kmer.q25 <- var[i25]
+    res$kmer.q50 <- var[i50]
+    res$kmer.q75 <- var[i75]
+    res$kmer.max <- var[i95]
+    return(res)
+  }
+}
+
+BI.msh.stat <- ddply(BI.msh.df%>%filter(SID%in%selectSID),colnames(BI.msh.df)[-6],summarise,count=sum(count))
+BI.msh.stat$rpbs <- ifelse(BI.msh.stat$rpb<100,round(BI.msh.stat$rpb/5,0)*5,ifelse(
+  BI.msh.stat$rpb<1000,round(BI.msh.stat$rpb/50,0)*50,">999"))
+BI.msh.stat.sam <- ddply(BI.msh.stat,c("RCA","kindom","rpbs","kmers"),summarise,count=sum(count))
+BI.msh.stat.sam.qt <- ddply(BI.msh.stat.sam,c("RCA","kindom","rpbs"),quanFun,"kmers")
+BI.msh.stat.sam.qt$rpbs <- factor(BI.msh.stat.sam.qt$rpbs,levels=c(seq(1,999),">999"))
+p6.1 <- ggplot(BI.msh.stat.sam.qt%>%filter(rpbs!=">999"),aes(x=rpbs,y=kmers,fill=kindom)) + 
+  geom_boxplot(aes(ymin = kmer.min, lower = kmer.q25, middle = kmer.q50, upper = kmer.q75, ymax = kmer.max),
+   stat = "identity") + theme(axis.text.x = element_text(angle = -90))
+p6.1
+
+BI.msh.stat$cpk <- round(BI.msh.stat$rpb*170/BI.msh.stat$kmers,0)
+BI.msh.stat.sam2 <- ddply(BI.msh.stat,c("RCA","kindom","rpbs","cpk"),summarise,count=sum(count))
+BI.msh.stat.sam2.qt <- ddply(BI.msh.stat.sam2,c("RCA","kindom","rpbs"),quanFun,"cpk")
+BI.msh.stat.sam2.qt$rpbs <- factor(BI.msh.stat.sam.qt$rpbs,levels=c(seq(1,999),">999"))
+p6.2 <- ggplot(BI.msh.stat.sam2.qt%>%filter(rpbs!=">999"),aes(x=rpbs,y=cpk,fill=kindom)) + 
+  geom_boxplot(aes(ymin = kmer.min, lower = kmer.q25, middle = kmer.q50, upper = kmer.q75, ymax = kmer.max),
+   stat = "identity") + theme(axis.text.x = element_text(angle = -90))
+p6.2
+
+```
 
 ```{r}
 BI.num <- as.data.frame(table(mdat.ctg$BI))
