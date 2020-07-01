@@ -57,6 +57,7 @@ Zymo mock strains:
 # load 
 ```{r}
 metadata <- read.csv("../../Results/JAN20/metadata.csv")
+metadata$SAM <- substr(metadata$SID,1,1)
 ```
 
 #stat blast annotation of clips fasta to silva database
@@ -85,8 +86,8 @@ RDFile0 <- "../../Results/JAN20/STAT/clipSLV.ACB.RData" #c87dd3d0c227e3839d2139d
 RDFile1 <- "../../Results/JAN20/STAT/clipSLV.A.RData"
 RDFile2<- "../../Results/JAN20/STAT/clipSLV.CB.RData"
 if(file.exists(RDFile1)||file.exists(RDFile1)){
-  load(md5(RDFile1,"4035d72341ae92c5abc5c46c8c6e0d46"))
-  load(md5(RDFile2,"035ca071b8f6b0bcd4beb1d7be26983e"))
+  load(md5(RDFile1,"8f761b90f6a4d4bb5b43dc1b31a64665"))
+  load(md5(RDFile2,"17bcaaeda6d6c91a2485f70f0e5619a2"))
 }else{
   message("Not found RData file. Creating ...",appendLF = F)
   comm.names <- c("saccver", "pident", "length", "mismatch", "gapopen", "qstart", 
@@ -105,7 +106,7 @@ if(file.exists(RDFile1)||file.exists(RDFile1)){
   
   clip.slv.stat.bead <-read.table("../../Results/JAN20/STAT/megahit.clip.slv.stat.beads",
     sep="\t",as.is = T,quote = "",comment.char="",
-    col.names = c("SID","BB", "clips","annos", "clv", "cName","path"))
+    col.names = c("SID","BB", "clips","annos","c.Both","c.SSU","c.LSU", "clv", "cName","path"))
   
   save(clip.slv.stat.anno,file=RDFile1)
   tools::md5sum(RDFile1)
@@ -129,6 +130,7 @@ csdf$BB <- substr(csdf$BNo,1,10)
 csdf$SAM<- substr(csdf$SID,1,1)
 csdf$samType <- ifelse(csdf$SAM%in%c("M","Z"),"mock",
                        ifelse(csdf$SAM%in%c("O","S"),"soil",ifelse(csdf$SAM%in%c("Y","U"),"single",NA)))
+csdf$length <- ifelse(is.na(csdf$SSU.length),csdf$LSU.length,csdf$SSU.length)
 
 pFun <- function(x){
   res <- c(rep(NA,8),-1,-1)
@@ -144,20 +146,11 @@ pFun <- function(x){
   }
 }
 
-the.names <- c("k","p","c","o","f","g","s","t","lv","clv")
-clv.path <- as.data.frame(t(sapply(clip.slv.sc$cTax,pFun,USE.NAMES=F)))
+the.names <- c("k","p","c","o","f","g","s","t","plv","pclv")
+clv.path <- as.data.frame(t(sapply(clip.slv.sc$cPath,pFun,USE.NAMES=F)))
 colnames(clv.path) <- the.names
-clv.path.df <- cbind(csdf[,1:6],clv.path)
+clv.path.df <- cbind(csdf[,c(1:11,16,39:41,12,37)],clv.path)
 ```
-
-Sum clips to beads:
-```{r}
-clip.slv.sb <- merge(metadata,clip.slv.stat.bead,by="SID")
-cbdf <- merge(bb_clips,clip.slv.sb,by=c("SID","BB"))
-cbdf$SID <- droplevels(cbdf$SID)
-
-```
-
 
 Basic numbers:
 ```{r}
@@ -167,31 +160,58 @@ cbdf$anno10 <- factor(ifelse(cbdf$annos>10,">10",cbdf$annos),levels=c(seq(1,10),
 ggplot(cbdf,aes(x=SID,fill=anno10)) + geom_bar(position="stack")
 
 ggplot(cbdf,aes(x=factor(clips),fill=anno10)) + geom_bar(position="stack") + 
-  facet_wrap(~kindom+SAM,scale="free_x")
+  facet_wrap(~kindom+SAM,scale="free")
 ggplot(cbdf,aes(x=factor(clips),fill=anno10)) + geom_bar(position="fill") + 
   facet_wrap(~kindom+SAM,scale="free_x")
 ```
-
-Clip lengths:
-```{r}
-p <- ggplot(csdf,aes(x=SSU.qlen,color=lane))
-p + geom_density() + facet_wrap(~kindom+SAM,ncol=3,scale="free")
-```
-
 
 Unit detection:
 
 ```{r}
 csdf$unit <- factor(csdf$unit,levels=c("Both","Either","UNK","SSU","LSU","NONE"))
-table(csdf$unit,csdf$SID)
+csdf$unit3 <- csdf$unit
+levels(csdf$unit3) <- c("Both","Both","Both","SSU","LSU","NONE")
+table(csdf$unit3,csdf$SID)
 BID.2U <- unique(csdf$BB[which(csdf$unit%in%c("Both","Either","UNK"))])
+BID.chimera <- unique(csdf$BB[grep(">.+.<|<..+..>",csdf$pattern)])
+BID.nonChimera <- unique(csdf$BB[grep("S>.+.L>|<S.+.<L|L>.+.S>|<L.+.<S",csdf$pattern)])
 ```
 
 
 ```{r}
-p <- ggplot(csdf,aes(x=SID,fill=unit))
+p <- ggplot(csdf,aes(x=SID,fill=unit3))
 p + geom_bar(position="stack")
 p + geom_bar(position="fill")
+
+```
+```{r}
+csdf.M <- ddply(csdf%>%filter(SID%in%c("Z1","Z2","Z3","M4","M5","M6")),c("SID","unit3"),summarise,count=length(BNo))
+csdf.M2 <- ddply(csdf.M,"SID",transform,pct=round(count/sum(count)*100,0))
+csdf.M2$pct2 <- paste0(csdf.M2$pct,"%")
+p2 <- ggplot(csdf.M2,aes(x=SID,y=pct,fill=unit3))
+p2 + geom_bar(stat="identity",position="stack") + geom_text(aes(label=pct2),position = "stack")
+
+```
+
+```{r}
+csdf.ML <- csdf%>%filter(SID%in%c("Z1","Z2","Z3","M4","M5","M6"))
+csdf.ML$len <- round(csdf.ML$SSU.qlen/100,0)*100
+csdf.MLS <- ddply(csdf.ML,c("kindom","unit3","len"),summarise,count=length(BNo))
+csdf.MLP <- ddply(csdf.MLS,c("kindom","len"),transform,pct=round(count/sum(count)*100,0))
+csdf.MLP$pct2 <- paste0(csdf.MLP$pct,"%")
+p2 <- ggplot(csdf.MLP,aes(x=factor(len),y=pct,fill=unit3)) + facet_grid(.~kindom,scale="free",space="free") +
+ geom_bar(stat="identity",position="fill") +
+ theme(axis.text.x = element_text(angle = -90)) #+ geom_text(aes(label=pct2),position = "stack")
+p2
+p3 <- ggplot(csdf.MLP,aes(x=factor(len),y=count,fill=unit3)) + facet_grid(.~kindom,scale="free",space="free") +
+ geom_bar(stat="identity",position="stack") +theme(axis.text.x = element_text(angle = -90))
+p3
+```
+
+Clip units' lengths:
+```{r}
+p <- ggplot(csdf,aes(x=SSU.qlen,linetype=lane,color=unit3))
+p + geom_density() + facet_wrap(~kindom+SAM,ncol=3,scale="free")
 
 ```
 
@@ -203,6 +223,12 @@ ggplot(csdf,aes(x=unit,fill=Rpat)) +geom_bar(position="stack") +
   facet_wrap(~kindom+SAM,ncol=3,scales="free") +coord_flip()
 ```
 
+```{r}
+p <- ggplot(csdf,aes(x=maxIdent,color=factor(clv),linetype=lane)) +
+  geom_density() + facet_wrap(~kindom+SAM,ncol=3,scale="free") +
+  scale_x_continuous(breaks=seq(90,100,2))
+p
+```
 
 
 Aligned length dist of 'Both' unit:
@@ -222,7 +248,7 @@ ggplot(both.df,aes(x=SID,fill=factor(clv))) + geom_bar(position="stack") +
   ggtitle("barplot of consist tax level in each unit")
 ```
 
- Delta distribution of each 'unit':
+Delta distribution of each 'unit':
 ```{r}
 ggplot(csdf,aes(x=minDelta,color=unit,linetype=lane)) +geom_density() +
   facet_wrap(~kindom+SAM,ncol=3,scale="free") + ggtitle("delta dist")
@@ -338,6 +364,31 @@ ggplot(csdf%>%filter(SSU.qlen>999),aes(x=SSU.pident,y=LSU.pident)) +
   scale_y_continuous(breaks=seq(90,100,2),limits=c(90,100)) +
   ggtitle("Comaprison of identity of SSU and LSU with clips > 1kb")
 ```
+
+```{r}
+csdfM <- csdf%>%filter(SID%in%c("Z1","Z2","Z3","M4","M5","M6"))
+ggplot(csdfM,aes(x=SSU.pident,y=LSU.pident)) + 
+  #stat_density2d(geom="raster",h=c(100,100),contour=F) + 
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
+  facet_wrap(~kindom+SAM,ncol=1,scale="free") + 
+  scale_x_continuous(breaks=seq(90,100,2),limits=c(90,100)) +
+  scale_y_continuous(breaks=seq(90,100,2),limits=c(90,100)) +
+  ggtitle("Comaprison of identity of SSU and LSU with clips > 1kb")
+```
+```{r}
+ggplot(csdfM%>%filter(minRange>999),aes(x=minRange,y=maxIdent)) + 
+  #stat_density2d(geom="raster",h=c(100,100),contour=F) + 
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
+  facet_wrap(~kindom+SAM,ncol=1,scale="free") + 
+  #scale_x_continuous(breaks=seq(90,100,2),limits=c(90,100)) +
+  #scale_y_continuous(breaks=seq(90,100,2),limits=c(90,100)) +
+  ggtitle("Comaprison of identity and aligned length with clips > 1kb") +
+  xlab("Aligned length") + ylab("Identity")
+
+```
+
 
 ```{r}
 ggplot(csdf%>%filter(SSU.qlen<=999),aes(x=SSU.pident,y=LSU.pident)) + 
@@ -556,16 +607,119 @@ clips identity of SSU and LSU
 **Get path**
 ```{r}
 csbdf <- merge(metadata,clip.slv.stat.bead,by="SID")
-csbdf$SAM <- substr(csbdf$SID,1,1)
 csbdf$SAM <- factor(csbdf$SAM,levels=c("S","O","M","Z","Y","U"))
 csbdf$BSU <- ifelse(csbdf$BB%in%BID.2U,T,F)
-
-
+csbdf$BNC <- ifelse(csbdf$BB%in%BID.nonChimera,T,F)
+csbdf$unit <- ifelse(csbdf$c.Both>0|(csbdf$c.LSU>0&csbdf$c.SSU>0),"Both",
+                     ifelse(csbdf$c.LSU>0,"LSU",ifelse(csbdf$c.SSU>0,"SSU","NONE")))
 #the.names <- c("k","p","c","o","f","g","s","t")
 csb.path <- as.data.frame(t(sapply(csbdf$path,pFun,USE.NAMES=F)))
 colnames(csb.path) <- the.names
 csb.path.df <- cbind(csbdf,csb.path)
 ```
+
+Sum beads length
+```{r}
+
+library(doSNOW)
+sFun <- function(d){
+  res <- ddply(d,c("SID","BB"),summarise,len=sum(length),ident=max(maxIdent))
+  return(res)
+}
+
+cl <- makeCluster(6, type = "SOCK")
+registerDoSNOW(cl)
+csdb.len <- ddply(csdf[,c("SAM","SID","BB","length","maxIdent")],c("SAM"),sFun,.parallel=T)
+stopCluster(cl)
+
+csdb.len$lane <- substr(csdb.len$SID,2,2)
+csdb.len$kingdom <- ifelse(csdb.len$lane%in%seq(1,3),"Bacteria","Fungi")
+
+csdb.len.stat <- ddply(csdb.len%>%filter(len>999),"SID",summarise,BB.count=length(BB),BB.len=median(len),BB.ident=mean(ident))
+
+csdb.len.stat.df <- merge(metadata,csdb.len.stat,by="SID")
+csdb.len.stat.df$SAM <- substr(csdb.len.stat.df$SID,1,1)
+ddply(csdb.len.stat.df,c("kindom","SAM"),summarise,count=mean(BB.count),len=mean(BB.len),ident=mean(BB.ident))
+csdb.len.sdf <- merge(csbdf,csdb.len[,c("SID","BB","len","ident")],by=c("SID","BB"))
+```
+
+```{r}
+csbf1 <- csdb.len.sdf%>%filter(clv>5&len>499&ident>99)
+csbf1$SamType <- csbf1$SAM
+levels(csbf1$SamType) <- c("S","S","M","Z","Y","U")
+csbf1.uniq <- unique(csbf1[,c("SID","RCA","kindom","lane","rep","SamType","cName")])
+
+csbf1.uniq.ct <- ddply(csbf1.uniq,c("kindom","SamType","SID"),summarise,count=length(cName))
+```
+```{r}
+soilSID <- paste0(rep(c("S","O"),each=6),rep(seq(1,6),2))
+csbf1.uniq.ct.soil <- csbf1.uniq.ct%>%filter(SID%in%soilSID)
+
+ggplot(csbf1.uniq.ct.soil,aes(x=SID,y=count,fill=kindom)) +geom_bar(stat="identity")  +
+  facet_grid(.~kindom,scale="free")
+```
+
+
+```{r}
+csbp1 <- csb.path.df%>%filter(clv>5)
+csbp1$SamType <- csbp1$SAM
+levels(csbp1$SamType) <- c("S","S","M","Z","Y","U")
+csbp1.uniq <- unique(csbp1[,c("SID","RCA","kindom","lane","rep","SamType","cName","p")])
+
+csbp1.uniq.ct <- ddply(csbp1.uniq,c("kindom","SamType","SID","p"),summarise,count=length(cName))
+
+csbp1.uniq.ct.soil <- csbp1.uniq.ct%>%filter(SID%in%soilSID)
+
+ggplot(csbp1.uniq.ct.soil,aes(x=SID,y=count,fill=p)) +geom_bar(stat="identity",position="stack")  +
+  facet_grid(.~kindom,scale="free")
+```
+```{r}
+csb.path.S.df <- csb.path.df%>%filter(SID%in%soilSID)
+csbp.S.uniq <- unique(csb.path.S.df[,c("SID","RCA","kindom","cName","clv")])
+csbp.S.uniq.ct <- ddply(csbp.S.uniq,c("kindom","SID","clv"),summarise,count=length(cName))
+
+ggplot(csbp.S.uniq.ct,aes(x=SID,y=count,fill=factor(clv))) + geom_bar(stat="identity",position="stack")  +
+  facet_grid(.~kindom,scale="free")
+```
+```{r}
+csbp1.uniq.ct <- ddply(csbp1.uniq,c("kindom","SamType","SID","p"),summarise,count=length(cName))
+
+csbp1.uniq.ct.soil <- csbp1.uniq.ct%>%filter(SID%in%soilSID)
+
+ggplot(csbp1.uniq.ct.soil,aes(x=SID,y=count,fill=p)) +geom_bar(stat="identity",position="stack")  +
+  facet_grid(.~kindom,scale="free")
+```
+
+## filter mock
+```{r}
+csbf1.M <- csdb.len.sdf%>%filter(clv>5&len>999&SAM%in%c("M","Z")&unit=="Both")
+ddply(csbf1.M,c("kindom","SAM"),summarise,avg.ident=mean(ident),med.ident=median(ident),
+      avg.len=mean(len),med.len=median(len),count.Both=length(unit))
+```
+
+## filter soil
+```{r}
+csbf1.S <- csdb.len.sdf%>%filter(len>999&SAM%in%c("S","O")&unit=="Both")
+csbf1.S$SamType <- csbf1.S$SAM
+levels(csbf1.S$SamType) <- c("S","S","M","Z","Y","U")
+
+ddply(csbf1.S,c("kindom","SamType"),summarise,avg.ident=mean(ident),med.ident=median(ident),length=mean(len),count=length(BB),
+      cl5=length(which(clv>5))/length(clv))
+csbf1.S.uniq <- unique(csbf1.S[,c("SID","RCA","kindom","lane","rep","SamType","cName")])
+
+
+statA <- ddply(csbf1.S.uniq,c("kindom","SamType","SID","lane"),summarise,count=length(cName))
+ddply(statA,c("kindom","SamType"),summarise,a.count=mean(count),m.count=median(count))
+ggplot(csbf1,aes(x=SID,fill=unit)) + geom_bar() + 
+  facet_wrap(~kindom+SAM,ncol=3,scale="free")
+
+ggplot(csbf1,aes(x=ident,color=unit,linetype=lane)) +
+  geom_density() + facet_wrap(~kindom+SAM,ncol=3,scale="free") +
+  scale_x_continuous(breaks=seq(90,100,2))
+
+```
+
+
 
 ```{r,warning=FALSE}
 ggplot(csbdf,aes(x=BSU,fill=factor(clv))) + geom_bar() + 
@@ -586,7 +740,10 @@ ggplot(csbdf%>%filter(kindom=="FUNGI"),aes(x=factor(clips),fill=factor(clv))) + 
 
 **taxonomies counts**
 ```{r}
-cs.s.df <- unique(csb.path.df[,c("kindom","SAM","lane","BSU","cName")])
+cs.s.df <- unique(cbind(csb.path.df[,c("kindom","SAM","lane","BSU","cName")],unit=csbdf$unit))
+
+ggplot(cs.s.df,aes(x=lane,fill=unit)) + geom_bar(position="dodge") + 
+  facet_wrap(~kindom+SAM,ncol=5,scale="free")
 
 comFun <- function(d){
   if(length(d$BSU)==2){
@@ -609,17 +766,49 @@ ggplot(cs.s.df2,aes(x=BSU,fill=type)) + geom_bar(position="stack") +
 
 
 **taxonomies distribution** **BAC**  
+clips:
 ```{r}
-ggplot(csb.path.df%>%filter(kindom=="BAC"),aes(x=BSU,fill=factor(p))) + geom_bar(position="fill") + 
+pchar <- as.character(clv.path.df$p)
+pFreq <- as.data.frame(rev(sort(table(pchar))))
+pname <- as.character(pFreq$pchar[which(pFreq$Freq>999)])
+clv.path.df$phylum <- ifelse(pchar%in%pname,
+  ifelse(grepl("Candidatus",pchar),"Candidatus group", ifelse(grepl("candidate",pchar),"candidate group",pchar)),
+  ifelse(is.na(pchar),NA,"Others"))
+clv.path.df$phylum <- factor(clv.path.df$phylum,levels=c(pname,"Others"))
+
+clv.path.dfu <- unique(clv.path.df[,c(1:5,7,14,15,18:25,28)])
+```
+
+unique taxonmies distribution:
+```{r}
+ggplot(clv.path.dfu%>%filter(kindom=="BAC"),aes(x=unit,fill=phylum)) + geom_bar(position="stack") +
   facet_wrap(~SAM+lane,ncol=3,scale="free")
-ggplot(csb.path.df%>%filter(kindom=="BAC"),aes(x=BSU,fill=factor(c))) + geom_bar(position="fill") + 
-  facet_wrap(~SAM+lane,ncol=6,scale="free") + guides(fill=F)
-ggplot(csb.path.df%>%filter(kindom=="BAC"),aes(x=BSU,fill=factor(o))) + geom_bar(position="fill") + 
-  facet_wrap(~SAM+lane,ncol=6,scale="free") + guides(fill=F)
-ggplot(csb.path.df%>%filter(kindom=="BAC"),aes(x=BSU,fill=factor(f))) + geom_bar(position="fill") + 
-  facet_wrap(~SAM+lane,ncol=6,scale="free") + guides(fill=F)
-ggplot(csb.path.df%>%filter(kindom=="BAC"),aes(x=BSU,fill=factor(g))) + geom_bar(position="fill") + 
-  facet_wrap(~SAM+lane,ncol=6,scale="free") + guides(fill=F)
+ggplot(clv.path.dfu%>%filter(kindom=="BAC"),aes(x=unit,fill=phylum)) + geom_bar(position="fill") +
+  facet_wrap(~SAM+lane,ncol=3,scale="free")
+ggplot(clv.path.dfu%>%filter(kindom=="FUNGI"),aes(x=unit,fill=phylum)) + geom_bar(position="stack") +
+  facet_wrap(~SAM+lane,ncol=3,scale="free")
+ggplot(clv.path.dfu%>%filter(kindom=="FUNGI"),aes(x=unit,fill=phylum)) + geom_bar(position="fill") +
+  facet_wrap(~SAM+lane,ncol=3,scale="free")
+```
+
+clips' taxonomiy distribution
+```{r}
+ggplot(clv.path.df%>%filter(kindom=="BAC"),aes(x=unit,fill=phylum)) + geom_bar(position="stack") +
+  facet_wrap(~SAM+lane,ncol=3,scale="free")
+ggplot(clv.path.df%>%filter(kindom=="BAC"),aes(x=unit,fill=phylum)) + geom_bar(position="fill") +
+  facet_wrap(~SAM+lane,ncol=3,scale="free")
+ggplot(clv.path.df%>%filter(kindom=="FUNGI"),aes(x=unit,fill=phylum)) + geom_bar(position="stack") +
+  facet_wrap(~SAM+lane,ncol=3,scale="free")
+ggplot(clv.path.df%>%filter(kindom=="FUNGI"),aes(x=unit,fill=phylum)) + geom_bar(position="fill") +
+  facet_wrap(~SAM+lane,ncol=3,scale="free")
+```
+
+beads with enough long and unknown part:
+```{r}
+ggplot(clv.path.df%>%filter(kindom=="BAC"&SSU.length>999),aes(x=unit,fill=phylum)) + geom_bar(position="stack") +
+  facet_wrap(~SAM+lane,ncol=3,scale="free")
+ggplot(clv.path.df%>%filter(kindom=="FUNGI"&SSU.length>999),aes(x=unit,fill=phylum)) + geom_bar(position="stack") +
+  facet_wrap(~SAM+lane,ncol=3,scale="free")
 ```
 
 ```{r}
@@ -638,12 +827,31 @@ ggplot(csb.path.df%>%filter(kindom=="FUNGI"),aes(x=BSU,fill=factor(g))) + geom_b
 ggplot(csb.path.df%>%filter(kindom=="FUNGI"),aes(x=BSU,fill=factor(s))) + geom_bar(position="stack") + 
   facet_wrap(~SAM+lane,ncol=6,scale="free") + guides(fill=F)
 ```
-Trust tax distribution
+
+
+beads units stat
 ```{r}
-zymo.df <- csb.path.df%>%filter(SAM=="Z")
-top10.zymo <- names(rev(sort(table(zymo.df$s)))[1:12])
-zymo.df$Tax <- ifelse(zymo.df$s%in%top10.zymo,as.character(zymo.df$s),"Others")
-ggplot(zymo.df,aes(x=BSU,fill=Tax)) + geom_bar(position="fill") + facet_grid(.~SID)
+
+library(doSNOW)
+sFun <- function(d){
+  res <- ddply(d,c("SID","RCA","kindom","lane","rep","BB","unit","SAM"),function(d) {
+    dunits <- as.character(d$unit)
+    LSU.ind <- grep("Both|Either|UNK|LSU",d$unit)
+    SSU.ind <- grep("Both|Either|UNK|SSU",d$unit)
+    res <- cbind(d[1,c("SID","SAM","RCA","kindom","lane","rep","BB","samType")],
+      LSU.count=length(LSU.ind), SSU.count=length(SSU.ind), 
+      LSU.length=mean(d$LSU.length[LSU.ind]), SSU.length=mean(d$SSU.length[SSU.ind])
+    )
+    return(res)
+  })
+  return(res)
+}
+
+cl <- makeCluster(6, type = "SOCK")
+registerDoSNOW(cl)
+bs.stat.df <- ddply(csdf,c("SAM"),sFun,.parallel=T)
+stopCluster(cl)
+
 ```
 
 ```{r}

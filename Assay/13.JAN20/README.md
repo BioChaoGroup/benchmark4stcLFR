@@ -34,6 +34,9 @@ metabbq smk -j -np ORI/FF{4,5,6,A,B,C}_{9,10,11,12,13,20,15,16}/clean/BB.stat
 #for Non-RCA bac & fungi
 metabbq smk -j -np ORI/FF{7,8,9}_{1,3,17,4,5,22,7,8}/clean/BB.stat
 
+#stat
+for i in `ls -d ORI/FF*`;do metabbq stat basic -p $i -o $i/stat/basic.log & done
+cat ORI/FF*/stat/basic.log|sort -nr|uniq > STAT/ORI.basic.log
 ```
 
 After `fastp`, we can merge samples together:
@@ -97,6 +100,18 @@ echo cat ORI/FF$i\_{15,16}/clean/fastp.sort.$j.fq \| paste - - - - \| sort -T SA
 done;done
 metabbq smk -j -np SAM/{S,O,M}{A,B,C}/clean/BB.stat
 #
+```
+
+stat combined basic numbers:
+```bash
+for i in `ls -d SAM/??`;do mkdir -p $i/stat && metabbq stat basic -p $i -o $i/stat/basic.log & done
+for i in `ls ORI|grep FF`;do awk -v i=$i '{print i"\t"$0}' ORI/$i/clean/BB.stat; done > STAT/ORI.BB.stat
+for i in `ls SAM`;do awk -v i=$i '{print i"\t"$0}' SAM/$i/clean/BB.stat; done > STAT/SAM.BB.stat
+
+cat SAM/{{M,Z}{1,2,3},{M,Y}{4,5,6}}/stat/basic.log|sort|uniq > STAT/SAM.basic.single.log
+cat SAM/{{U,S,O}{1,2,3},{S,O}{4,5,6}}/stat/basic.log|sort|uniq > STAT/SAM.basic.RCA.log
+cat SAM/{{S,O,Z}{7,8,9},{S,O,M}{A,B,C}}/stat/basic.log|sort|uniq > STAT/SAM.basic.NOR.log
+
 ```
 
 Run following steps:
