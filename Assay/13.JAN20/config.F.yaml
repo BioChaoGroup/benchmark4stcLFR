@@ -9,19 +9,27 @@ distCutoff: 0.04
 divideSH: 8
 
 BB_LIST: "../../Source/REF/barcode.list"
-REF_GEN: "../../Source/REF/fungal7mix/MIX7.fa"
+#REF_GEN: "../../Source/REF/fungal7mix/MIX7.fa"
 
-REF_FA: "../../Source/REF/fungal7mix/MIX7.fa"
-REF_ID: "../../Source/REF/fungal7mix/MIX7.faID"
+#REF_FA: "../../Source/REF/fungal7mix/MIX7.fa"
+#REF_ID: "../../Source/REF/fungal7mix/MIX7.faID"
 
-REF_nt: "$MDB/NCBI/blast_nt/nt"
-REF_silva: "../../Source/REF/silva132/combine/SILVA_132_SSU_LSU_tax_DNA.blast"
+#REF_nt: "$MDB/NCBI/blast_nt/nt"
+
 sampleType: "F" # F(ungi) or B(acteria)
 
-closeRef:
+MockRef:
     blastdb: "$LFR/Source/REF/fungi/sanger/sanger.mock7.rRNA.fa"
     bwa_db: "$LFR/Source/REF/fungi/sanger/sanger.mock7.rRNA.fa"
-    bed: "$LFR/Source/REF/zymo/D6305.fix.rRNA.barrnap.bed"
+    bed: "$LFR/Source/REF/fungi/sanger/sanger.mock7.rRNA.ITSx.bed"
+
+OpenRef:
+    silva_SSU_blastdb: "$LFR/Source/REF/SILVA/138/SSURef_tax_silva_trunc"
+    silva_SSU_taxomap: "$LFR/Source/REF/SILVA/138/taxmap_embl_ssu_ref_138.tax"
+    silva_LSU_blastdb: "$LFR/Source/REF/SILVA/132/LSURef_tax_silva_trunc"
+    silva_LSU_taxomap: "$LFR/Source/REF/SILVA/132/taxmap_embl_lsu_ref_132.tax"
+    unite_ITS_blastdb: "$LFR/Source/REF/UNITE/sh_general_release_all_04.02.2020/UNITE_ITS_ONLY.fasta"
+    unite_ITS_taxomap: "$LFR/Source/REF/UNITE/sh_general_release_all_04.02.2020/taxmap_taxonkit_merge_ref.tax" 
 
 ### adapters
 AdRCA: AAGTCGGACGCTGATAAGGTCGCCATGCCTCTCAGTACTCCGACTT
@@ -95,6 +103,9 @@ p_VS_clust_Lid: 0.95
 #Circos
 p_cc_zoom: 1
 p_cc_cut:  97
+
+# KRAKEN2
+kk2_db: "MFR"
 
 ######################
 
