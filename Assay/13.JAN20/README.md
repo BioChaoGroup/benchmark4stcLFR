@@ -145,6 +145,7 @@ metabbq smk -j -npk SAM/{{U,O,S,M,Z}{1,2,3},{S,O,M,Y}{4,5,6}}/stat/barrnap.RSU.s
 
 # get fungal mock ref
 ```bash
+# from ncbi
 cd $LFR/Source/REF/fungi
 zcat */*.fsa_nt.gz | awk '{if($0~/>gi/){split($0,a,"|");print ">"a[4]a[5]}else{print $0}}' > merge/contig_14.fa
 makeblastdb -dbtype nucl -in merge/contig_14.fa
@@ -157,8 +158,18 @@ for i in */*.fsa_nt.gz;do
 	cat  ${i/fsa_nt.gz/rRNAregion}| xargs -n 2 samtools faidx ${i/_nt.gz} > ${i/fsa_nt.gz/rna.fa}
 done
 
-
+#from sanger
+cd $LFR/Source/REF/fungi/sanger
+sh work.sh
+vsearch --allpairs_global sanger.mock7.rRNA.fa --acceptall --blast6out sanger.mock7.rRNA.vsearch.allpairs.m6 --iddef 4
+ITSx -t F --cpu 2 -i sanger.mock7.rRNA.fa -o sanger.mock7.ITSx &> sanger.mock7.ITSx.log
+perl onetime.cutSubunits.pl
+vsearch --allpairs_global sanger.mock7.ITSx.SSU.fa --acceptall --blast6out sanger.mock7.SSU.vsearch.allpairs.m6 --iddef 4
+vsearch --allpairs_global sanger.mock7.ITSx.ITS.fa --acceptall --blast6out sanger.mock7.ITS.vsearch.allpairs.m6 --iddef 4
+vsearch --allpairs_global sanger.mock7.ITSx.LSU.fa --acceptall --blast6out sanger.mock7.LSU.vsearch.allpairs.m6 --iddef 4
 ```
+From above alignment we know the mock similarity could be as high as 99.5%! Thus we need a higher threashold for LOTU cluster.
+
 #test: range of rpb or kmers for assemble
 ```bash
 mkln ../../Results/JAN20/TEST

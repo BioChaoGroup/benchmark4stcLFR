@@ -1,0 +1,177 @@
+---
+title: "JAN20 DATA ASSESSMENT"
+author: "Chao"
+date: "1/21/2020"
+output: 
+  html_notebook:
+    code_fold: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reshape2)
+library(ggplot2)
+library(plyr)
+library(dplyr)
+library(RColorBrewer)
+library(configr)
+```
+
+# Background
+
+KRAKEN2 database source:
+
+SILVA version 138 SSU
+SILVA version 132 LSU
+
+**stat**
+```{bash}
+cd $LFR/Source/REF/KRAKEN2/SILVA132LSU
+metabbq beadsAnno.pl -m otupair -i library/lsu.fna,data/lsu.txt,data/lsu.acc_taxid -o data/vsearch.allpair.txt -v
+
+cd $LFR/Source/REF/KRAKEN2/SILVA138SSU
+metabbq beadsAnno.pl -m otupair -i library/ssu.fna,data/ssu.txt,data/ssu.acc_taxid -o data/vsearch.allpair.txt -v
+
+cd $LFR/Source/REF/KRAKEN2/UNITE/
+metabbq beadsAnno.pl -m otupair -i library/unite.fna,data/unite.txt,data/unite.acc_taxid -o data/vsearch.allpair.txt -v
+
+
+```
+
+# load 
+```{r}
+its.allpair.df <- read.table(
+  "../../Source/REF/KRAKEN2/UNITE/data/vsearch.allpair.txt",sep="\t",
+  col.names = c("rank","tax","seqs","minIdent","idents"))
+tmp <- as.data.frame(
+  matrix(as.numeric(unlist(sapply(strsplit(as.character(its.allpair.df$idents),","),"[",))),ncol=7,byrow = T))
+colnames(tmp) <- c("q01","q05","q25","q50","q75","q95","q99")
+its.allpair.df <- cbind(its.allpair.df,tmp)
+its.allpair.df$rank <- factor(its.allpair.df$rank,levels=c("domain","major_clade","kingdom","superphylum","phylum","class","subclass","order","suborder","family","genus","species","subspecies"))
+################################################################################
+lsu.allpair.df <- read.table(
+  "../../Source/REF/KRAKEN2/SILVA132LSU/data/vsearch.allpair.txt",sep="\t",
+  col.names = c("rank","tax","seqs","minIdent","idents"))
+tmp <- as.data.frame(
+  matrix(as.numeric(unlist(sapply(strsplit(as.character(lsu.allpair.df$idents),","),"[",))),ncol=7,byrow = T))
+colnames(tmp) <- c("q01","q05","q25","q50","q75","q95","q99")
+lsu.allpair.df <- cbind(lsu.allpair.df,tmp)
+lsu.allpair.df$rank <- factor(lsu.allpair.df$rank,levels=c("domain","major_clade","kingdom","superphylum","phylum","class","subclass","order","suborder","family","genus","species","subspecies"))
+################################################################################
+ssu.allpair.df <- read.table(
+  "../../Source/REF/KRAKEN2/SILVA138SSU/data/vsearch.allpair.txt",sep="\t",quote = "",
+  col.names = c("rank","tax","seqs","minIdent","idents"))
+tmp <- as.data.frame(
+  matrix(as.numeric(unlist(sapply(strsplit(as.character(ssu.allpair.df$idents),","),"[",))),ncol=7,byrow = T))
+colnames(tmp) <- c("q01","q05","q25","q50","q75","q95","q99")
+ssu.allpair.df <- cbind(ssu.allpair.df,tmp)
+ssu.allpair.df$rank <- factor(ssu.allpair.df$rank,levels=c("domain","major_clade","kingdom","superphylum","phylum","class","subclass","order","suborder","family","genus","species","subspecies"))
+```
+
+```{r}
+ggplot(lsu.allpair.df,aes(x=minIdent,color=rank)) + geom_density() +
+  scale_x_continuous(breaks=seq(0,100,2)) + ylim(c(0,0.5))
+ggplot(lsu.allpair.df,aes(x=q01,color=rank)) + geom_density() +
+    scale_x_continuous(breaks=seq(0,100,2)) + ylim(c(0,0.5))
+ggplot(lsu.allpair.df,aes(x=q05,color=rank)) + geom_density() +
+    scale_x_continuous(breaks=seq(0,100,2)) + ylim(c(0,0.5))
+ggplot(lsu.allpair.df,aes(x=q25,color=rank)) + geom_density() +
+    scale_x_continuous(breaks=seq(0,100,2)) + ylim(c(0,0.5))
+ggplot(lsu.allpair.df,aes(x=q50,color=rank)) + geom_density() +
+      scale_x_continuous(breaks=seq(0,100,2)) + ylim(c(0,0.5))
+ggplot(lsu.allpair.df,aes(x=q75,color=rank)) + geom_density() +
+      scale_x_continuous(breaks=seq(0,100,2)) + ylim(c(0,0.5))
+ggplot(lsu.allpair.df,aes(x=q95,color=rank)) + geom_density() +
+      scale_x_continuous(breaks=seq(0,100,2)) + ylim(c(0,0.5))
+ggplot(lsu.allpair.df,aes(x=q99,color=rank)) + geom_density() +
+      scale_x_continuous(breaks=seq(0,100,2)) + ylim(c(0,0.5))
+```
+```{r}
+ggplot(lsu.allpair.df,aes(x=q50,color=rank)) + geom_density() +
+      scale_x_continuous(breaks=seq(0,100,2)) + ylim(c(0,0.5))
+```
+
+
+```{r}
+ggplot(ssu.allpair.df,aes(x=minIdent,color=rank)) + geom_density() +
+  scale_x_continuous(breaks=seq(0,100,2))
+ggplot(ssu.allpair.df,aes(x=q01,color=rank)) + geom_density() +
+    scale_x_continuous(breaks=seq(0,100,2))
+ggplot(ssu.allpair.df,aes(x=q05,color=rank)) + geom_density() +
+    scale_x_continuous(breaks=seq(0,100,2))
+ggplot(ssu.allpair.df,aes(x=q25,color=rank)) + geom_density() +
+    scale_x_continuous(breaks=seq(0,100,2))
+ggplot(ssu.allpair.df,aes(x=q50,color=rank)) + geom_density() +
+      scale_x_continuous(breaks=seq(0,100,2))
+ggplot(ssu.allpair.df,aes(x=q75,color=rank)) + geom_density() +
+      scale_x_continuous(breaks=seq(0,100,2))
+ggplot(ssu.allpair.df,aes(x=q95,color=rank)) + geom_density() +
+      scale_x_continuous(breaks=seq(0,100,2))
+ggplot(ssu.allpair.df,aes(x=q99,color=rank)) + geom_density() +
+      scale_x_continuous(breaks=seq(0,100,2))
+```
+```{r}
+ggplot(ssu.allpair.df%>%filter(rank!="subspecies"),aes(x=q50,color=rank)) + geom_density() +
+      scale_x_continuous(breaks=seq(0,100,2)) + ylim(c(0,0.2))
+```
+
+
+```{r}
+ssu.allpair.melt <- melt(ssu.allpair.df,measure.vars = c("q01","q05","q25","q50","q75","q95","q99"),
+                        variable.name = "quant",value.name = "identity")
+lsu.allpair.melt <- melt(lsu.allpair.df,measure.vars = c("q01","q05","q25","q50","q75","q95","q99"),
+                        variable.name = "quant",value.name = "identity")
+its.allpair.melt <- melt(its.allpair.df,measure.vars = c("q01","q05","q25","q50","q75","q95","q99"),
+                        variable.name = "quant",value.name = "identity")
+comb.allpair.melt <- rbind(
+  cbind(unit="ssu",ssu.allpair.melt),
+  cbind(unit="lsu",lsu.allpair.melt),
+  cbind(unit="its",its.allpair.melt)
+)
+ggplot(comb.allpair.melt%>%filter(rank%in%c("domain","kingdom","phylum","class","order","family","genus","species")),
+       aes(x=identity,color=quant)) + geom_density() +
+  scale_x_continuous(breaks=seq(0,100,2)) +
+  facet_grid(rank~unit,scale="free")
+
+ggplot(comb.allpair.melt%>%filter(rank%in%c("domain","kingdom","phylum","class","order","family","genus","species")&quant=="q05"),
+       aes(x=identity,color=rank)) + geom_density() +
+  scale_x_continuous(breaks=seq(0,100,2)) +
+  facet_wrap(~unit,ncol=3,scale="free") + ylim(c(0,0.2))
+
+ggplot(comb.allpair.melt%>%filter(rank%in%c("domain","kingdom","phylum","class","order","family","genus","species")&quant=="q50"),
+       aes(x=identity,color=rank)) + geom_density() +
+  scale_x_continuous(breaks=seq(0,100,2)) +
+  facet_wrap(~unit,ncol=3,scale="free")
+
+#comb.allpair.melt.mean <- ddply(comb.allpair.melt[,c(1:3,7,8)],c("rank","tax","quant"),summarise,mident=mean(identity))
+
+#ggplot(comb.allpair.melt.mean,aes(x=mident,color=quant)) + geom_density() +
+#        scale_x_continuous(breaks=seq(0,100,2),limits = c(70,100)) +
+#  facet_wrap(~rank,ncol=2,scale="free")
+```
+
+
+# ITS
+
+```{r}
+ggplot(its.allpair.df,aes(x=minIdent,color=rank)) + geom_density() +
+  scale_x_continuous(breaks=seq(0,100,2))
+ggplot(its.allpair.df,aes(x=q01,color=rank)) + geom_density() +
+    scale_x_continuous(breaks=seq(0,100,2))
+ggplot(its.allpair.df,aes(x=q05,color=rank)) + geom_density() +
+    scale_x_continuous(breaks=seq(0,100,2))
+ggplot(its.allpair.df,aes(x=q25,color=rank)) + geom_density() +
+    scale_x_continuous(breaks=seq(0,100,2))
+ggplot(its.allpair.df,aes(x=q50,color=rank)) + geom_density() +
+      scale_x_continuous(breaks=seq(0,100,2))
+ggplot(its.allpair.df,aes(x=q75,color=rank)) + geom_density() +
+      scale_x_continuous(breaks=seq(0,100,2))
+ggplot(its.allpair.df,aes(x=q95,color=rank)) + geom_density() +
+      scale_x_continuous(breaks=seq(0,100,2))
+ggplot(its.allpair.df,aes(x=q99,color=rank)) + geom_density() +
+    scale_x_continuous(breaks=seq(0,100,2))
+
+```
+
+
+#FIN.

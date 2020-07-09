@@ -1,0 +1,309 @@
+---
+title: "JAN20 DATA ASSESSMENT: annotation part"
+author: "Chao"
+date: "3/22/2020"
+output: 
+  html_notebook:
+    code_fold: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reshape2)
+library(ggplot2)
+library(plyr)
+library(dplyr)
+library(RColorBrewer)
+library(configr)
+library(tools)
+library(stringi)
+
+#functions
+
+#https://www.biostars.org/p/9335/
+matcher <- function(pattern, x) {
+
+  ind = gregexpr(pattern, x)[[1]]
+  start = as.numeric(ind)
+  if(length(start)==1 && start <1){
+    return(NA)
+  }else{
+    end = start + attr(ind, "match.length") - 2
+    res <- as.numeric(apply(cbind(start,end), 1, function(y) substr(x, start=y[1], stop=y[2])))
+    res[which(is.na(res))] <- 1
+    return(res)
+  }
+}
+
+doone <- function(c, cigar) {
+  pat <- paste("\\d*", c , sep="")
+  sum(as.numeric(matcher(pat, cigar)), na.rm=T)
+}
+
+
+## takes a cigar string and parses it, not very fast but...
+cigarsums <- function(cigar, chars=c("M","N","D","I","S","H", "P", "X", "=")) {
+   sapply (chars, doone, cigar)
+}
+
+
+n50 <- function(x){
+  x1 <- rev(sort(x))
+  cumsum.x1 <- cumsum(x1)
+  find.n50 <- which(cumsum.x1 >= sum(x1)/2)
+  return(x1[find.n50[1]])
+}
+
+md5 <- function(f,m){
+  if(tools::md5sum(f)==m){
+    warning("MD5 check passed.\n")
+    return(f)
+  }else{
+    stop("MD5 check failed. Please check the version and content!\n")
+  }
+}
+
+getMapPropFun <- function(d){
+  uOrder <- c("ALL","SSU","ITS1","5.8S","ITS2","LSU")
+  ulist <- data.frame(key=c("ALL","SSU","16S","ITS","ITS1","5.8S","ITS2","LSU","23S"),
+                      ind=c(1,2,2,3,3,4,5,6,6))
+  getM <- stri_match_all_regex(d,"(ALL|23S|LSU|ITS|ITS1|ITS2|5.8S|SSU|16S)\\((\\d+)%\\)")
+  getN <- length(getM)
+  res <- matrix(0,ncol = 6,nrow = getN)
+  for(i in 1:length(getM)){
+    geti <- getM[[i]]
+    for(j in 1:nrow(geti)){
+      res[i,ulist$ind[which(ulist$key==geti[j,2])]] <- geti[j,3]
+    }
+  }
+  res <- matrix(as.numeric(res),ncol=6)
+  colnames(res) <- uOrder
+  return(res)
+}
+```
+
+# Quantification
+
+cluster same samples' clips to get LOTU:
+```{bash}
+# merge LOTUs
+
+metabbq IO clade2tree -i SAM/SFR/CLIP/id90def4.clust.fa -s SAM/SFR/CLIP/tt.clade.uc -o SAM/SFR/KRAKEN/BEAD -v
+
+metabbq buildKraken2db.sh SAM/SFR/KRAKEN/BEAD 4
+
+awk -F "\t" '{split($1,a,";");print a[1]"\t"$2}' SAM/SFR/KRAKEN/BEAD/taxonomy/paths.txt > SAM/SFR/KRAKEN/BEAD/data/topRank.map
+####
+# mapping to merged db
+for i in {S,O}{4,5,6,A,B,C};do
+ln -s ../../SFR/KRAKEN/BEAD SAM/$i/KRAKEN/BEAD;
+done
+
+#use bracken
+metabbq smk --config kk2_db="BEAD" -j -npk SAM/{S,O}{4,5,6,A,B,C}/KRAKEN/reads2BEAD.k2.1.bracken
+
+for i in {S,O}{4,5,6,A,B,C};do 
+  awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2BEAD.k2.1.bracken;
+done > STAT/KRAKEN/SFR.reads2BEAD.bracken
+
+for i in {S,O}{4,5,6,A,B,C};do for j in {G,S1,S2,S3};do
+  bracken -d SAM/$i/KRAKEN/BEAD -i SAM/$i/KRAKEN/reads2BEAD.k2.1.report -l $j -o SAM/$i/KRAKEN/reads2BEAD.$j.1.bracken -w SAM/$i/KRAKEN/reads2BEAD.$j.1.breport2 ;
+done & done
+
+for j in {G,S1,S2,S3};do for i in {S,O}{4,5,6,A,B,C};do 
+  awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2BEAD.$j.1.bracken
+done > STAT/KRAKEN/SFR.reads2BEAD.$j.1.bracken & done
+
+#no-barcode
+for i in {S,O}{4,5,6,A,B,C};do
+  bracken -d SAM/$i/KRAKEN/SFR -i SAM/$i/KRAKEN/reads2BEAD.kreport2 -l S\
+  -o SAM/$i/KRAKEN/reads2BEAD.raw.bracken -w SAM/$i/KRAKEN/reads2BEAD.raw.breport2 &
+done
+
+for i in {S,O}{4,5,6,A,B,C};do 
+  awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2BEAD.raw.bracken;
+done > STAT/KRAKEN/SFR.reads2BEAD.raw.bracken
+
+```
+
+
+### Read Bracken
+
+
+```{r}
+BEAD.topRank.map <- read.table("../../Results/JAN20/SAM/SFR/KRAKEN/BEAD/data/topRank.map",comment.char = "",
+                        sep="\t",col.names=c("domain","taxID"))
+
+
+#rank level: S
+SFR.r2BEAD.species.raw.bracken <- read.table(
+  md5("../../Results/JAN20/STAT/KRAKEN/SFR.reads2BEAD.raw.bracken","da148bd3195f4ef5c28b81cccc064459"),
+  as.is = T,quote = "",comment.char = "", sep="\t",
+  col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
+
+SFR.r2BEAD.species.bracken <- read.table(
+  md5("../../Results/JAN20/STAT/KRAKEN/SFR.reads2BEAD.bracken","babb5c3496f8606c355f6e0b565c858b"),
+  as.is = T,quote = "",comment.char = "", sep="\t",
+  col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
+
+SFR.r2BEAD.species.bracken <- rbind(
+  cbind(tech="READ",SFR.r2BEAD.species.raw.bracken),
+  cbind(tech="BEAD",SFR.r2BEAD.species.bracken)
+)
+SFR.r2BEAD.species.bracken$UID <- paste0(SFR.r2BEAD.species.bracken$tech,SFR.r2BEAD.species.bracken$SID)
+SFR.r2BEAD.species.bracken$SAM <- substr(SFR.r2BEAD.species.bracken$SID,1,1)
+SFR.r2BEAD.species.bracken$REP <- substr(SFR.r2BEAD.species.bracken$SID,2,2)
+SFR.r2BEAD.species.bracken$LIB <- ifelse(SFR.r2BEAD.species.bracken$REP%in%c(4,5,6),"RCA","NORCA")
+SFR.r2BEAD.species.bracken$REP <- as.factor(SFR.r2BEAD.species.bracken$REP)
+levels(SFR.r2BEAD.species.bracken$REP) <- c("A","B","C","A","B","C")
+SFR.r2BEAD.species.bracken$tax <- sapply(strsplit(as.character(SFR.r2BEAD.species.bracken$name),"__"),"[",2)
+SFR.r2BEAD.species.bracken$tax <- reorder(SFR.r2BEAD.species.bracken$tax,SFR.r2BEAD.species.bracken$fraction_total_reads,sum)
+
+SFR.r2BEAD.species.bracken <- ddply(
+  SFR.r2BEAD.species.bracken,c("UID"),transform,
+  pct.k=kraken_assigned_reads/sum(kraken_assigned_reads),
+  pct.a=added_reads/sum(added_reads),
+  pct=new_est_reads/sum(new_est_reads))
+
+
+top20tax <- rev(levels(reorder(SFR.r2BEAD.species.bracken$tax,SFR.r2BEAD.species.bracken$pct,min)))[1:20]
+
+SFR.r2BEAD.species.b.count <- ddply(SFR.r2BEAD.species.bracken,c("UID"),summarise,observed=length(which(new_est_reads>10)))
+
+SFR.r2BEAD.species.bracken$tax20 <- ifelse(
+  as.character(SFR.r2BEAD.species.bracken$tax)%in%top20tax,as.character(SFR.r2BEAD.species.bracken$tax),"Others")
+SFR.r2BEAD.species.bracken$tax20[which(SFR.r2BEAD.species.bracken$name=="UNCLASSIFIED")] <- "UNCLASSIFIED"
+
+SFR.r2BEAD.species.b.stat <- ddply(SFR.r2BEAD.species.bracken,c("SAM","tech","LIB","SID","UID","tax20"),summarise,pct=sum(pct))
+SFR.r2BEAD.species.b.stat$taxOrder <- reorder(SFR.r2BEAD.species.b.stat$tax20,SFR.r2BEAD.species.b.stat$pct,max)
+
+```
+
+
+```{r}
+ggplot(SFR.r2BEAD.species.b.stat,aes(x=taxOrder,y=pct,fill=tech,color=LIB)) + geom_boxplot() + 
+  coord_flip() + facet_grid(.~SAM) + scale_y_log10()
+ggplot(SFR.r2BEAD.species.b.stat,aes(x=taxOrder,y=pct,fill=UID)) + geom_bar(stat="identity",position="dodge") + coord_flip() + facet_grid(.~SAM) + scale_y_log10()
+ggplot(SFR.r2BEAD.species.b.stat,aes(x=UID,y=pct,fill=taxOrder)) + geom_bar(stat="identity",position="fill")
+ggplot(SFR.r2BEAD.species.b.stat%>%filter(!tax20%in%c("Others","bacterium")),aes(x=SID,y=pct,fill=taxOrder)) + 
+  geom_bar(stat="identity",position="stack") +facet_grid(.~SAM+tech,scale="free")
+
+```
+
+
+### PCA
+```{r}
+SFR.r2BEAD.b.sp.more <- merge(SFR.r2BEAD.species.bracken,BEAD.topRank.map,by="taxID",all.x=T)
+
+SFR.sp.count.mtx <- dcast(SFR.r2BEAD.b.sp.more,taxID+domain+name~UID,value.var = "kraken_assigned_reads",fill = 0)
+row.kept <- which(apply(SFR.sp.count.mtx[,4:15],1,max)>10)
+tax.kept <- SFR.sp.count.mtx$taxID[row.kept]
+SFR.sp.prf.mtx <- dcast(SFR.r2BEAD.b.sp.more,taxID+domain+name~UID,value.var = "pct",fill = 0)
+rownames(SFR.sp.prf.mtx) <- SFR.sp.prf.mtx$taxID
+taxName <- SFR.sp.prf.mtx$name
+taxType <- sapply(strsplit(taxName,"__"),"[",1)
+SFR.sp.cut.mtx <- SFR.sp.prf.mtx[row.kept,]
+SFR.sp.cut.mtx.pca <- prcomp(t(as.matrix(SFR.sp.cut.mtx[,-c(1:3)])),center = T,scale. = T)
+summary(SFR.sp.cut.mtx.pca)
+
+SFR.sp.C4.1.mtx <- as.matrix(SFR.sp.cut.mtx[which(SFR.sp.cut.mtx$domain=="CLADE0.4__1"),-c(1:3)])
+SFR.sp.C4.1.pca <- prcomp(t(SFR.sp.C4.1.mtx),center = T,scale. = T)
+SFR.sp.C4.2.mtx <- as.matrix(SFR.sp.cut.mtx[which(SFR.sp.cut.mtx$domain=="CLADE0.4__2"),-c(1:3)])
+SFR.sp.C4.2.pca <- prcomp(t(SFR.sp.C4.1.mtx),center = T,scale. = T)
+SFR.sp.C4.3.mtx <- as.matrix(SFR.sp.cut.mtx[which(SFR.sp.cut.mtx$domain=="CLADE0.4__3"),-c(1:3)])
+SFR.sp.C4.3.pca <- prcomp(t(SFR.sp.C4.1.mtx),center = T,scale. = T)
+
+SFR.sp.mtx.pca.df <- data.frame(SID=rownames(SFR.sp.cut.mtx.pca$x),SFR.sp.cut.mtx.pca$x)
+ggplot(SFR.sp.mtx.pca.df,aes(x=PC1,y=PC2,color=SID)) +geom_point(size=3) + geom_text(aes(label=SID))
+
+group.df <- unique(SFR.r2BEAD.species.bracken[,c("UID","SAM","SID","LIB","tech")])
+SFR.sp.multi.pca.df <- merge(group.df,rbind(
+  data.frame(type="ALL",SFR.sp.cut.mtx.pca$x[,1:5]),
+  data.frame(type="C4.1",SFR.sp.C4.1.pca$x[,1:5]),
+  data.frame(type="C4.2",SFR.sp.C4.2.pca$x[,1:5]),
+  data.frame(type="C4.3",SFR.sp.C4.3.pca$x[,1:5])
+),by.y="row.names",by.x="UID")
+
+ggplot(SFR.sp.multi.pca.df,aes(x=PC1,y=PC2,color=LIB,shape=tech)) +geom_point(size=3) + 
+  #scale_shape_manual(values = c(21,22)) +
+  geom_text(aes(label=SID),nudge_x = 3,nudge_y = 3) + facet_wrap(~type,ncol=3,scale="free")
+
+```
+
+```{r}
+pheatmap(cor(SFR.sp.cut.mtx[,-c(1:3)],method = "s"),display_numbers = T,cluster_rows = F,cluster_cols = F)
+pheatmap(cor(SFR.sp.C4.1.mtx,method = "s"),display_numbers = T,cluster_rows = F,cluster_cols = F)
+pheatmap(cor(SFR.sp.C4.2.mtx,method = "s"),display_numbers = T,cluster_rows = F,cluster_cols = F)
+pheatmap(cor(SFR.sp.C4.3.mtx,method = "s"),display_numbers = T,cluster_rows = F,cluster_cols = F)
+
+```
+
+
+**QQ plot**
+```{r}
+SFR.stat.sp.df1s <- dcast(SFR.r2BEAD.b.sp.more%>%filter(taxID%in%tax.kept),SAM+LIB+domain+REP+tax~tech,
+                          value.var = "pct",fun.aggregate = sum,fill = 0)
+SFR.stat.sp.df1s.cor <- ddply(SFR.stat.sp.df1s,c("SAM","LIB","REP"),summarise, cor=cor(READ,BEAD,method = "s") )
+SFR.stat.sp.df1s.cor$corLabel <- paste0("r=",round(SFR.stat.sp.df1s.cor$cor,2))
+
+ggplot(SFR.stat.sp.df1s,aes(x=READ,y=BEAD,color=factor(REP))) +geom_point() +
+  geom_abline(intercept = c(-1,0,1),slope=1,linetype=2) + facet_grid(SAM+LIB~REP) +
+  geom_text(data=SFR.stat.sp.df1s.cor,aes(x=1e-3,y=0.1,label=corLabel)) +
+  scale_x_log10() + scale_y_log10() 
+
+```
+
+```{r}
+SFR.stat.sp.df2s <- dcast(SFR.r2BEAD.b.sp.more%>%filter(taxID%in%tax.kept),SAM+tech+domain+REP+tax~LIB,
+                          value.var = "pct",fun.aggregate = sum,fill = 0)
+SFR.stat.sp.df2s.cor <- ddply(SFR.stat.sp.df2s,c("SAM","tech","REP"),summarise, cor=cor(NORCA,RCA,method = "s") )
+SFR.stat.sp.df2s.cor$corLabel <- paste0("r=",round(SFR.stat.sp.df2s.cor$cor,2))
+
+ggplot(SFR.stat.sp.df2s,aes(x=NORCA,y=RCA,color=factor(REP))) +geom_point() +
+  geom_abline(intercept = 0,slope=c(0.8,1,1.2),linetype=2) + facet_grid(SAM+tech~REP) +
+  geom_text(data=SFR.stat.sp.df2s.cor,aes(x=1e-3,y=0.1,label=corLabel)) +
+  scale_x_log10() + scale_y_log10() 
+
+```
+
+
+```{r}
+SFR.stat.sp.df3s <- dcast(SFR.r2BEAD.b.sp.more%>%filter(taxID%in%tax.kept),SAM+tech+LIB+domain+taxID~REP,
+                          value.var = "pct",fill = 0,fun.aggregate = sum)
+
+SFR.stat.sp.df3S <- NULL
+for(i in 6:8){
+  tmp <- SFR.stat.sp.df3s[,-i]
+  colnames(tmp)[6:7] <- c("rep1","rep2")
+  SFR.stat.sp.df3S <- rbind(SFR.stat.sp.df3S,data.frame(set=colnames(SFR.stat.sp.df3s)[i],tmp))
+}
+SFR.stat.sp.df3S.cor <- ddply(SFR.stat.sp.df3S,c("SAM","tech","LIB","domain","set"),summarise,cor=cor(rep1,rep2,method="s"))
+SFR.stat.sp.df3S.cor$corLabel <- paste0("r=",round(SFR.stat.sp.df3S.cor$cor,2))
+
+ggplot(SFR.stat.sp.df3S,aes(x=rep1,y=rep2,color=factor(LIB))) +geom_point() +
+  geom_abline(intercept = 0,slope=c(0.85,1,1.15),linetype=2) + facet_grid(set+LIB~SAM+domain+tech) + 
+  geom_text(data=SFR.stat.sp.df3S.cor,aes(x=1e-3,y=0.1,label=corLabel)) +
+  scale_x_log10() + scale_y_log10() 
+```
+
+```{r}
+ggplot(SFR.stat.sp.df3s,aes(x=A,y=B,color=factor(LIB))) +geom_point() +
+  geom_abline(intercept = c(-1,0,1),slope=1,linetype=2) + facet_grid(LIB~SAM+tech) + 
+  #geom_text(data=SFR.stat.sp.df3s.cor,aes(x=1e-3,y=0.1,label=cor13Label)) +
+  scale_x_log10() + scale_y_log10() 
+```
+```{r}
+ggplot(SFR.stat.sp.df3s,aes(x=`2`,y=`3`,color=factor(LIB))) +geom_point() +
+  geom_abline(intercept = c(-1,0,1),slope=1,linetype=2) + facet_grid(LIB~SAM+tech) + 
+  geom_text(data=SFR.stat.sp.df3s.cor,aes(x=1e-3,y=0.1,label=cor23Label)) +
+  scale_x_log10() + scale_y_log10() 
+```
+
+```{r}
+ddply(SFR.stat.sp.df2s,c("SAM","rep"),summarise,
+      sumRCAwith0NoRCA=sum(RCA[which(NoRCA==0)]),
+      sumNoRCAwith0RCA=sum(NoRCA[which(RCA==0)]))
+```
+
+
+#FIN.

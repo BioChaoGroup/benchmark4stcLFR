@@ -1,0 +1,843 @@
+---
+title: "JAN20 DATA ASSESSMENT: annotation part"
+author: "Chao"
+date: "3/22/2020"
+output: 
+  html_notebook:
+    code_fold: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reshape2)
+library(ggplot2)
+library(plyr)
+library(dplyr)
+library(RColorBrewer)
+library(configr)
+library(tools)
+library(stringi)
+
+#functions
+
+#https://www.biostars.org/p/9335/
+matcher <- function(pattern, x) {
+
+  ind = gregexpr(pattern, x)[[1]]
+  start = as.numeric(ind)
+  if(length(start)==1 && start <1){
+    return(NA)
+  }else{
+    end = start + attr(ind, "match.length") - 2
+    res <- as.numeric(apply(cbind(start,end), 1, function(y) substr(x, start=y[1], stop=y[2])))
+    res[which(is.na(res))] <- 1
+    return(res)
+  }
+}
+
+doone <- function(c, cigar) {
+  pat <- paste("\\d*", c , sep="")
+  sum(as.numeric(matcher(pat, cigar)), na.rm=T)
+}
+
+
+## takes a cigar string and parses it, not very fast but...
+cigarsums <- function(cigar, chars=c("M","N","D","I","S","H", "P", "X", "=")) {
+   sapply (chars, doone, cigar)
+}
+
+
+n50 <- function(x){
+  x1 <- rev(sort(x))
+  cumsum.x1 <- cumsum(x1)
+  find.n50 <- which(cumsum.x1 >= sum(x1)/2)
+  return(x1[find.n50[1]])
+}
+
+md5 <- function(f,m){
+  if(tools::md5sum(f)==m){
+    warning("MD5 check passed.\n")
+    return(f)
+  }else{
+    stop("MD5 check failed. Please check the version and content!\n")
+  }
+}
+
+getMapPropFun <- function(d){
+  uOrder <- c("ALL","SSU","ITS1","5.8S","ITS2","LSU")
+  ulist <- data.frame(key=c("ALL","SSU","16S","ITS","ITS1","5.8S","ITS2","LSU","23S"),
+                      ind=c(1,2,2,3,3,4,5,6,6))
+  getM <- stri_match_all_regex(d,"(ALL|23S|LSU|ITS|ITS1|ITS2|5.8S|SSU|16S)\\((\\d+)%\\)")
+  getN <- length(getM)
+  res <- matrix(0,ncol = 6,nrow = getN)
+  for(i in 1:length(getM)){
+    geti <- getM[[i]]
+    for(j in 1:nrow(geti)){
+      res[i,ulist$ind[which(ulist$key==geti[j,2])]] <- geti[j,3]
+    }
+  }
+  res <- matrix(as.numeric(res),ncol=6)
+  colnames(res) <- uOrder
+  return(res)
+}
+```
+
+# Background
+
+Samples involved:
+
+| ID | lane | barcode | Kindom | RCA | Location    |
+| -- | ---- | ------- | -------| --- | ----------- |
+| U1 | FF1  | 1,17    | Bac    | RCA | Urine       |
+| S1 | FF1  | 3,4     | Bac    | RCA | Soil spot A |
+| O1 | FF1  | 5,22    | Bac    | RCA | Soil spot B |
+| M1 | FF1  | 7       | Bac    | RCA | Mock        |
+| Z1 | FF1  | 8       | Bac    | RCA | ZYMO 8      |
+
+
+# stat assembly clips
+```{bash, eval=FALSE}
+for i in {S,O}{4,5,6};do 
+ awk -v n=$i '{print n"\t"$0}' SAM/$i/summary.BI.megahit.clip.metadata.tsv;
+done > STAT/CLIP/SFR.clip.metadata.tsv
+awk '!/#skip/{if($2!=pB){if(FNR>1){print $1"\t"pB"\t"blen"\t"ctg"\t"clips};blen=$10;ctg=1;clips=1}else{blen=blen+$10;clips=clips+1;if($4!=pc){ctg=ctg+1}};pc=$4;pB=$2}END{print $1"\t"pB"\t"blen"\t"ctg"\t"clips}' STAT/CLIP/SFR.clip.metadata.tsv > STAT/CLIP/SFR.bead.metadata.tsv
+md5sum STAT/CLIP/SFR.bead.metadata.tsv
+
+```
+
+
+# map clips and OTUs to zymo ref
+```{bash,eval=FALSE}
+#mkdir -p ../../Results/JAN20/STAT/ANNO
+
+# Subunits detection
+metabbq smk --configfile config.F.yaml -j -npk SAM/{S,O}{4,5,6}/CLIP/all.barrnap.sum.tsv
+for i in {S,O}{4,5,6};do awk -v n=$i '{print n"\t"$0}' SAM/$i/CLIP/all.barrnap.sum.tsv;done > STAT/CLIP/SFR.all.barrnap.sum.tsv
+metabbq smk -j --configfile config.F.yaml -pk SAM/{S,O}{4,5,6}/CLIP/all.ITS.positions.sum.tsv
+for i in {S,O}{4,5,6};do awk -v n=$i '{print n"\t"$0}' SAM/$i/CLIP/all.ITS.positions.sum.tsv;done > STAT/CLIP/SFR.all.ITS.positions.sum.tsv
+
+
+#open silva ref mapping
+metabbq smk --configfile config.F.yaml -j -npk SAM/{S,O}{4,5,6}/ANNO/CLIP.map.merge.bead.anno
+for i in {S,O}{4,5,6};do awk -v n=$i '{print n"\t"$0}' SAM/$i/ANNO/CLIP.map.merge.bead.anno;done > STAT/ANNO/SFR.CLIP.map.merge.bead.anno
+
+metabbq smk --configfile config.F.yaml -j -npk SAM/{S,O}{4,5,6}/ANNO/LOTU.map.merge.anno
+for i in {S,O}{4,5,6};do sed 's/\S\+=//g' SAM/$i/ANNO/LOTU.map.merge.anno|awk -v n=$i '{print n"\t"$0}' ;done > STAT/ANNO/SFR.LOTU.map.merge.anno
+
+
+#SNV
+metabbq smk --force -j -pk SAM/{S,O}{4,5,6}/CLIP/clips2REF.bcf.tsv
+for i in {S,O}{4,5,6};do awk -v n=$i '{print n"\t"$0}' SAM/$i/CLIP/clips2REF.bcf.tsv;done > STAT/CLIP/SFR.clips2REF.bcf.tsv
+
+
+#quantification
+metabbq smk -j -npk SAM/Z{2,3}/PROFILE/LOTU.bwa.prop
+
+# write to tmp/mock.LOTU.quantification.sh
+SAM=$1
+j=$2
+mkdir -p $SAM/PROFILE/RAND
+bwa mem -t 8 -h 10000 $SAM/CLIP/all.LOTU.fa $SAM/clean/fastp.sort.{1,2}_$j.fq.gz \
+| samtools view -b |tee $SAM/PROFILE/RAND/all.LOTU.bwa.map_$j.bam \
+| samtools view | metabbq beadStat sam -i - -o $SAM/PROFILE/RAND/LOTU.bwa.stat_$j -v
+metabbq beadStat sam2b -i $SAM/PROFILE/RAND/LOTU.bwa.stat_$j -o $SAM/PROFILE/RAND/LOTU.bwa.sbb1_$j -v
+#
+
+for i in {1,2,3} ;do SAM=SAM/Z$i; for j in {00..02};do echo sh tmp/mock.LOTU.quantification.sh $SAM $j \&;done;done > tmp/mock.batch.quantification.sh
+
+mkdir -p STAT/PROFILE
+for i in {1,2,3} ;do SAM=Z$i; for j in {00..02};do 
+awk -v s=$SAM -v r=$j '{print s"\t"r"\t"$1"\t"$2"\t"$3}' SAM/$SAM/PROFILE/RAND/LOTU.bwa.sbb1_$j.p;
+done;done > STAT/PROFILE/SFR.LOTU.bwa.sbb1_rand3
+
+for i in {S,O}{4,5,6};do metabbq diversityEst -e 0 -s $i -t 100 -d SAM/$i -m SAM/SFR -o SAM/$i/CLIP/divEst.tsv & done
+for i in {S,O}{4,5,6};do awk -v n=$i '{print n"\t"$0}' SAM/$i/CLIP/divEst.tsv;done > STAT/CLIP/SFR.divEst.tsv
+
+
+```
+
+
+
+
+Load data:
+```{r}
+metadata <- read.csv("../../Results/JAN20/metadata.csv")
+SFR.bead.metadata.df <- read.table(
+  md5("../../Results/JAN20/STAT/CLIP/SFR.bead.metadata.tsv","a9a3fe759d99eed99ff2b1f650a57b6f"),
+  sep="\t",col.names = c("SID","BID","BLen","contigs","clips")
+)
+
+SFR.barrnap.gff3.tsv <- read.table(
+  md5("../../Results/JAN20/STAT/CLIP/SFR.all.barrnap.sum.tsv","a70ff3081d2807ed39a4e65cee3b9da0"),
+  col.names = c("SID","BID","len16S","pct16S","len18S","pct18S","len5.8S","pct5.8S","len23S","pct23S","len28S","pct28S","unit")
+)
+
+SFR.itsx.pos.tsv <- read.table(
+  md5("../../Results/JAN20/STAT/CLIP/SFR.all.ITS.positions.sum.tsv","baa34b6e503c33694a66d7af75c7c30e"),
+  col.names = c("SID","BID","SSU","ITS1","S5.8","ITS2","LSU","scoreA","scoreB")
+)
+
+SFR.silva.bead.anno <- read.table(
+  md5("../../Results/JAN20/STAT/ANNO/SFR.CLIP.map.merge.bead.anno","453324bd2239d0794ef2fce82fe422e3"),comment.char = "",sep="\t", quote = "", 
+  fill = NA,col.names = c("SID","BINFO","tax","ident","mapLen","mismatch","gap","qs","qe","ss","se","eval","bitscore","qlen","slen","strands","qDesc","sDesc","covs","TopAnno","TANum","TALv","score1st","score2nd","ident1st","ident2nd","TANames","hybCt","hybLen","hybPct")
+)
+
+# SFR.silva.LOTU.anno <- read.table(md5("../../Results/JAN20/STAT/ANNO/SFR.LOTU.map.merge.anno",
+#       "5d079afbd752d1f2de3ee7fb2d2c1e52"), sep="\t",comment.char = "",
+#    col.names = c("SID","LOTU","tax","idents","lens","mis","gap","bit","qlen","qcov","scov","scov.ITS","scov.SSU","scov.LSU","taxID","rank","taxPath")
+# )
+# 
+SFR.clip2REF.bcf <- read.table(md5("../../Results/JAN20/STAT/CLIP/SFR.clips2REF.bcf.tsv",
+  "844ff306eaa5985685ef6885d32fb5fa"), sep="\t",col.names = c("SID","CHR","POS","REF","ALT","QUAL","TYPE","IDV","DP","DR","DA","BQR","BQA","MQR","MQA","MDR","MDA","BQB","MQSB"))
+# 
+# SFR.prop <- read.table(md5("../../Results/JAN20/STAT/PROFILE/SFR.LOTU.bwa.sbb1_rand3","12564411f41155ab37b0a07f92d0c57c"),sep="\t",
+#                       col.names = c("SID","rand","count0","count","LOTU"))
+# #
+```
+
+
+# bead info
+```{r}
+SFR.bdmeta.df <- merge(metadata,SFR.bead.metadata.df,by="SID")
+
+ggplot(SFR.bdmeta.df,aes(x=BLen,fill=SID)) + geom_histogram(position = "stack") + xlim(c(0,6000))
+ggplot(SFR.bdmeta.df,aes(x=BLen,color=SID)) + geom_density() + xlim(c(0,6000))
+
+```
+
+
+# subunits detection (ITSx)
+```{r}
+SFR.itsx.df <- merge(SFR.bdmeta.df,SFR.itsx.pos.tsv,by=c("SID","BID"),all.x=T)
+SFR.itsx.df$scoreA[which(is.na(SFR.itsx.df$scoreA))] <- 0
+SFR.itsx.df$unitA <- as.factor(SFR.itsx.df$scoreA)
+levels(SFR.itsx.df$unitA) <- c("None","SSU","ITS","SSU+ITS","LSU","SSU+LSU","LSU+ITS","ALL")
+SFR.itsx.df$scoreB[which(is.na(SFR.itsx.df$scoreB))] <- 0
+SFR.itsx.df$unitB <- as.factor(SFR.itsx.df$scoreB)
+levels(SFR.itsx.df$unitB) <- c("None","ITS1","5.8S","ITS1+5.8S","ITS2","ITS1+ITS2","5.8S+ITS2","ALL")
+SFR.itsx.df$SAM <- substr(SFR.itsx.df$SID,1,1)
+ggplot(SFR.itsx.df,aes(x=BLen)) +geom_histogram(aes(fill=unitA),position="stack",binwidth=100) +
+  geom_density(aes(x=BLen,y=..density..*(-2e6),color=unitA,linetype=SAM),size=1,alpha=.7) +
+  scale_fill_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,2,3,5,9,10,11)])) +
+  scale_color_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,2,3,5,9,10,11)])) + theme_bw() +
+  #theme(legend.position = c(0.99,.9),legend.justification = c(1,1)) +
+  scale_x_continuous(breaks=seq(0,10000,1000),limits=c(0,6000))
+
+ggplot(SFR.itsx.df,aes(x=BLen)) +geom_histogram(aes(fill=unitB),position="stack",binwidth=100) +
+  geom_density(aes(x=BLen,y=..density..*(-2e6),color=unitB,linetype=SAM),size=1,alpha=.7) +
+  scale_fill_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,2,3,5,9,10,11)])) +
+  scale_color_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,2,3,5,9,10,11)])) + theme_bw() +
+  #theme(legend.position = c(0.99,.9),legend.justification = c(1,1)) +
+  scale_x_continuous(breaks=seq(0,10000,1000),limits=c(0,6000))
+
+```
+
+# subunits detection (barrnap)
+```{r}
+SFR.F.subunit.df <- SFR.barrnap.gff3.tsv[,c(1,2,5:8,11,12,13)]
+SFR.F.subunit.df$unit <- factor(SFR.F.subunit.df$unit,levels = seq(0,7))
+SFR.subunits.df <- merge(SFR.bdmeta.df,SFR.F.subunit.df,by=c("SID","BID"),all.x=T)
+SFR.subunits.df$unit[which(is.na(SFR.subunits.df$unit))] <- 0
+levels(SFR.subunits.df$unit) <- c("None","SSU","5.8S","SSU+5.8S","LSU","SSU+LSU","LSU+5.8S","ALL")
+SFR.subunits.df$SAM <- substr(SFR.subunits.df$SID,1,1)
+ggplot(SFR.subunits.df,aes(x=BLen)) +geom_histogram(aes(fill=unit),position="stack",binwidth=100) +
+  geom_density(aes(x=BLen,y=..density..*(-2e6),color=unit,linetype=SAM),size=1,alpha=.7) +
+  scale_fill_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,2,3,5,9,10,11)])) +
+  scale_color_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,2,3,5,9,10,11)])) + theme_bw() +
+  #theme(legend.position = c(0.99,.9),legend.justification = c(1,1)) +
+  scale_x_continuous(breaks=seq(0,10000,1000),limits=c(0,6000))
+
+
+```
+
+
+# silva mapping annotation
+```{r}
+getMapPropFun2 <- function(d){
+  uOrder <- c("ALL","SSU","ITS1","5.8S","ITS2","LSU")
+  ulist <- data.frame(key=c("ALL","SSU","16S","ITS","ITS1","5.8S","ITS2","LSU","23S"),
+                      ind=c(1,2,2,3,3,4,5,6,6))
+  getM <- stri_match_all_regex(d,"(ALL|23S|LSU|ITS|ITS1|ITS2|5.8S|SSU|16S)\\((\\d+)\\)")
+  getN <- length(getM)
+  res <- matrix(0,ncol = 6,nrow = getN)
+  for(i in 1:length(getM)){
+    geti <- getM[[i]]
+    for(j in 1:nrow(geti)){
+      res[i,ulist$ind[which(ulist$key==geti[j,2])]] <- geti[j,3]
+    }
+  }
+  res <- matrix(as.numeric(res),ncol=6)
+  colnames(res) <- uOrder
+  return(res)
+}
+sbinfo <- matrix(unlist(strsplit(as.character(SFR.silva.bead.anno$BINFO),"|",fixed = T)),ncol=4,byrow = T)
+sbinfodf <- data.frame(BID=sbinfo[,1],BLen=as.numeric(sbinfo[,2]),clips=as.numeric(sbinfo[,3]),hits=as.numeric(sbinfo[,4]))
+covdf <- getMapPropFun2(as.character(SFR.silva.bead.anno$covs))
+colnames(covdf)[3] <- "ITS"
+SFR.slv.bead.df <- cbind(sbinfodf[,1,F],SFR.silva.bead.anno[,-c(2,16:19)],covdf[,c(2,3,6)])
+
+SFR.slv.bead.all.df <- merge(SFR.bdmeta.df,SFR.slv.bead.df,by=c("SID","BID"),all.x=T)
+
+SFR.slv.bead.all.df$unit <- factor(
+  ifelse(SFR.slv.bead.all.df$LSU>5,1,0) + ifelse(SFR.slv.bead.all.df$ITS>25,2,0) + ifelse(SFR.slv.bead.all.df$SSU>5,4,0),
+  levels=seq(0,7)
+)
+
+levels(SFR.slv.bead.all.df$unit) <- c("partial(<50%)","LSU","ITS","LSU+ITS","SSU","LSU+SSU","SSU+ITS","ALL")
+
+SFR.slv.bead.all.df$hitDB <- factor(
+  ifelse(SFR.slv.bead.all.df$SSU>0,1,0) + ifelse(SFR.slv.bead.all.df$ITS>0,2,0) + ifelse(SFR.slv.bead.all.df$LSU>0,4,0),
+  levels=seq(0,7)
+)
+SFR.slv.bead.all.df$hitDB[which(is.na(SFR.slv.bead.all.df$hitDB))] <- 0
+levels(SFR.slv.bead.all.df$hitDB) <- c("None","SILVA.SSU","UNITE","SILVA.SSU&UNITE","SILVA.LSU","SILVA.SSU&LSU","SILVA.LSU+UNITE","ALL")
+
+```
+
+```{r}
+SFR.slv.bead.all.df$identG <- ifelse(SFR.slv.bead.all.df$ident == 100,100,ifelse(SFR.slv.bead.all.df$ident >=99.5,99.5,
+       ifelse(SFR.slv.bead.all.df$ident <97,96,round(SFR.slv.bead.all.df$ident-0.5,0))))
+pct.identG <- ddply(SFR.slv.bead.all.df,"identG",summarise,count=length(BID))
+pct.identG$pct <- pct.identG$count/sum(pct.identG$count)
+pct.identG$lab <- sprintf("%.2f%%",100*pct.identG$pct)
+pct.identG$identG <- factor(pct.identG$identG,levels=c(96,97,98,99,99.5,100))
+ggplot(pct.identG,aes(x="X",y=pct,fill=identG)) +geom_bar(stat="identity") + coord_polar(theta = 'y')+ 
+  geom_text(aes(y=cumsum(rev(pct)) - rev(pct)/2, x = sum(pct)*1.55, label = rev(lab))) +
+  scale_fill_brewer(palette="Blues") +labs(x = '', y = '', title = '') +
+  theme_classic() + theme(axis.text = element_blank())
+
+ggplot(SFR.slv.bead.all.df,aes(x=BLen)) +geom_histogram(aes(fill=hitDB),position="stack",binwidth=100) +
+  geom_density(aes(x=BLen,y=..density..*(-2e7),color=hitDB,linetype=SID),size=1,alpha=.7) +
+  scale_fill_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,2,3,5,6,7,9,11)])) +
+  scale_color_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,2,3,5,6,7,9,11)])) + theme_bw() +
+  #theme(legend.position = c(0.99,.9),legend.justification = c(1,1)) +
+  scale_x_continuous(breaks=seq(0,10000,1000),limits=c(0,6000))
+
+
+pct.unit <- ddply(SFR.slv.bead.all.df,c("SID","unit"),summarise,count=length(BID))
+pct.unit <- ddply(pct.unit,c("SID"),transform,pct=count/sum(count))
+pct.unit$lab <- sprintf("%.2f%%",100*pct.unit$pct)
+ggplot(pct.unit,aes(x="X",y=pct,fill=unit)) +geom_bar(stat="identity") + coord_polar(theta = 'y')+ 
+  #geom_text(aes(y=cumsum(rev(pct)) - rev(pct)/2, x = sum(pct)*.3, label = rev(lab))) +
+  scale_fill_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,3,2,5,7,6,9,11)])) +
+  labs(x = '', y = '', title = '') + facet_wrap(~SID,ncol=3) +
+  theme_bw() + theme(axis.text = element_blank())
+
+```
+
+
+
+```{r}
+combine.unit.df <- merge(merge(SFR.itsx.df,SFR.F.subunit.df,by=c("SID","BID"),all.x=T),SFR.slv.bead.df[,c(1,2,27:29)],by=c("SID","BID"),all.x=T)
+
+#barrnap
+combine.unit.df$len18S[which(is.na(combine.unit.df$len18S))] <- 0
+combine.unit.df$len5.8S[which(is.na(combine.unit.df$len5.8S))] <- 0
+combine.unit.df$len28S[which(is.na(combine.unit.df$len28S))] <- 0
+# ITSx
+combine.unit.df$SSU.x[which(is.na(combine.unit.df$SSU.x))] <- 0
+combine.unit.df$ITS1[which(is.na(combine.unit.df$ITS1))] <- 0
+combine.unit.df$S5.8[which(is.na(combine.unit.df$S5.8))] <- 0
+combine.unit.df$ITS2[which(is.na(combine.unit.df$ITS2))] <- 0
+combine.unit.df$LSU.x[which(is.na(combine.unit.df$LSU.x))] <- 0
+#alignment
+combine.unit.df$SSU.y[which(is.na(combine.unit.df$SSU.y))] <- 0
+combine.unit.df$ITS[which(is.na(combine.unit.df$ITS))] <- 0
+combine.unit.df$LSU.y[which(is.na(combine.unit.df$LSU.y))] <- 0
+
+combine.unit.df$foundITS <- ifelse(combine.unit.df$len5.8S>0,1,0) +  ifelse(combine.unit.df$ITS>0,4,0) +
+  ifelse(combine.unit.df$ITS1+combine.unit.df$ITS2+combine.unit.df$S5.8>0,2,0)
+combine.unit.df$foundSSU <- ifelse(combine.unit.df$len18S>0,1,0) + ifelse(combine.unit.df$SSU.x>0,2,0) + ifelse(combine.unit.df$SSU.y>0,4,0)
+combine.unit.df$foundLSU <- ifelse(combine.unit.df$len28S>0,1,0) + ifelse(combine.unit.df$LSU.x>0,2,0) + ifelse(combine.unit.df$LSU.y>0,4,0)
+combine.unit.df$foundUNIT <- as.factor(
+  ifelse(combine.unit.df$foundSSU>0,1,0) + 
+  ifelse(combine.unit.df$foundITS>0,2,0) + 
+  ifelse(combine.unit.df$foundLSU>0,4,0)
+)
+levels(combine.unit.df$foundUNIT) <- c("Unknown","SSU","ITS","SSU+ITS","LSU","SSU+LSU","ITS+LSU","All")
+ggplot(combine.unit.df,aes(x=BLen)) +geom_histogram(aes(fill=foundUNIT),position="stack",binwidth=100) +
+  geom_density(aes(x=BLen,y=..density..*(-2e7),color=SID),size=1) +
+  scale_fill_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,2,3,5,7,9,11)])) +
+  scale_color_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,2,3,5,7,9,11)])) + theme_bw() +
+  #theme(legend.position = c(0.99,.9),legend.justification = c(1,1)) +
+  scale_x_continuous(breaks=seq(0,10000,1000),limits=c(0,6000))
+```
+
+```{r}
+combine.unit.df$foundSSU <- as.factor(combine.unit.df$foundSSU)
+levels(combine.unit.df$foundSSU) <- c("Unknown","predicted by barrnap","predicted by ITSx","cross validated","aligned to reference","cross validated","cross validated","cross validated")
+source.SSU <- ddply(combine.unit.df,"foundSSU",summarise,count=length(BID))
+source.SSU$pct <- source.SSU$count/sum(source.SSU$count)
+source.SSU$lab <- sprintf("%.2f%%",100*source.SSU$pct)
+
+combine.unit.df$foundLSU <- as.factor(combine.unit.df$foundLSU)
+levels(combine.unit.df$foundLSU) <- c("Unknown","predicted by barrnap","predicted by ITSx","cross validated","aligned to reference","cross validated","cross validated","cross validated")
+source.LSU <- ddply(combine.unit.df,"foundLSU",summarise,count=length(BID))
+source.LSU$pct <- source.LSU$count/sum(source.LSU$count)
+source.LSU$lab <- sprintf("%.2f%%",100*source.LSU$pct)
+
+
+combine.unit.df$foundITS <- as.factor(combine.unit.df$foundITS)
+levels(combine.unit.df$foundITS) <- c("Unknown","predicted by barrnap","predicted by ITSx","cross validated","aligned to reference","cross validated","cross validated","cross validated")
+source.ITS <- ddply(combine.unit.df,"foundITS",summarise,count=length(BID))
+source.ITS$pct <- source.ITS$count/sum(source.ITS$count)
+source.ITS$lab <- sprintf("%.2f%%",100*source.ITS$pct)
+
+ggplot(source.SSU,aes(x="X",y=pct,fill=foundSSU)) +geom_bar(stat="identity") + coord_polar(theta = 'y')+ 
+  geom_text(aes(y=cumsum(rev(pct)) - rev(pct)/2, x = sum(pct)*1.55, label = rev(lab))) +
+  scale_fill_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,2,3,5,7,9,11)])) +
+  labs(x = '', y = '', title = '') +
+  theme_classic() + theme(axis.text = element_blank())
+
+ggplot(source.LSU,aes(x="X",y=pct,fill=foundLSU)) +geom_bar(stat="identity") + coord_polar(theta = 'y')+ 
+  geom_text(aes(y=cumsum(rev(pct)) - rev(pct)/2, x = sum(pct)*1.55, label = rev(lab))) +
+  scale_fill_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,2,3,5,7,9,11)])) +
+  labs(x = '', y = '', title = '') +
+  theme_classic() + theme(axis.text = element_blank())
+
+ggplot(source.ITS,aes(x="X",y=pct,fill=foundITS)) +geom_bar(stat="identity") + coord_polar(theta = 'y')+ 
+  geom_text(aes(y=cumsum(rev(pct)) - rev(pct)/2, x = sum(pct)*1.55, label = rev(lab))) +
+  scale_fill_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,2,3,5,7,9,11)])) +
+  labs(x = '', y = '', title = '') +
+  theme_classic() + theme(axis.text = element_blank())
+```
+
+# Assess TopAnno
+```{r}
+tmp.bead.df <- SFR.slv.bead.df
+tmp.bead.df <- ddply(tmp.bead.df,c("SID","TopAnno"),transform,ATCt=length(BID))
+tmp.bead.df <- ddply(tmp.bead.df,c("SID"),transform,ATWeigth=ATCt/length(BID))
+ggplot(SFR.slv.bead.df,aes(x=qlen,fill=TopAnno)) + geom_histogram(position="stack") + xlim(c(0,4000))
+ggplot(SFR.slv.bead.df,aes(x=qlen,fill=TopAnno)) + geom_histogram(position="fill") + xlim(c(0,4000))
+
+ggplot(tmp.bead.df,aes(x=qlen,color=TopAnno)) + geom_density(aes(y=..density..*clips)) + xlim(c(0,4000))
+
+ggplot(SFR.slv.bead.df,aes(x=qlen,y=ident)) + 
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
+  ggtitle("Polygon between qlen and ident") +
+  facet_grid(TALv~TopAnno,scale="free")
+```
+
+
+# compare annotation : mock ref vs. silva (bead scale)
+```{r}
+levels(SFR.bead.df$tax) <- sub("_"," ",levels(SFR.bead.df$tax))
+SFR.compare.anno <- merge(SFR.bead.df,SFR.slv.bead.df,by=c("SID","BID"),all.x=T)
+#SFR.compare.anno <- merge(SFR.bead.df%>%filter(COR>999&flag!=0&D9P/COR<0.01),SFR.silva.anno,by=c("SID","LOTU"),all.x=T)
+checkTaxConsitRank <- function(d){
+  tax.x <- strsplit(as.character(d$tax.x)," ")
+  tax.y <- strsplit(as.character(d$tax.y)," ")
+  #tax.y.spg <- sapply(strsplit(as.character(d$taxPath),";"),"[",7)
+  spName <- ifelse(is.na(sapply(tax.y,"[",2)),"",sapply(tax.y,"[",2))
+  #consitLv <- ifelse(sapply(tax.x,"[",1)==sapply(tax.y,"[",1),1,0) + ifelse(d$tax.x==tax.y.spg,2,0) + ifelse(sapply(tax.x,"[",2)==spName,4,0)
+  consitLv <- ifelse(sapply(tax.x,"[",1)==sapply(tax.y,"[",1),1,0) +ifelse(sapply(tax.x,"[",2)==spName,2,0)
+  return(consitLv)
+}
+SFR.compare.anno$consitLv <- factor((ddply(SFR.compare.anno[,c("SID","BID","tax.x","tax.y")],c("SID","BID"),checkTaxConsitRank))$V1,levels=seq(0,3))
+levels(SFR.compare.anno$consitLv) <- c("different","genus","DiffGenusButSameSpecies(abnormal)","species")
+
+SFR.compare.anno$hitDB <- factor(ifelse(SFR.compare.anno$SSU.y==0,0,1) + ifelse(SFR.compare.anno$LSU.y==0,0,2),levels=seq(0,3))
+levels(SFR.compare.anno$hitDB) <- c("NONE","SILVA.SSU","SILVA.LSU","SILVA.LSU+SSU")
+
+SFR.compare.anno$reachLimit <- as.factor(ifelse(SFR.compare.anno$SSU.y>99,T,ifelse(SFR.compare.anno$LSU.y>99,T,0)))
+
+SFR.compare.anno$ident5.x <- round(SFR.compare.anno$ident.x-0.5,0)
+SFR.compare.anno$ident5.x <- ifelse(SFR.compare.anno$ident5.x<97,96,SFR.compare.anno$ident5.x)
+SFR.compare.anno$ident5.y <- round(SFR.compare.anno$ident.y-0.5,0)
+SFR.compare.anno$ident5.y <- ifelse(SFR.compare.anno$ident5.y<97,96,SFR.compare.anno$ident5.y)
+SFR.compare.anno$validAnno <- ifelse(grepl("metagenome|uncultured ",SFR.compare.anno$tax.y),"unknown",
+                                     ifelse(grepl("sp. ",SFR.compare.anno$tax.y),"sp. ID","valid"))
+
+```
+```{r}
+
+```
+
+```{r}
+ggplot(SFR.compare.anno,aes(x=SID,fill=consitLv)) + geom_bar(position="stack") + facet_wrap(~ident5.y,ncol=5)
+ggplot(SFR.compare.anno,aes(x=SID,fill=consitLv)) + geom_bar(position="fill") + facet_wrap(~ident5.y,ncol=5)
+
+
+ggplot(SFR.compare.anno,aes(x=BLen,y=qlen,fill=consitLv)) + geom_point()
+SFR.compare.anno$qlenk <- round(SFR.compare.anno$qlen/1000-0.5,0) *1000
+ggplot(SFR.compare.anno%>%filter(ident.x>99.5&ident.y>99.5),aes(x=SID,fill=consitLv)) + geom_bar(position="stack") + facet_wrap(~qlenk,ncol=5)
+ggplot(SFR.compare.anno%>%filter(ident.x>99.5&ident.y>99.5),aes(x=SID,fill=consitLv)) + geom_bar(position="fill") + facet_wrap(~qlenk,ncol=5)
+
+#SFR.compare.anno$scovG <- round(SFR.compare.anno$scov/10-0.49,0)*10
+
+#ggplot(SFR.compare.anno%>%filter(ident>99),aes(x=SID,fill=consitLv)) + geom_bar(position="fill")+
+#  facet_wrap(~scovG,ncol=5)
+
+SFR.compare.anno$bitG <- round(SFR.compare.anno$bitscore/1000,0)*1000
+
+ggplot(SFR.compare.anno%>%filter(BLen>999&ident.x>99&ident.y>99),aes(x=consitLv,fill=validAnno)) + 
+  geom_bar(position="stack") + facet_grid(.~SID,scale="free")
+
+ggplot(SFR.compare.anno%>%filter(Blen>999),aes(x=hitDB,fill=consitLv)) + geom_bar(position="fill") +
+  facet_wrap(~ident5.x,ncol=5) + coord_flip()
+
+ggplot(SFR.compare.anno%>%filter(Blen>999),aes(x=ident.x,y=ident.y)) + 
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
+  facet_grid(SID~.,scale="free_x")
+
+
+ggplot(SFR.compare.anno,aes(x=ident.y,color=consitLv)) + geom_density()
+ggplot(SFR.compare.anno%>%filter(Blen>999),aes(x=idents,color=consitLv)) + geom_density()
+ggplot(SFR.compare.anno%>%filter(Blen>999&multi>20),aes(x=idents,color=consitLv)) + geom_density() +facet_grid(SID~validAnno)
+ggplot(SFR.compare.anno%>%filter(Blen>999),aes(x=SBP,color=consitLv)) + geom_density()
+
+
+
+ggplot(SFR.compare.anno%>%filter(Blen>999),aes(x=idents-ident,color=consitLv)) + geom_density() 
+
+ggplot(SFR.compare.anno,aes(x=qMapLen,y=lens,color=consitLv)) + geom_point()
+ggplot(SFR.compare.anno,aes(x=bitSBlene,y=bit,color=consitLv)) + geom_point(alpha=.5)
+ggplot(SFR.compare.anno,aes(x=bitSBlene,y=bit,color=hitDB,shape=reachLimit)) +
+  geom_abline(slope = 1,intercept = 0, linetype=2,alpha=.5,size=2,color="grey50") +
+  geom_point(alpha=.5) + scale_shape_manual(values=c(16,4))
+ggplot(SFR.compare.anno,aes(x=bitSBlene,y=bit,color=hitDB,shape=reachLimit)) + geom_point(alpha=.5) +facet_grid(.~consitLv) +
+    geom_abline(slope = 1,intercept = 0, linetype=2,alpha=.5,size=2,color="grey50") +
+  geom_point(alpha=.5) + scale_shape_manual(values=c(16,4))
+
+ggplot(SFR.compare.anno,aes(x=hitDB,fill=consitLv)) + geom_bar(position="fill")
+ggplot(SFR.compare.anno%>%filter(Blen>999),aes(x=hitDB,fill=consitLv)) + geom_bar(position="stack") +facet_grid(.~SID)
+ggplot(SFR.compare.anno%>%filter(Blen>999),aes(x=hitDB,fill=interaction(consitLv,validAnno))) + geom_bar(position="fill") + facet_grid(.~SID)
+
+
+ggplot(SFR.compare.anno%>%filter(!is.na(consitLv)),aes(x=idents,color=consitLv)) + geom_density(size=1,alpha=.5) +
+  theme(legend.position = c(0.1,.99),legend.justification = c(0,1)) + facet_grid(hitDB~.)
+#ggplot(SFR.compare.anno,aes(x=qlen,fill=hitDB)) + geom_bar() +facet_grid(.~consitLv) #+ theme(axis.text.x = element_text(angle=90))
+ggplot(SFR.compare.anno,aes(x=bitSBlene,y=bit,color=mainUnit)) + geom_point(alpha=.5) +facet_grid(.~consitLv)
+
+```
+
+### FDR
+```{r}
+SFR.compare.anno$FDR <- ifelse(as.character(SFR.compare.anno$tax.x) == as.character(SFR.compare.anno$tax.y),"TD","FD")
+SFR.compare.anno$BLenG <- round(SFR.compare.anno$BLen/500,0) * 500
+ggplot(SFR.compare.anno,aes(x=qlen,color=FDR)) + geom_density() + xlim(c(0,4000))
+ggplot(SFR.compare.anno,aes(x=ident.y,fill=FDR)) + geom_histogram() + xlim(c(95,100))
+ggplot(SFR.compare.anno,aes(x=ident.y,fill=FDR)) + geom_histogram() + xlim(c(95,100)) + facet_grid(hitDB~.)
+ggplot(SFR.compare.anno%>%filter(TopAnno=="unique"&ident.y>99),aes(x=BLen,fill=FDR)) + geom_histogram(position="stack") + facet_grid(hitDB~.) +xlim(c(0,5000))
+
+ggplot(SFR.compare.anno%>%filter(BLen>999&!is.na(TopAnno)&!is.na(FDR)),aes(x=ident.x,y=ident.y)) + 
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
+  ggtitle("Polygon between qlen and ident") +
+  facet_grid(FDR~TopAnno+hitDB,scale="free")
+
+```
+
+
+### compare proportaion
+```{r}
+selectTax <- levels(SFR.compare.anno$tax.x)
+SFR.compare.anno$tax.select <- ifelse(as.character(SFR.compare.anno$tax.y)%in%selectTax,as.character(SFR.compare.anno$tax.y),"rest")
+SFR.compare.prop <- ddply(SFR.compare.anno%>%filter(ident.y>99),c("SID","tax.select","consitLv"),summarise,count=length(BID))
+SFR.compare.prop <- ddply(SFR.compare.prop,c("SID"))
+SFR.compare.prop$tax.select <- reorder(SFR.compare.prop$tax.select,SFR.compare.prop$count,sum)
+ggplot(SFR.compare.prop,aes(x=tax.select,fill=consitLv,y=count)) +geom_bar(stat="identity") + facet_grid(SID~.) + coord_flip()
+
+SFR.compare.stat2 <- ddply(SFR.compare.anno%>%filter(ident.y>99),c("SID","tax.select"),summarise,count=length(BID))
+SFR.compare.stat2 <- ddply(SFR.compare.stat2,c("SID"),transform,prop=count/sum(count)*100)
+SFR.compare.prop.df <- merge(SFR.compare.stat2,zymo.copy.num,by.x="tax.select",by.y="species")
+SFR.compare.prop.df$tax.select <- reorder(SFR.compare.prop.df$tax.select,SFR.compare.prop.df$prop,mean)
+ggplot(SFR.compare.prop.df,aes(x=tax.select,y=prop-TC16S,fill=SID)) + geom_bar(stat="identity",position="dodge") + coord_flip()
+```
+
+
+# assess top score annos
+
+```{r}
+SFR.compare.stat3 <- ddply(SFR.compare.anno%>%filter(ident.y>99),c("SID","tax.select","TopAnno"),summarise,count=length(BID))
+SFR.compare.stat3 <- ddply(SFR.compare.stat3,c("SID","TopAnno"),transform,prop=count/sum(count)*100)
+zymo.copy.num.2 <- rbind(zymo.copy.num,zymo.copy.num[10,])
+zymo.copy.num.2$species <- factor(zymo.copy.num.2$species,levels=c(levels(zymo.copy.num.2$species),"rest"))
+zymo.copy.num.2$species[11] <- "rest"
+zymo.copy.num.2$TC16S[11] <- 0
+SFR.compare.prop3.df <- merge(SFR.compare.stat3,zymo.copy.num.2,by.x="tax.select",by.y="species",all.x=T)
+SFR.compare.prop3.df$tax.select <- reorder(SFR.compare.prop3.df$tax.select,SFR.compare.prop3.df$prop,mean)
+
+ggplot(SFR.compare.prop3.df,aes(x=tax.select,y=count,fill=TopAnno)) + geom_bar(stat="identity",position="stack") + coord_flip() + facet_grid(.~SID)
+ggplot(SFR.compare.prop3.df,aes(x=tax.select,y=prop-TC16S,fill=SID)) + geom_bar(stat="identity",position="dodge") + coord_flip() + facet_grid(.~TopAnno)
+SFR.compare.prop3.stat <- ddply(SFR.compare.prop3.df,c("tax.select","TopAnno"),summarise,prop.delta=mean(prop-TC16S),sd=sd(prop-TC16S))
+ggplot(SFR.compare.prop3.stat,aes(x=tax.select,y=prop.delta,fill=tax.select)) + geom_bar(stat="identity") + 
+  geom_errorbar(aes(ymax=prop.delta+sd,ymin=prop.delta-sd))+ coord_flip() + facet_grid(.~TopAnno,scale="free")
+```
+
+Add filter parameters
+
+```{r}
+SFR.compare.stat <- ddply(SFR.compare.anno%>%filter(ident.y>99&BLen>800&TopAnno=="unique"),c("SID","tax.select"),summarise,count=length(BID))
+SFR.compare.stat <- ddply(SFR.compare.stat,c("SID"),transform,prop=count/sum(count)*100)
+SFR.compare.prop.df <- merge(SFR.compare.stat,zymo.copy.num.2,by.x="tax.select",by.y="species",all.x=T)
+SFR.compare.prop.df$delta <- SFR.compare.prop.df$prop - SFR.compare.prop.df$TC16S
+SFR.compare.prop.df$tax.select <- reorder(SFR.compare.prop.df$tax.select,SFR.compare.prop.df$delta,mean)
+
+ggplot(SFR.compare.prop.df,aes(x=tax.select,y=count)) + geom_bar(stat="identity",position="stack") + coord_flip() + facet_grid(.~SID)
+ggplot(SFR.compare.prop.df,aes(x=tax.select,y=prop-TC16S,fill=SID)) + geom_bar(stat="identity",position="dodge") + coord_flip()
+SFR.compare.prop.stat <- ddply(SFR.compare.prop.df,c("tax.select"),summarise,sd=sd(delta),prop.delta=mean(delta))
+ggplot(SFR.compare.prop.stat,aes(x=tax.select,y=prop.delta,fill=tax.select)) + geom_bar(stat="identity") + 
+  geom_errorbar(aes(ymax=prop.delta+sd,ymin=prop.delta-sd))+ coord_flip() + theme_bw()
+```
+
+### Assess hitDB
+```{r}
+SFR.compare.stat4 <- ddply(SFR.compare.anno%>%filter(ident.y>99&hitDB!="NONE"),c("SID","tax.select","TopAnno","hitDB"),summarise,count=length(BID))
+SFR.compare.stat4 <- ddply(SFR.compare.stat4,c("SID","TopAnno","hitDB"),transform,prop=count/sum(count)*100)
+SFR.compare.prop4.df <- merge(SFR.compare.stat4,zymo.copy.num,by.x="tax.select",by.y="species")
+SFR.compare.prop4.df$tax.select <- reorder(SFR.compare.prop4.df$tax.select,SFR.compare.prop4.df$prop,mean)
+
+ggplot(SFR.compare.prop4.df,aes(x=tax.select,y=count,fill=SID)) + geom_bar(stat="identity",position="dodge") + coord_flip() + facet_grid(hitDB~TopAnno)
+ggplot(SFR.compare.prop4.df,aes(x=tax.select,y=prop-TC16S,fill=SID)) + geom_bar(stat="identity",position="dodge") + coord_flip() + facet_grid(hitDB~TopAnno)
+
+```
+
+
+
+# Quantification
+
+cluster same samples' clips to get LOTU:
+```{bash}
+mkdir -p SAM/SFR/ANNO
+for i in {S,O}{4,5,6};do 
+  awk -v n=$i '/>BI/{gsub(">",">"n)}{print}' SAM/$i/summary.BI.megahit.clip.all.fasta;
+done > SAM/SFR/summary.BI.megahit.clip.all.fasta
+for i in {S,O}{4,5,6};do 
+  awk -v n=$i '{print n$0}' SAM/$i/ANNO/CLIP.map.merge.bead.anno;
+done > SAM/SFR/ANNO/CLIP.map.merge.bead.anno
+
+metabbq smk -j -npk SAM/SFR/KRAKEN/db/hash.k2d
+
+# add anno
+metabbq IO clade2tree -i SAM/SFR/CLIP/id90def4.clust.fa -a SAM/SFR/ANNO/CLIP.map.merge.bead.anno \
+  -d $LFR/Source/REF/KRAKEN2/rDNA -s SAM/SFR/CLIP/id90def4.clade.uc -o SAM/SFR/KRAKEN/BEAD.ANNO -v
+
+
+awk -F "\t" '{split($1,a,";");print a[1]"\t"$2}' SAM/SFR/KRAKEN/db/taxonomy/paths.txt > SAM/SFR/KRAKEN/db/data/topRank.map
+
+#
+for i in {S,O}{4,5,6,A,B,C};do 
+  mkdir -p SAM/$i/KRAKEN
+  ln -s ../../SFR/KRAKEN/db SAM/$i/KRAKEN/SFR;
+done
+
+#use bracken
+metabbq smk --config kk2_db="SFR" -j -npk SAM/{S,O}{4,5,6,A,B,C}/KRAKEN/reads2SFR.bracken
+for i in {S,O}{4,5,6,A,B,C};do 
+  awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2SFR.k2.1.bracken;
+done > STAT/KRAKEN/SFR.reads2SFR.bracken
+
+for i in {S,O}{4,5,6,A,B,C};do for j in {G,P};do
+  bracken -d SAM/$i/KRAKEN/SFR -i SAM/$i/KRAKEN/reads2SFR.kk2.report -l $j -o SAM/$i/KRAKEN/reads2SFR.$j.bracken -w SAM/$i/KRAKEN/reads2SFR.$j.breport2 ;
+done & done
+for j in {G,P};do for i in {S,O}{4,5,6,A,B,C};do 
+  awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2SFR.$j.bracken
+done > STAT/KRAKEN/SFR.reads2SFR.$j.bracken;done
+
+#stat
+for i in {S,O}{4,5,6,A,B,C};do 
+  awk -v n=$i 'FNR>1{print n"\t"$5}' SAM/$i/KRAKEN/reads2SFR.k2.bead;
+done|uniq -c > STAT/KRAKEN/SFR.reads2SFR.bead.stat
+```
+
+** load**
+```{r}
+ranks.map <- read.table("../../Results/JAN20/SAM/SFR/KRAKEN/db/data/ranks.tsv",comment.char = "",
+                        sep="\t",col.names=c("domain","taxID"))
+```
+
+```{r}
+#species
+SFR.r2SFR.species.bracken <- read.table(
+  md5("../../Results/JAN20/STAT/KRAKEN/SFR.reads2SFR.bracken","5268517b9cc700e739bd85a35c5350aa"),
+  as.is = T,quote = "",comment.char = "", sep="\t",
+  col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
+SFR.r2SFR.species.bracken$SAM <- substr(SFR.r2SFR.species.bracken$SID,1,1)
+SFR.r2SFR.species.bracken$tax <- sapply(strsplit(as.character(SFR.r2SFR.species.bracken$name),"__"),"[",2)
+SFR.r2SFR.species.bracken$tax <- reorder(SFR.r2SFR.species.bracken$tax,SFR.r2SFR.species.bracken$fraction_total_reads,sum)
+
+
+SFR.r2SFR.species.bracken <- ddply(
+  SFR.r2SFR.species.bracken,c("SID"),transform,
+  pct.k=kraken_assigned_reads/sum(kraken_assigned_reads),
+  pct.a=added_reads/sum(added_reads),
+  pct=new_est_reads/sum(new_est_reads))
+
+top20tax <- rev(levels(reorder(SFR.r2SFR.species.bracken$tax,SFR.r2SFR.species.bracken$pct,sum)))[1:20]
+
+SFR.r2SFR.species.b.count <- ddply(SFR.r2SFR.species.bracken,c("SID"),summarise,observed=length(which(new_est_reads>10)))
+
+SFR.r2SFR.species.bracken$tax20 <- ifelse(
+  as.character(SFR.r2SFR.species.bracken$tax)%in%top20tax,as.character(SFR.r2SFR.species.bracken$tax),"Others")
+SFR.r2SFR.species.bracken$tax20[which(SFR.r2SFR.species.bracken$name=="UNCLASSIFIED")] <- "UNCLASSIFIED"
+
+SFR.r2SFR.species.b.stat <- ddply(SFR.r2SFR.species.bracken,c("SAM","SID","tax20"),summarise,pct=sum(fraction_total_reads))
+SFR.r2SFR.species.b.stat$taxOrder <- reorder(SFR.r2SFR.species.b.stat$tax20,SFR.r2SFR.species.b.stat$pct,mean)
+```
+
+```{r}
+ggplot(SFR.r2SFR.species.b.stat,aes(x=taxOrder,y=pct,fill=SID)) + geom_bar(stat="identity",position="dodge") + coord_flip() + facet_grid(.~SAM)
+ggplot(SFR.r2SFR.species.b.stat,aes(x=SID,y=pct,fill=taxOrder)) + geom_bar(stat="identity",position="fill")
+ggplot(SFR.r2SFR.species.b.stat%>%filter(!tax20%in%c("Others","bacterium")),aes(x=SID,y=pct,fill=taxOrder)) + 
+  geom_bar(stat="identity",position="stack") +facet_grid(.~SAM,scale="free")
+
+```
+
+### PCA
+```{r}
+SFR.sp.count.mtx <- dcast(SFR.r2SFR.species.bracken,taxID~SID,value.var = "kraken_assigned_reads",fill = 0)
+row.kept <- which(apply(SFR.sp.count.mtx[,-1],1,min)>10)
+
+SFR.sp.prf.mtx <- dcast(SFR.r2SFR.species.bracken,taxID+name~SID,value.var = "pct",fill = 0)
+rownames(SFR.sp.prf.mtx) <- SFR.sp.prf.mtx$taxID
+taxName <- SFR.sp.prf.mtx$name
+taxType <- sapply(strsplit(taxName,"__"),"[",1)
+SFR.sp.cut.mtx <- as.matrix(SFR.sp.prf.mtx[row.kept,-c(1:2)])
+SFR.sp.cut.mtx.pca <- prcomp(t(SFR.sp.cut.mtx),center = T,scale. = T)
+summary(SFR.sp.cut.mtx.pca)
+
+SFR.sp.known.mtx <- as.matrix(SFR.sp.prf.mtx[intersect(row.kept,which(taxType=="species")),-c(1:2)])
+SFR.sp.known.mtx.pca <- prcomp(t(SFR.sp.known.mtx),center = T,scale. = T)
+SFR.sp.unknown.mtx <- as.matrix(SFR.sp.prf.mtx[intersect(row.kept,which(taxType!="species")),-c(1:2)])
+SFR.sp.unknown.mtx.pca <- prcomp(t(SFR.sp.unknown.mtx),center = T,scale. = T)
+
+
+SFR.sp.mtx.pca.df <- data.frame(SID=rownames(SFR.sp.cut.mtx.pca$x),SFR.sp.cut.mtx.pca$x)
+ggplot(SFR.sp.mtx.pca.df,aes(x=PC1,y=PC2,color=SID)) +geom_point(size=3) + geom_text(aes(label=SID),nudge_x = 0.01)
+
+SFR.sp.multi.pca.df <- rbind(
+  data.frame(type="ALL",SID=rownames(SFR.sp.cut.mtx.pca$x),SFR.sp.cut.mtx.pca$x),
+  data.frame(type="known",SID=rownames(SFR.sp.known.mtx.pca$x),SFR.sp.known.mtx.pca$x),
+  data.frame(type="unknown",SID=rownames(SFR.sp.unknown.mtx.pca$x),SFR.sp.unknown.mtx.pca$x)
+)
+
+ggplot(SFR.sp.multi.pca.df,aes(x=PC1,y=PC2,color=SID)) +geom_point(size=3) + 
+  geom_text(aes(label=SID),nudge_x = 15) + facet_wrap(~type,ncol=3,scale="free")
+
+```
+
+```{r}
+SFR.r2SFR.b.sp.more <- merge(SFR.r2SFR.species.bracken,ranks.map,by="taxID",all.x=T)
+SFR.r2SFR.b.count.mtx <- dcast(SFR.r2SFR.b.sp.more,taxID~SID,value.var = "new_est_reads",fill = 0,fun.aggregate = sum)
+row.kept <- which(apply(SFR.sp.count.mtx[,-1],1,min)>10)
+
+SFR.sp.prf.mtx2 <- dcast(SFR.r2SFR.b.sp.more,taxID+domain+name~SID,value.var = "pct",fill = 0,fun.aggregate = sum)
+rownames(SFR.sp.prf.mtx2) <- SFR.sp.prf.mtx2$taxID
+taxName <- SFR.sp.prf.mtx2$name
+taxType <- sapply(strsplit(taxName,"__"),"[",1)
+SFR.sp.cut.mtx2 <- SFR.sp.prf.mtx2[row.kept,]
+SFR.sp.A.mtx <- as.matrix(SFR.sp.cut.mtx2[which(SFR.sp.cut.mtx2$domain=="domain__Archaea"),-c(1:3)])
+SFR.sp.A.pca <- prcomp(t(SFR.sp.A.mtx),center = T,scale. = T)
+SFR.sp.E.mtx <- as.matrix(SFR.sp.cut.mtx2[which(SFR.sp.cut.mtx2$domain=="domain__Eukaryota"),-c(1:3)])
+SFR.sp.E.pca <- prcomp(t(SFR.sp.E.mtx),center = T,scale. = T)
+SFR.sp.U.mtx <- as.matrix(SFR.sp.cut.mtx2[which(SFR.sp.cut.mtx2$domain=="CLADE0.4__4"),-c(1:3)])
+#SFR.sp.U.pca <- prcomp(t(SFR.sp.U.mtx),center = T,scale. = T)
+
+SFR.sp.domain.pca.df <- rbind(
+  data.frame(type="Archaea",SID=rownames(SFR.sp.A.pca$x),SFR.sp.A.pca$x),
+  data.frame(type="Eukaryota",SID=rownames(SFR.sp.E.pca$x),SFR.sp.E.pca$x),
+  data.frame(type="ALL",SID=rownames(SFR.sp.cut.mtx.pca$x),SFR.sp.cut.mtx.pca$x)
+)
+
+ggplot(SFR.sp.domain.pca.df,aes(x=PC1,y=PC2,color=SID)) +geom_point(size=3) + 
+  geom_text(aes(label=SID),nudge_x = 15) + facet_wrap(~type,ncol=3,scale="free")
+```
+
+use original reads fraction:
+```{r}
+
+SFR.ori.b.count.mtx <- dcast(SFR.r2SFR.b.sp.more,taxID~SID,value.var = "kraken_assigned_reads",fill = 0,fun.aggregate = sum)
+row.kept <- which(apply(SFR.ori.b.count.mtx[,-1],1,min)>100)
+
+SFR.ori.sp.mtx2 <- dcast(SFR.r2SFR.b.sp.more,taxID+domain+name~SID,value.var = "pct.k",fill = 0,fun.aggregate = sum)
+rownames(SFR.ori.sp.mtx2) <- SFR.ori.sp.mtx2$taxID
+taxName <- SFR.ori.sp.mtx2$name
+taxType <- sapply(strsplit(taxName,"__"),"[",1)
+SFR.sp.ori.cut.mtx2 <- SFR.ori.sp.mtx2[row.kept,]
+SFR.sp.ori.cut.pca <- prcomp(t(SFR.sp.ori.cut.mtx2[,-c(1:3)]),center = T,scale. = T)
+SFR.sp.ori.A.mtx <- as.matrix(SFR.sp.ori.cut.mtx2[which(SFR.sp.ori.cut.mtx2$domain=="domain__Archaea"),-c(1:3)])
+SFR.sp.ori.A.pca <- prcomp(t(SFR.sp.ori.A.mtx),center = T,scale. = T)
+SFR.sp.ori.E.mtx <- as.matrix(SFR.sp.ori.cut.mtx2[which(SFR.sp.ori.cut.mtx2$domain=="domain__Eukaryota"),-c(1:3)])
+SFR.sp.ori.E.pca <- prcomp(t(SFR.sp.ori.E.mtx),center = T,scale. = T)
+SFR.sp.ori.U.mtx <- as.matrix(SFR.sp.ori.cut.mtx2[which(SFR.sp.ori.cut.mtx2$domain=="CLADE0.4__4"),-c(1:3)])
+#SFR.sp.ori.U.pca <- prcomp(t(SFR.sp.ori.U.mtx),center = T,scale. = T)
+
+SFR.sp.ori.domain.pca.df <- rbind(
+  data.frame(type="Archaea",SID=rownames(SFR.sp.ori.A.pca$x),SFR.sp.ori.A.pca$x),
+  data.frame(type="Eukaryota",SID=rownames(SFR.sp.ori.E.pca$x),SFR.sp.ori.E.pca$x),
+  data.frame(type="ALL",SID=rownames(SFR.sp.ori.cut.pca$x),SFR.sp.ori.cut.pca$x)
+)
+
+ggplot(SFR.sp.ori.domain.pca.df,aes(x=PC1,y=PC2,color=SID)) +geom_point(size=3) + 
+  geom_text(aes(label=SID),nudge_x = 15) + facet_wrap(~type,ncol=3,scale="free")
+```
+
+
+```{r}
+pheatmap(cor(SFR.sp.cut.mtx,method = "s"),display_numbers = T,cluster_rows = F,cluster_cols = F,main="all")
+pheatmap(cor(SFR.sp.known.mtx,method = "s"),display_numbers = T,cluster_rows = F,cluster_cols = F,main="known")
+pheatmap(cor(SFR.sp.unknown.mtx,method = "s"),display_numbers = T,cluster_rows = F,cluster_cols = F,main="unknown")
+pheatmap(cor(SFR.sp.A.mtx,method = "s"),display_numbers = T,cluster_rows = F,cluster_cols = F,main="Archaea")
+pheatmap(cor(SFR.sp.E.mtx,method = "s"),display_numbers = T,cluster_rows = F,cluster_cols = F,main="Eukaryota")
+
+```
+
+
+**QQ plot**
+```{r}
+SFR.r2SFR.b.sp.more$rep <- as.factor(substr(SFR.r2SFR.b.sp.more$SID,2,2))
+SFR.r2SFR.b.sp.more$treat <- ifelse(SFR.r2SFR.b.sp.more$rep%in%c(4,5,6),"RCA","NoRCA")
+levels(SFR.r2SFR.b.sp.more$rep) <- c(4,5,6,4,5,6)
+#SFR.stat.sp.df <- ddply(SFR.r2SFR.bracken,c("SAM","treat","tax","rep","rank"),summarise,pct=mean(fraction_total_reads))
+#SFR.stat.sp.dfs <- dcast(SFR.stat.sp.df,SAM+tax+rank+rep~treat,value.var = "fraction_total_reads")
+
+#SFR.sp.cor <- ddply(SFR.stat.sp.dfs%>%filter(NoRCA+RCA>0),c("SAM","rank","rep"),summarise,spearman=cor(NoRCA,RCA,method="s"))
+
+SFR.stat.sp.df2 <- SFR.r2SFR.b.sp.more
+SFR.stat.sp.df2$rep <- as.numeric(SFR.stat.sp.df2$rep)
+SFR.stat.sp.df2$rep[which(SFR.stat.sp.df2$rep>3)] <- SFR.stat.sp.df2$rep[which(SFR.stat.sp.df2$rep>3)] - 3
+SFR.stat.sp.df2s <- dcast(SFR.stat.sp.df2,SAM+domain+rank+rep+tax~treat,value.var = "pct",fun.aggregate = sum,fill = 0)
+ggplot(SFR.stat.sp.df2s,aes(x=RCA,y=NoRCA,color=factor(rep))) +geom_point() +
+  geom_abline(intercept = c(-1,0,1),slope=1,linetype=2) + facet_grid(SAM~domain) +
+  scale_x_log10() + scale_y_log10() 
+```
+
+```{r}
+ddply(SFR.stat.sp.df2s,c("SAM","rep"),summarise,
+      sumRCAwith0NoRCA=sum(RCA[which(NoRCA==0)]),taxRCAwith0NoRCA=length(which(RCA>0&NoRCA==0)),
+      sumNoRCAwith0RCA=sum(NoRCA[which(RCA==0)]),taxNoRCAwith0RCA=length(which(NoRCA>0&RCA==0)),)
+```
+
+```{r}
+SFR.stat.sp.df2r <- dcast(SFR.stat.sp.df2,SAM+domain+rank+rep+tax~treat,value.var = "kraken_assigned_reads",fun.aggregate = sum,fill = 0)
+ggplot(SFR.stat.sp.df2r,aes(x=RCA,y=NoRCA,color=factor(rep))) +geom_point() +
+  geom_abline(intercept = c(-1,0,1),slope=1,linetype=2) + facet_grid(SAM~rep) +
+  scale_x_log10() + scale_y_log10() 
+```
+
+```{r}
+SFR.stat.sp.df3s <- dcast(SFR.stat.sp.df2,SAM+domain+rank+tax+treat~rep,value.var = "pct.k",fun.aggregate = sum)
+ggplot(SFR.stat.sp.df3s,aes(x=`1`,y=`2`,color=factor(treat))) +geom_point() +
+  geom_abline(intercept = c(-1,0,1),slope=1,linetype=2) + facet_grid(treat~SAM+domain) +
+  scale_x_log10() + scale_y_log10() 
+ggplot(SFR.stat.sp.df3s,aes(x=`1`,y=`3`,color=factor(treat))) +geom_point() +
+  geom_abline(intercept = c(-1,0,1),slope=1,linetype=2) + facet_grid(treat~SAM+domain) +
+  scale_x_log10() + scale_y_log10() 
+ggplot(SFR.stat.sp.df3s,aes(x=`2`,y=`3`,color=factor(treat))) +geom_point() +
+  geom_abline(intercept = c(-1,0,1),slope=1,linetype=2) + facet_grid(treat~SAM+domain) +
+  scale_x_log10() + scale_y_log10() 
+```
+```{r}
+ddply(SFR.stat.sp.df2r,c("SAM","rep"),summarise,rdR=sum(RCA[which(NoRCA>0)]),rdN=sum(NoRCA[which(RCA>0)]))
+```
+
+
+
+
+
+
+
+#FIN.

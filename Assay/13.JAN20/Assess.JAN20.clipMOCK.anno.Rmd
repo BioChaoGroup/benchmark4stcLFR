@@ -27,7 +27,7 @@ md5 <- function(f,m){
 }
 ```
 
-#functions
+# functions
 ```{r}
 #https://www.biostars.org/p/9335/
 matcher <- function(pattern, x) {
@@ -84,7 +84,17 @@ Zymo mock strains:
 | Saccharomyces cerevisiae | 2           | NA        | 9.3        | 0.57         | 0.29         | Y    | 109            |
 | Cryptococcus neoformans  | 2           | NA        | 3.3        | 0.37         | 0.18         | Y    | 60             |
 
-#stat blast annotation of clips fasta to silva database
+# summary bash codes
+```{bash, eval=FALSE}
+# ZYMO clip summary
+for i in {1,2,3};do grep ">"  SAM/Z$i/summary.BI.megahit.clip.fasta | awk -v n=Z$i -F '>|_|=' '{print n"\t"$2"\t"$3"\t"$4"\t"$6"\t"$8"\t"$10"\t"$11"\t"$12"\t"$13}';
+done > STAT/summary.BI.megahit.clip.fID.tsv
+
+
+```
+
+
+# stat blast annotation of clips fasta to silva database
 ```{bash,eval=FALSE}
 mkdir -p ../../Results/JAN20/STAT/mash
 mkdir -p ../../Results/JAN20/STAT/CLIP
@@ -101,16 +111,6 @@ for i in {1,2,3,7,8,9};do SAM=SAM/Z$i;
 metabbq randomlyPick.pl -i $SAM/clean/fastp.sort.1.fq.gz -o $SAM/clean/fastp.sort.1 -n 50 -m 10 -s $i -t 1 &
 metabbq randomlyPick.pl -i $SAM/clean/fastp.sort.2.fq.gz -o $SAM/clean/fastp.sort.2 -n 50 -m 10 -s $i -t 1 &
 done
-SAM="SAM/Z8"
-rand="00"
-#SOTU
-for i in {1,2,3,7,8,9};do SAM=SAM/Z$i; for j in {00..09};do
-bwa mem -t 8 -h 1000 $SAM/OTU/pred.bwa.index.fa $SAM/clean/fastp.sort.1_$j.fq.gz $SAM/clean/fastp.sort.2_$j.fq.gz \
-| samtools view -b -@ 4 > $SAM/OTU/pred.bwa.map_$j.bam
-samtools view $SAM/OTU/pred.bwa.map_$j.bam | metabbq beadStat sam -i - -o $SAM/OTU/pred.RSUs.bwa.stat_$j -v
-metabbq beadStat sam2b -i $SAM/OTU/pred.RSUs.bwa.stat_$j -o $SAM/OTU/pred.RSUs.bwa.sbb1_$j -v
-awk 'FNR>1{{print $5}}' $SAM/OTU/pred.RSUs.bwa.sbb1_$j|sort|uniq -c > $SAM/OTU/pred.RSUs.bwa.prop_$j
-done;done
 
 #sum
 for i in {1,2,3};do awk -v n=Z$i '(p!=$1){print n"\t"$0;p=$1}' SAM/Z$i/OTU/pred.{L,S}SU.clust.robust.m6.more;done > STAT/OTU/pred.RSUs.clust.robust.m6.more
@@ -163,8 +163,16 @@ done;done > STAT/CLIP/test.D6305.rRNA.prop
 
 
 # prep for fungal mock
-```bash
+```{bash}
 #quick bwa test
+metabbq smk --configfile config.F.yaml -j -pk SAM/M{4,5,6}/CLIP/all.LOTU.map.closeRef.m6
+mkdir -p SAM/M{A,B,C}/CLIP
+for i in {a,a.amb,a.ann,a.bwt,a.pac,a.sa};do
+echo ln -s ../../M4/CLIP/all.LOTU.f$i SAM/MA/CLIP/all.LOTU.f$i;
+echo ln -s ../../M5/CLIP/all.LOTU.f$i SAM/MB/CLIP/all.LOTU.f$i;
+echo ln -s ../../M6/CLIP/all.LOTU.f$i SAM/MC/CLIP/all.LOTU.f$i;
+done
+
 
 for i in {4,5,6,A,B,C};do SAM=SAM/M$i;
 echo metabbq randomlyPick.pl -i $SAM/clean/fastp.sort.1.fq.gz -o $SAM/clean/fastp.sort.1 -n 50 -m 10 -s $i -t 2
@@ -174,63 +182,66 @@ done > tmp.F.sh
 SAM="SAM/Z8"
 rand="00"
 #SOTU
-for i in {1,2,3,7,8,9};do SAM=SAM/Z$i; for j in {00..09};do
+for i in {4,5,6,A,B,C};do SAM=SAM/Z$i; for j in {00..09};do
 bwa mem -t 8 -h 1000 $SAM/OTU/pred.bwa.index.fa $SAM/clean/fastp.sort.1_$j.fq.gz $SAM/clean/fastp.sort.2_$j.fq.gz \
 | samtools view -b -@ 4 > $SAM/OTU/pred.bwa.map_$j.bam
 samtools view $SAM/OTU/pred.bwa.map_$j.bam | metabbq beadStat sam -i - -o $SAM/OTU/pred.RSUs.bwa.stat_$j -v
 metabbq beadStat sam2b -i $SAM/OTU/pred.RSUs.bwa.stat_$j -o $SAM/OTU/pred.RSUs.bwa.sbb1_$j -v
-awk 'FNR>1{{print $5}}' $SAM/OTU/pred.RSUs.bwa.sbb1_$j|sort|uniq -c > $SAM/OTU/pred.RSUs.bwa.prop_$j
+awk '$1 != "0000_0000_0000"&&$2>9){print $5}' $SAM/OTU/pred.RSUs.bwa.sbb1_$j|sort|uniq -c > $SAM/OTU/pred.RSUs.bwa.prop_$j
 done;done
 
 #sum
-for i in {1,2,3};do awk -v n=Z$i '(p!=$1){print n"\t"$0;p=$1}' SAM/Z$i/OTU/pred.{L,S}SU.clust.robust.m6.more;done > STAT/OTU/pred.RSUs.clust.robust.m6.more
-for i in {1,2,3,7,8,9};do for j in {00..09};do  awk -v n=Z$i -v r=$j '{print n"\t"r"\t"$1"\t"$2"\t"$3}' SAM/Z$i/OTU/pred.RSUs.bwa.sbb1_$j.p; done;done > STAT/OTU/pred.RSUs.bwa.sbb1.rand.p
+for i in {4,5,6};do awk -v n=M$i '(p!=$1){print n"\t"$0;p=$1}' SAM/Z$i/OTU/pred.{L,S}SU.clust.robust.m6.more;done > STAT/OTU/pred.RSUs.clust.robust.m6.more
+for i in {4,5,6,A,B,C};do for j in {00..09};do awk -v n=M$i -v r=$j '{print n"\t"r"\t"$1"\t"$2"\t"$3}' SAM/Z$i/OTU/pred.RSUs.bwa.sbb1_$j.p; done;done > STAT/OTU/pred.RSUs.bwa.sbb1.rand.p
+
+for i in {4,5,6,A,B,C};do for j in {00..09};do awk -v n=Z$i -v r=$j '{print n"\t"r"\t"$1"\t"$2}' SAM/M$i/OTU/pred.RSUs.bwa.prop_$j; done;done > STAT/OTU/pred.RSUs.bwa.prop.rand
 
 #LOTU
-for i in {1,2,3,7,8,9};do SAM=SAM/Z$i; for j in {00..09};do
-bwa mem -t 16 -h 1000 $SAM/CLIP/all.LOTU.fa $SAM/clean/fastp.sort.1_$j.fq.gz $SAM/clean/fastp.sort.2_$j.fq.gz | samtools view -b -@ 4 > $SAM/CLIP/all.LOTU.bwa.map_$j.bam
+
+## closeRef
+metabbq smk --configfile config.F.yaml -j -npk SAM/M{4,5,6}/CLIP/all.LOTU.map.closeRef.m6
+for i in {4,5,6};do awk -v n="M$i" '($3>99&&p!=$1){print n"\t"$0}' SAM/M$i/CLIP/all.LOTU.map.closeRef.m6;
+done > STAT/CLIP/MS.LOTU.map.closeRef.m6
+
+for i in {4,5,6,A,B,C};do SAM=SAM/M$i; for j in {00..09};do
+bwa mem -t 4 -h 1000 $SAM/CLIP/all.LOTU.fa $SAM/clean/fastp.sort.1_$j.fq.gz $SAM/clean/fastp.sort.2_$j.fq.gz | samtools view -b -@ 4 > $SAM/CLIP/all.LOTU.bwa.map_$j.bam
 samtools view $SAM/CLIP/all.LOTU.bwa.map_$j.bam | metabbq beadStat sam -i - -o $SAM/CLIP/all.LOTU.bwa.stat_$j -v
 metabbq beadStat sam2b -i $SAM/CLIP/all.LOTU.bwa.stat_$j -o $SAM/CLIP/all.LOTU.bwa.sbb1_$j -v
 awk '($1 != "0000_0000_0000"&&$7/$2>0.5&&$7>2){{print $5}}' $SAM/CLIP/all.LOTU.bwa.sbb1_$j|sort|uniq -c > $SAM/CLIP/all.LOTU.bwa.prop_$j
 ;done;done
 
+##sum
+for i in {4,5,6,A,B,C};do SAM=SAM/M$i; for j in {00..09};do
+awk -v n=M$i -v r=$j '{print n"\t"r"\t"$1"\t"$2"\t"$3}' $SAM/CLIP/all.LOTU.bwa.sbb1_$j.p;
+done;done > STAT/CLIP/MS.LOTU.bwa.rand.prop
 
 ```
 
 
 Load data:
 ```{r}
-
-#test gff
-test.Z1.barrnap.gff <- read.table("../../Results/JAN20/SAM/Z1/summary.BI.megahit.rRNA.fasta.barrnap.gff3",
-                       col.names = c("CID","version","gene","ps","pe","evalue","strand","dot","name"),sep = "\t")
-test.Z1.barrnap.gff$name <- as.character(test.Z1.barrnap.gff$name)
-test.Z1.barrnap.gff$CID <- as.character(test.Z1.barrnap.gff$CID)
-
-#test cluster
-Z2.clip.clust.uc <- read.table("../../Results/JAN20/SAM/Z2/CLIP/all.clust.uc",as.is=T,
-                               col.names = c("type","num","length","ident","strand","c6","c7","cigar","query","subject"))
-
-#test quantification
-Z2.anno <- read.table("../../Results/JAN20/SAM/Z2/CLIP/all.LOTU.map.unified.anno",sep="\t",
-                      col.names = c("LOTU","rTax","idents","lens","mis","gap","tax","taxid","rank","path"))
-Z2.prop <- read.table("../../Results/JAN20/SAM/Z2/CLIP/all.LOTU.bwa.prop",col.names = c("count","LOTU"))
-Z2.faID <- read.table("../../Results/JAN20/SAM/Z2/CLIP/all.clust.logID",
-                      col.names = c("LOTU","size","C75","CLEN","XLEN","MLEN"))
-Z2.closeAnno <- read.table("../../Results/JAN20/SAM/Z2/CLIP/all.clust.blastn2DD6305.rRNA.m6.tsv",sep=" ",
-                      col.names = c("LOTU","","rTax","idents","lens","mis","gap","qs","qe","ss","se","evalue","bs","qlen"))
-Z8.prop <- read.table("../../Results/JAN20/SAM/Z8/CLIP/all.LOTU.bwa.prop_00",col.names = c("count","LOTU"))
-
-
-#sum
+#clip
+ZS.clip <- read.table("../../Results/JAN20/STAT/summary.BI.megahit.clip.fID.tsv",
+                      col.names = c("SID","BID","kmer","AID","flag","multi","len","CType","Ads","cLen"))
+#cluster
+ZS.clust.
+#anno
 ZS.anno <- read.table("../../Results/JAN20/STAT/OTU/pred.RSUs.clust.robust.m6.more",sep="\t", col.names = c("SID","SOTU","ref","idents","lens","mis","gap","qs","qe","ss","se","evalue","bitscore","qlen","slen","tax","taxid","rank","path"))
 ZS.prop <- read.table("../../Results/JAN20/STAT/OTU/pred.RSUs.bwa.sbb1.rand.p",sep="\t",
                       col.names = c("SID","rand","count0","count","SOTU"))
+#
+ZS.prop <- read.table("../../Results/JAN20/STAT/OTU/pred.RSUs.bwa.prop.rand",sep="\t",
+                      col.names = c("SID","rand","count","SOTU"))
 
 ZS.test.prop <- read.table("../../Results/JAN20/STAT/CLIP/test.D6305.rRNA.prop",
                            col.names = c("SID","rand","count","tax"))
+```
+
+# Check clip
+```{r}
 
 ```
+
 
 
 #Curation
@@ -361,10 +372,12 @@ ZS.filter.df.ref2$pct.delta <- ZS.filter.df.ref2$pct - ZS.filter.df.ref2$count.x
 ggplot(ZS.filter.df.ref2,aes(x=SID,y=pct.delta,fill=selectTax,group=selectTax)) + 
   geom_boxplot()+facet_grid(.~selectTax)
 
-ZS.filter.df.ref2.sum <- ddply(ZS.filter.df.ref2,"selectTax",summarise,delta.mean=mean(delta),pct.se=sd(delta))
-ggplot(ZS.filter.df.ref2.sum,aes(x=selectTax,y=delta.mean,fill=selectTax)) +geom_bar(stat="identity") + 
+ZS.filter.df.ref2$method <- ifelse(ZS.filter.df.ref2$SID%in%c("Z1","Z2","Z3"),"RCA","LFR")
+ZS.filter.df.ref2.sum <- ddply(ZS.filter.df.ref2,c("selectTax","method","subunit"),summarise,delta.mean=mean(pct.delta),pct.se=sd(pct.delta))
+ggplot(ZS.filter.df.ref2.sum,aes(x=subunit,y=delta.mean,fill=method)) +geom_bar(stat="identity",position="dodge") + 
   geom_errorbar(aes(ymax=delta.mean+pct.se,ymin=delta.mean-pct.se),width=.2) + 
-  theme(axis.text.x = element_text(angle = -45,hjust=0)) + ylab("Delta of percentage (%)")
+  theme(axis.text.x = element_text(angle = -45,hjust=0)) + ylab("Delta of percentage (%)") +
+  facet_grid(.~selectTax)
 ```
 
 
@@ -476,6 +489,49 @@ ggplot(ZS.test.mdf,aes(x=rand,y=TC16S,fill=species)) + geom_bar(stat="identity",
 ```
 
 
+#fungal
+
+## load
+```{r}
+#sum
+MS.anno <- read.table("../../Results/JAN20/STAT/CLIP/MS.LOTU.map.closeRef.m6",sep="\t", col.names = c("SID","LOTU","ref","idents","lens","mis","gap","qs","qe","ss","se","evalue","bitscore","qlen","slen"))
+MS.prop <- read.table("../../Results/JAN20/STAT/CLIP/MS.LOTU.bwa.rand.prop",sep="\t",
+                      col.names = c("SID","rand","count0","count","LOTU"))
+#
+
+
+```
+
+```{r}
+MS.annoABC <- MS.anno
+levels(MS.annoABC$SID) <- c("MA","MB","MC")
+MS.qdf <- merge(MS.prop,rbind(MS.anno,MS.annoABC),by=c("SID","LOTU"),all.x=T)
+MS.qdf$rTax <- MS.qdf$ref
+#MS.qdf$subunit <- substr(MS.qdf$SOTU,1,3)
+MS.stat <- ddply(MS.qdf,c("SID","rand","rTax"),summarise,count=sum(count))
+
+ggplot(MS.stat,aes(x=factor(rand),y=count,fill=rTax)) + geom_bar(stat = 'identity', position = 'stack') + facet_grid(.~SID)
+ggplot(MS.stat,aes(x=factor(rand),y=count,fill=rTax)) + 
+  geom_bar(stat = 'identity', position = 'fill') + 
+  facet_grid(.~SID,space="free")
+
+ggplot(MS.stat%>%filter(!is.na(rTax)),aes(x=factor(rand),y=count,fill=rTax)) + 
+  geom_bar(stat = 'identity', position = 'fill') + 
+  facet_grid(.~SID,space="free")
+```
+
+
+```{r}
+MS.stat2 <- MS.stat%>%filter(!is.na(rTax))
+MS.stat2 <- ddply(MS.stat2,c("SID","rand"),transform,
+                  pct=count/sum(count)*100)
+MS.stat2$method <- ifelse(MS.stat2$SID%in%c("M4","M5","M6"),"RCA","LFR")
+MS.stat2.sum <- ddply(MS.stat2,c("rTax","method"),summarise,pct.mean=mean(pct),pct.se=sd(pct))
+ggplot(MS.stat2.sum,aes(x=rTax,y=pct.mean,fill=method)) +geom_bar(stat="identity",position="dodge") + 
+  geom_errorbar(aes(ymax=pct.mean+pct.se,ymin=pct.mean-pct.se),width=.2) + 
+  theme(axis.text.x = element_text(angle = -45,hjust=0)) + ylab("Delta of percentage (%)") +
+  geom_hline(yintercept = 100/7,linetype=2)
+```
 
 
 #FIN.

@@ -170,6 +170,7 @@ ggplot(basic.ori.df3,aes(x=kingdom,y=val)) + geom_boxplot() + coord_flip() +
 
 ```{r p2}
 selectSID <- c("Z1","Z2","Z3","M4","M5","M6",paste0(rep(c("S","O"),each=6),rep(seq(1,6),2)))
+bacMockSID <- c("Z1","Z2","Z3")
 p2.1 <- ggplot(basic.sam.df2%>%filter(SID%in%selectSID),aes(x=SID)) +
   geom_bar(aes(y=QC.reads/1e6),stat="identity",fill=NA,color="black") +
   geom_bar(aes(y=BB.reads/1e6),stat="identity",fill="grey50",color=NA) +
@@ -201,6 +202,17 @@ BB.stat <- melt(ddply(basic.sam.df2,"SID",summarise,BB.detect=BB.reads/QC.reads,
                 id.vars = "SID",variable.name = "var",value.name = "pecentage")
 ddply(BB.stat,"var",summarise,pct=mean(pecentage))
 ddply(basic.sam.df2,c("kingdom","SID"),summarise,ASM.pct=ASM.beads/BB.beads)
+```
+
+```{r}
+zymo.RCA.df <- ddply(basic.sam.df2%>%filter(SID%in%c("Z1","Z2","Z3")),"kingdom",summarise,
+                     QC.reads=mean(QC.reads),BB.reads=mean(BB.reads),BB.singleton=mean(BB.singleton))
+zymo.RCA.df.pct <- zymo.RCA.df[,2:4]/zymo.RCA.df$QC.reads
+ggplot(zymo.RCA.df,aes(x="Zymo")) +
+  geom_bar(aes(y=QC.reads/1e6),stat="identity",fill=NA,color="black") +
+  geom_bar(aes(y=BB.reads/1e6),stat="identity",fill="lightseagreen",color=NA) +
+  geom_bar(aes(y=BB.singleton/1e6),stat="identity",fill="grey50",color=NA) +
+  ylab("# reads/ Mb")
 ```
 
 ```{r}
@@ -260,7 +272,33 @@ p5.2 <- ggplot(sam.BB.mdat%>%filter(SID%in%selectSID&rpb!=0),aes(x=rpb,y=reads,c
   scale_x_log10() +annotation_logticks(sides = "b") +
   xlab("reads/bead") + ylab("# reads") + theme_bw()
 p5.2
+
+
 ```
+
+accumulated counts
+```{r}
+revOrder <- function(d){
+  d <- d[order(d$rpb,decreasing=T),]
+  d$cumRd <- cumsum(d$reads)
+  return(d)
+}
+
+sam.BB.mdat2 <- ddply(sam.BB.mdat,c("SID"),revOrder)
+p5.3 <- ggplot(sam.BB.mdat2%>%filter(SID%in%bacMockSID&rpb>0),aes(x=rpb,y=cumsum,color=SID,group=SID)) +
+  geom_line(size=1,alpha=.5) + 
+  geom_point(data=sam.BB.mdat%>%filter(SID%in%bacMockSID&rpb>0&rpb<11),alpha=.5) +
+  scale_y_log10() + scale_x_log10() + annotation_logticks() +
+  xlab("reads per barcode") + ylab("count of barcodes")
+p5.3
+p5.4 <- ggplot(sam.BB.mdat2%>%filter(SID%in%bacMockSID&rpb>0),aes(x=rpb,y=cumRd,color=SID,group=SID)) +
+  geom_line(size=1,alpha=.5) + 
+  geom_point(data=sam.BB.mdat2%>%filter(SID%in%bacMockSID&rpb>0&rpb<11),alpha=.5) +
+  scale_y_log10() + scale_x_log10() + annotation_logticks() +
+  xlab("reads per barcode") + ylab("count of barcodes")
+p5.4
+```
+
 
 **kmers**
 ```{r p6}
@@ -310,7 +348,6 @@ p6.2 <- ggplot(BI.msh.stat.sam2.qt%>%filter(rpbs!=">999"),aes(x=rpbs,y=cpk,fill=
   geom_boxplot(aes(ymin = kmer.min, lower = kmer.q25, middle = kmer.q50, upper = kmer.q75, ymax = kmer.max),
    stat = "identity") + theme(axis.text.x = element_text(angle = -90))
 p6.2
-
 ```
 
 ```{r}
