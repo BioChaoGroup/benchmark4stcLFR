@@ -1,4 +1,5 @@
 /Results
+/.Rproj.user
 *.html
 *tmp*
 .Rhistory
@@ -8,3 +9,4 @@ DB
 nohup.out
 Source
 *.png
+.Rproj.user
