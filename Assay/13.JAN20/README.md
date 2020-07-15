@@ -2,7 +2,10 @@
 
 # Sample information
 
-Above information were save in sheet `dataInfo.tsv`.
+Above information were save in sheet [dataInfo.tsv](../../../Results/JAN20/dataInfo.tsv).
+
+Experiments information under directory:
+ `BGI Tech Solutions (Hongkong) Co., Ltd\stLFR4META - 文档\Experiments\`
 
 # Analysis preparation
 
@@ -122,42 +125,15 @@ metabbq smk -j --resources mem=120 -np SAM/{{U,S,O,M,Z}{1,2,3},{S,O,M,Y}{4,5,6},
 
 RCA isolate assemble:
 ```bash
-metabbq smk -j -np SAM/{{U,S,O,M,Z}{1,2,3},{S,O,M,Y}{4,5,6}}/summary.BI.megahit.clip.fasta
+# for bac
+metabbq smk -j -np SAM/{U,S,O}{1,2,3}}/summary.BI.megahit.clip.all.fasta
+# for fungi
+metabbq smk --configfile config.F.yaml -j -np SAM/{S,O,M,Y}{4,5,6}/summary.BI.megahit.clip.all.fasta
 
-metabbq smk -j -np SAM/{{U,S,O,M,Z}{1,2,3},{S,O,M,Y}{4,5,6}}/summary.BI.megahit.rRNA.fasta
-
-metabbq smk -j -npk SAM/{{U,O,M,Z}{1,2,3},S{1,2},{S,O,M,Y}{4,5,6}}/VSEARCH/barrnap.RSUs.fasta
-
-```
-
-**fungi** needs specific parameters for RNA units prediction:
-```bash
-rename rRNA bac SAM/{S,O,M,Y}{4,5,6}/summary.BI.megahit.rRNA.fasta{,.barrnap}
-metabbq smk --config sampleType=F -j -npk SAM/{S,O,M,Y}{4,5,6}/summary.BI.megahit.rRNA.fasta
-
-```
-
-**stat barrnap RSU seq info**
-```bash
-metabbq stat RSU -l SAM/S1/VSEARCH/barrnap.LSU.fasta -s SAM/S1/VSEARCH/barrnap.SSU.fasta -o SAM/S1/stat/barrnap.RSU.stat
-metabbq smk -j -npk SAM/{{U,O,S,M,Z}{1,2,3},{S,O,M,Y}{4,5,6}}/stat/barrnap.RSU.stat
 ```
 
 # get fungal mock ref
 ```bash
-# from ncbi
-cd $LFR/Source/REF/fungi
-zcat */*.fsa_nt.gz | awk '{if($0~/>gi/){split($0,a,"|");print ">"a[4]a[5]}else{print $0}}' > merge/contig_14.fa
-makeblastdb -dbtype nucl -in merge/contig_14.fa
-#next step
-for i in */*.fsa_nt.gz;do
-	zcat $i | awk '{if($0~/>gi/){split($0,a,"|");print ">"a[4]a[5]}else{print $0}}' > ${i/_nt.gz}
-	samtools faidx ${i/_nt.gz}
-	barrnap --kingdom euk --threads 16 --reject 0.1 ${i/_nt.gz} | tee ${i/fsa_nt.gz/barrnap}
-	perl getRegion.pl < ${i/fsa_nt.gz/barrnap} > ${i/fsa_nt.gz/rRNAregion}
-	cat  ${i/fsa_nt.gz/rRNAregion}| xargs -n 2 samtools faidx ${i/_nt.gz} > ${i/fsa_nt.gz/rna.fa}
-done
-
 #from sanger
 cd $LFR/Source/REF/fungi/sanger
 sh work.sh
@@ -170,7 +146,22 @@ vsearch --allpairs_global sanger.mock7.ITSx.LSU.fa --acceptall --blast6out sange
 ```
 From above alignment we know the mock similarity could be as high as 99.5%! Thus we need a higher threashold for LOTU cluster.
 
-#test: range of rpb or kmers for assemble
+Find following codes from below scripts:
+**upstream analysis**
+> Assess.JAN20.Rmd
+
+**Mock samples assembly results**
+> Assess.JAN20.MOCK.BAC.figures.Rmd
+> Assess.JAN20.MOCK.FUNGI.figures.Rmd
+
+**Real soil samples assembly results**
+> Assess.JAN20.SOIL.BAC.figures.Rmd
+> Assess.JAN20.SOIL.FUNGI.figures.Rmd
+
+
+
+# Appends: Test codes
+### test: range of rpb or kmers for assemble
 ```bash
 mkln ../../Results/JAN20/TEST
 mkdir TEST/Z1
@@ -205,35 +196,4 @@ for i in M{4,5,6};do
 done
 
 blastn -num_threads 32 -db $LFR/Source/REF/fungi/merge/contig_14.fa -query SAM/M5/summary.BI.megahit.clip.fasta -outfmt '6 std qlen' -out SAM/M5/summary.BI.megahit.clip2F14.m6
-```
-```r
-library(dplyr)
-library(plyr)
-data <- read.table("SAM/M4/summary.BI.megahit.clip2F14.m6")
-data$s <- ifelse(data$V9<data$V10,data$V9,data$V10)
-data$e <- ifelse(data$V9<data$V10,data$V10,data$V9)
-data$pre <- c("",as.character(data$V1[2:nrow(data)-1]))
-data$new <- ifelse(data$V1==data$pre,F,T)
-
-sdf <- ddply(data%>%filter(V4>1500&V3>99),"V2",summarise,freq=length(V2),meanLength=mean(e-s+1),
-#sdf <- ddply(data%>%filter(new==T),"V2",summarise,freq=length(V2),meanLength=mean(e-s+1),
-					minStart=min(s),Q1Start=quantile(s,.25),meanStart=mean(s),
-					meanEnd=mean(e),Q3End=quantile(s,.75),maxEnd=max(e))
-sdf
-mean((sdf%>%filter(freq>999))$freq)
-
-rdf <- ddply(data%>%filter(new==T),"V2",summarise,freq=length(V2),meanLength=mean(e-s+1),
-					minStart=min(s),Q1Start=quantile(s,.25),meanStart=mean(s),
-					meanEnd=mean(e),Q3End=quantile(s,.75),maxEnd=max(e))
-```
-
-#ITSx
-```bash
-for i in Z{1,2,3};do
-	ITSx -t F --cpu 4 -i SAM/$i/CLIP/preclust$def\_2k.fasta -o SAM/$i/CLIP/preclust$def\_2k_ITSx &
-done
-for i in M{4,5,6};do
-	ITSx -t F --cpu 4 -i SAM/$i/CLIP/preclust$def\_2k.fasta -o SAM/$i/CLIP/preclust$def\_2k_ITSx &
-done
-
 ```

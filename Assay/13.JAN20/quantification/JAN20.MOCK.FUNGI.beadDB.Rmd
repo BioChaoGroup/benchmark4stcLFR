@@ -128,13 +128,13 @@ metabbq smk --configfile config.F+.yaml -j -npk SAM/MFR/ANNO/CLIP.map.{LSU,SSU,U
 metabbq smk --configfile config.F+.yaml -j -npk SAM/MFR/ANNO/CLIP.map.merge.bead.anno
 
 # merge ref anno
-cat SAM/MFR/ANNO/{mock,CLIP}.map.merge.bead.anno > SAM/MFR/ANNO/refbead.map.merge.bead.anno
+cat SAM/MFR/ANNO/{mock,CLIP}.map.merge.clip.anno > SAM/MFR/ANNO/refbead.map.merge.clip.anno
 
 cat $LFR/Source/REF/fungi/sanger/sanger.mock7.rRNA.fa SAM/MFR/CLIP/id90def4.clust.fa  > SAM/MFR/CLIP/refbead.clust.fa
 
-metabbq IO makeclade -i SAM/MFR/CLIP/refbead.clust.fa -o SAM/MFR/CLIP/refbeads.clade.uc -t 48 -v
+#metabbq IO makeclade -i SAM/MFR/CLIP/refbead.clust.fa -o SAM/MFR/CLIP/refbeads.clade.uc -t 48 -v
 
-metabbq IO clade2tree -i SAM/MFR/CLIP/refbead.clust.fa -a SAM/MFR/ANNO/refbead.map.merge.bead.anno \
+metabbq IO clade2tree -i SAM/MFR/CLIP/refbead.clust.fa -a SAM/MFR/ANNO/refbead.map.merge.clip.anno \
  -d $LFR/Source/REF/KRAKEN2/rDNA -s SAM/MFR/CLIP/refbeads.clade.uc -o SAM/MFR/KRAKEN/refbead -v
 
 metabbq buildKraken2db.sh SAM/MFR/KRAKEN/refbead 4
@@ -173,8 +173,8 @@ done > STAT/KRAKEN/MFR.reads2refbead.read.bracken
 
 
 ```{r}
-BEAD.topRank.map <- read.table("../../../Results/JAN20/SAM/MFR/KRAKEN/BEAD/data/topRank.map",comment.char = "",
-                         sep="\t",col.names=c("domain","taxID","RANK","clade","anno","spName"))
+BEAD.topRank.map <- read.table("../../../Results/JAN20/SAM/MFR/KRAKEN/BEAD/data/topRank.map",
+  comment.char = "",quote="",sep="\t",col.names=c("domain","taxID","RANK","clade","anno","spName"))
 refbead.topRank.map <- read.table("../../../Results/JAN20/SAM/MFR/KRAKEN/refbead/data/topRank.map",comment.char = "",
                          sep="\t",col.names=c("domain","taxID","RANK","clade","anno","spName"))
 
@@ -187,22 +187,22 @@ BEAD.topRank.map$anno[which(BEAD.topRank.map$anno=="")] <- "Unknown"
 
 #rank level: S
 MFR.r2BEAD.species.read.bracken <- read.table(
-  md5("../../../Results/JAN20/STAT/KRAKEN/MFR.reads2BEAD.read.bracken","3d431a37cebb0d3f822918ec01a1a8b6"),
+  md5("../../../Results/JAN20/STAT/KRAKEN/MFR.reads2BEAD.read.bracken","78b7b9a799b1122e15cab6640189dcb5"),
   as.is = T,quote = "",comment.char = "", sep="\t",
   col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
 
 MFR.r2BEAD.species.bead.bracken <- read.table(
-  md5("../../../Results/JAN20/STAT/KRAKEN/MFR.reads2BEAD.bead.bracken","22680fc3471042f32a690eacea68a18c"),
+  md5("../../../Results/JAN20/STAT/KRAKEN/MFR.reads2BEAD.bead.bracken","fa9b67a91669d92db19b8ec7d882a95a"),
   as.is = T,quote = "",comment.char = "", sep="\t",
   col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
 
 MFR.r2refbead.species.read.bracken <- read.table(
-  md5("../../../Results/JAN20/STAT/KRAKEN/MFR.reads2refbead.read.bracken","14770e6841cd589c8e6229d0d63e52c9"),
+  md5("../../../Results/JAN20/STAT/KRAKEN/MFR.reads2refbead.read.bracken","1ed59b4ac7cd53c8f3fae565ab8e5c1f"),
   as.is = T,quote = "",comment.char = "", sep="\t",
   col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
 
 MFR.r2refbead.species.bead.bracken <- read.table(
-  md5("../../../Results/JAN20/STAT/KRAKEN/MFR.reads2refbead.bead.bracken","017b00eb5169a12c6adfdd9f1d748b1e"),
+  md5("../../../Results/JAN20/STAT/KRAKEN/MFR.reads2refbead.bead.bracken","49a7153ad792c0d7e0dedc8236bb7af0"),
   as.is = T,quote = "",comment.char = "", sep="\t",
   col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
 
@@ -256,7 +256,7 @@ MFR.r2BEAD.species.b.stat$taxOrder <- reorder(MFR.r2BEAD.species.b.stat$tax20,MF
 ```{r}
 ggplot(MFR.r2BEAD.species.b.stat,aes(x=taxOrder,y=pct,fill=tech,color=LIB)) + geom_point() + 
   facet_grid(.~tech+CREF) + scale_y_log10()
-ggplot(MFR.r2BEAD.species.b.stat,aes(x=taxOrder,y=pct,fill=UID)) + geom_bar(stat="identity",position="dodge") + coord_flip() + facet_grid(.~SAM) + scale_y_log10()
+ggplot(MFR.r2BEAD.species.b.stat,aes(x=taxOrder,y=pct,fill=UID)) + geom_bar(stat="identity",position="dodge") + coord_flip() + facet_grid(.~SAM+CREF) + scale_y_log10()
 ggplot(MFR.r2BEAD.species.b.stat,aes(x=UID,y=pct,fill=taxOrder)) + geom_bar(stat="identity",position="fill")
 ggplot(MFR.r2BEAD.species.b.stat%>%filter(!tax20%in%c("Others","bacterium")),aes(x=SID,y=pct,fill=taxOrder)) + 
   geom_bar(stat="identity",position="stack") +facet_grid(.~CREF+tech,scale="free")
@@ -385,7 +385,7 @@ registerDoSNOW(cl)
 MFR.r2BEAD.b.sp.anno <- ddply(MFR.r2BEAD.b.sp.more,c("UID"),sFun,.parallel=T)
 stopCluster(cl)
 
-topTax <- rev(levels(reorder(as.character(droplevels(MFR.r2BEAD.b.sp.anno$spName)),MFR.r2BEAD.b.sp.anno$pct,sum)))[1:10]
+topTax <- rev(levels(reorder(as.character(MFR.r2BEAD.b.sp.anno$spName),MFR.r2BEAD.b.sp.anno$pct,sum)))[1:10]
 MFR.r2BEAD.b.sp.anno$topTax <- ifelse(as.character(MFR.r2BEAD.b.sp.anno$spName)%in%topTax,as.character(MFR.r2BEAD.b.sp.anno$spName),"Others")
 
 ```
@@ -430,9 +430,9 @@ ggplot(MFR.r2BEAD.b.sp.ref.anno.stat,
   coord_flip() + facet_grid(LIB~CREF+tech)
 
 ggplot(MFR.r2BEAD.b.sp.ref.anno.stat,
-       aes(x=LIB,y=mean.delta.k,fill=LIB)) +geom_bar(stat="identity",position="dodge") + 
+       aes(x=spName,y=mean.delta.k,fill=LIB)) +geom_bar(stat="identity",position="dodge") + 
   geom_errorbar(aes(ymin=mean.delta.k-sd.k,ymax=mean.delta.k+sd.k)) +
-  coord_flip() + facet_grid(spName~CREF+tech)
+  coord_flip() + facet_grid(LIB~CREF+tech)
 ```
 
 
