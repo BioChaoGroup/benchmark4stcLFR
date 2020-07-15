@@ -122,18 +122,18 @@ metabbq anno.pl -l 6 $DBDIR/taxmap_unite_ref+.tax SAM/MBR/ANNO/mock.map.ITS.m6 >
 metabbq anno.pl -l 6 $DBDIR/taxmap_embl_ssu_ref_138+.tax SAM/MBR/ANNO/mock.map.SSU.m6 > SAM/MBR/ANNO/mock.map.SSU.m6.more 
 
 metabbq beadsAnno.pl  -m cbr -i SAM/MBR/ANNO/mock.map.LSU.m6.more,SAM/MBR/ANNO/mock.map.SSU.m6.more,SAM/MBR/ANNO/mock.map.ITS.m6.more -o SAM/MBR/ANNO/mock.map.merge.clip.anno -b SAM/MBR/ANNO/mock.map.merge.bead.anno -l 6 -v
-## manually edit mock.map.merge.bead.anno
 
 #reAlign clips to database+
 metabbq smk --configfile config+.yaml -j -npk SAM/MBR/ANNO/CLIP.map.{LSU,SSU,UNITE}.m6
+metabbq smk --configfile config+.yaml -j -npk SAM/MBR/ANNO/CLIP.map.merge.clip.anno
 
 # merge ref anno
-cat SAM/MBR/ANNO/{D6305,CLIP}.map.merge.bead.anno > SAM/MBR/ANNO/refbead.map.merge.bead.anno
+cat SAM/MBR/ANNO/{mock,CLIP}.map.merge.clip.anno > SAM/MBR/ANNO/refbead.map.merge.clip.anno
 cat $LFR/Source/REF/zymo/D6305.rRNA.fa SAM/MBR/CLIP/id90def4.clust.fa  > SAM/MBR/CLIP/refbead.clust.fa
 
-metabbq IO makeclade -i SAM/MBR/CLIP/refbead.clust.fa -o SAM/MBR/CLIP/refbeads.clade.uc -t 48 -v
+#metabbq IO makeclade -i SAM/MBR/CLIP/refbead.clust.fa -o SAM/MBR/CLIP/refbeads.clade.uc -t 48 -v
 
-metabbq IO clade2tree -i SAM/MBR/CLIP/refbead.clust.fa -a SAM/MBR/ANNO/refbead.map.merge.bead.anno \
+metabbq IO clade2tree -i SAM/MBR/CLIP/refbead.clust.fa -a SAM/MBR/ANNO/refbead.map.merge.clip.anno \
  -d $LFR/Source/REF/KRAKEN2/rDNA -s SAM/MBR/CLIP/refbeads.clade.uc -o SAM/MBR/KRAKEN/refbead -v
 
 metabbq buildKraken2db.sh SAM/MBR/KRAKEN/refbead 4
@@ -184,22 +184,22 @@ BEAD.topRank.map$anno[which(BEAD.topRank.map$anno=="")] <- "Unknown"
 
 #rank level: S
 MBR.r2BEAD.species.read.bracken <- read.table(
-  md5("../../../Results/JAN20/STAT/KRAKEN/MBR.reads2BEAD.read.bracken","e69b506df2246930de5c6091fc70382a"),
+  md5("../../../Results/JAN20/STAT/KRAKEN/MBR.reads2BEAD.read.bracken","4c6f603cdc7f61e2c08f9262e59f2576"),
   as.is = T,quote = "",comment.char = "", sep="\t",
   col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
 
 MBR.r2BEAD.species.bead.bracken <- read.table(
-  md5("../../../Results/JAN20/STAT/KRAKEN/MBR.reads2BEAD.bead.bracken","274078328b518711d9f5b6edd37f9a99"),
+  md5("../../../Results/JAN20/STAT/KRAKEN/MBR.reads2BEAD.bead.bracken","04dd8e152bf129e4b8af660fa5d8a2dc"),
   as.is = T,quote = "",comment.char = "", sep="\t",
   col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
 
 MBR.r2refbead.species.read.bracken <- read.table(
-  md5("../../../Results/JAN20/STAT/KRAKEN/MBR.reads2refbead.read.bracken","7f3e5bef63806516ce289bc62ab7633b"),
+  md5("../../../Results/JAN20/STAT/KRAKEN/MBR.reads2refbead.read.bracken","09ce4cfd314136aff19a06292656f767"),
   as.is = T,quote = "",comment.char = "", sep="\t",
   col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
 
 MBR.r2refbead.species.bead.bracken <- read.table(
-  md5("../../../Results/JAN20/STAT/KRAKEN/MBR.reads2refbead.bead.bracken","1d35339e24e57be2ceb2fbdaa7df4ebf"),
+  md5("../../../Results/JAN20/STAT/KRAKEN/MBR.reads2refbead.bead.bracken","2496bc4999727b13014c1fd927f182f5"),
   as.is = T,quote = "",comment.char = "", sep="\t",
   col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
 
@@ -409,7 +409,7 @@ zymo.euk <- c("Saccharomyces cerevisiae","Cryptococcus neoformans")
 
 ```{r}
 MBR.r2BEAD.b.sp.ref.anno <- merge(MBR.r2BEAD.b.sp.anno,zymo.copy.num,by.x="spName",by.y="species")
-MBR.r2BEAD.b.sp.ref.anno$spName <- droplevels(MBR.r2BEAD.b.sp.ref.anno$spName)
+#MBR.r2BEAD.b.sp.ref.anno$spName <- droplevels(MBR.r2BEAD.b.sp.ref.anno$spName)
 MBR.r2BEAD.b.sp.ref.anno$TC16S[which(is.na(MBR.r2BEAD.b.sp.ref.anno$TC16S))] <- 0
 MBR.r2BEAD.b.sp.ref.anno$TC16S <- MBR.r2BEAD.b.sp.ref.anno$TC16S/100
 
