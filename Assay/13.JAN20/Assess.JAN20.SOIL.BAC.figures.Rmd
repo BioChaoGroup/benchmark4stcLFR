@@ -191,6 +191,12 @@ SBR.bdmeta.df <- merge(metadata,SBR.bead.metadata.df,by="SID")
 ggplot(SBR.bdmeta.df,aes(x=BLen,color=SID)) + geom_density() + xlim(c(0,6000))
 ```
 
+```{r}
+ggplot(SBR.bdmeta.df,aes(x=BLen,y=clips)) +
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") +
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
+  facet_wrap(~SID,ncol=3)
+```
 
 # subunits detection
 ```{r}

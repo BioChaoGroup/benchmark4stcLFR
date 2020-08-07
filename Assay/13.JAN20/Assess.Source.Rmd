@@ -25,15 +25,37 @@ SILVA version 138 SSU
 SILVA version 132 LSU
 
 **stat**
-```{bash}
+```{bash, eval=FALSE}
 cd $LFR/Source/REF/KRAKEN2/SILVA132LSU
 metabbq beadsAnno.pl -m otupair -i library/lsu.fna,data/lsu.txt,data/lsu.acc_taxid -o data/vsearch.allpair.txt -v
+perl -e 'while(<>){@s=split /\t/;@t=split /;/,$s[0];print "$t[0]\t$t[-1]\n"}' \
+< data/lsu.txt > data/domain.lst
 
 cd $LFR/Source/REF/KRAKEN2/SILVA138SSU
 metabbq beadsAnno.pl -m otupair -i data/SILVA_138_SSURef_tax_silva_trunc.fasta,data/ssu.txt,data/ssu.acc_taxid -o data/vsearch.allpair.txt -v
+perl -e 'while(<>){@s=split /\t/;@t=split /;/,$s[0];print "$t[0]\t$t[-1]\n"}' \
+< data/ssu.txt > data/domain.lst
 
 cd $LFR/Source/REF/KRAKEN2/UNITE/
 metabbq beadsAnno.pl -m otupair -i library/unite.fna,data/unite.txt,data/unite.acc_taxid -o data/vsearch.allpair.txt -v
+perl -e 'while(<>){@s=split /\t/;@t=split /;/,$s[0];print "$t[0]\t$t[-1]\n"}' \
+< data/unite.txt > data/kingdom.lst
+
+cd $LFR/Source/REF/KRAKEN2/rDNA
+perl -e 'while(<>){@s=split /\t/;@t=split /;/,$s[0];print "$t[0]\t$t[-1]\n"}' \
+< data/added.txt > data/domain.lst
+# use contigs
+perl -e 'while(<>){chomp;@s=split;$HS{$s[0]}=$s[1]};open I,"< ANNO/CLIP.map.merge.clip.anno";
+while(<I>){@s=split /\t/;next unless $s[2]>99;next unless $HS{$s[18]}; $s[0]=~/^(.*BI\d+)_k\d+_(\d+)_.*C([0-9]+|-)_/;print "$1.$2.$3\t$HS{$s[18]}\n"}' \
+< $LFR/Source/REF/KRAKEN2/rDNA/seqid2taxid.map > ANNO/clip2rDNA.seqid2taxid.map
+cd $LFR/Results/JAN20/SAM/SFR/
+#SSU
+metabbq beadsAnno.pl -m otupair -i CLIP/SSU.barrnap.fa,$LFR/Source/REF/KRAKEN2/rDNA/taxonomy/paths.txt,ANNO/clip2rDNA.seqid2taxid.map -o CLIP/vsearch.SSU.allpair.txt -v
+#LSU
+metabbq beadsAnno.pl -m otupair -i CLIP/LSU.barrnap.fa,$LFR/Source/REF/KRAKEN2/rDNA/taxonomy/paths.txt,ANNO/clip2rDNA.seqid2taxid.map -o CLIP/vsearch.LSU.allpair.txt -v
+#CLIP
+metabbq beadsAnno.pl -m otupair -i CLIP/id90def4.clust.fa,$LFR/Source/REF/KRAKEN2/rDNA/taxonomy/paths.txt,ANNO/clip2rDNA.seqid2taxid.map -o CLIP/vsearch.CLIP.allpair.txt -v
+
 
 
 ```
@@ -50,22 +72,31 @@ its.allpair.df <- cbind(its.allpair.df,tmp)
 its.allpair.df$rank <- factor(its.allpair.df$rank,levels=c("domain","major_clade","kingdom","superphylum","phylum","class","subclass","order","suborder","family","genus","species","subspecies"))
 ################################################################################
 lsu.allpair.df <- read.table(
-  "../../Source/REF/KRAKEN2/SILVA132LSU/data/vsearch.allpair.txt",sep="\t",
+  "../../Source/REF/KRAKEN2/SILVA132LSU/data/vsearch.allpair.txt",sep="\t",quote = "",comment.char = "",
   col.names = c("rank","tax","seqs","minIdent","idents"))
 tmp <- as.data.frame(
   matrix(as.numeric(unlist(sapply(strsplit(as.character(lsu.allpair.df$idents),","),"[",))),ncol=7,byrow = T))
 colnames(tmp) <- c("q01","q05","q25","q50","q75","q95","q99")
 lsu.allpair.df <- cbind(lsu.allpair.df,tmp)
 lsu.allpair.df$rank <- factor(lsu.allpair.df$rank,levels=c("domain","major_clade","kingdom","superphylum","phylum","class","subclass","order","suborder","family","genus","species","subspecies"))
+lsu.domain.lst <- read.table(
+    "../../Source/REF/KRAKEN2/SILVA132LSU/data/domain.lst",sep="\t",
+  comment.char = "",quote = "",col.names = c("domain","tax"))
+lsu.allpair.mdf <- merge(lsu.allpair.df,lsu.domain.lst,by="tax")
+
 ################################################################################
 ssu.allpair.df <- read.table(
-  "../../Source/REF/KRAKEN2/SILVA138SSU/data/vsearch.allpair.txt",sep="\t",quote = "",
+  "../../Source/REF/KRAKEN2/SILVA138SSU/data/vsearch.allpair.txt",sep="\t",quote = "",comment.char = "",
   col.names = c("rank","tax","seqs","minIdent","idents"))
 tmp <- as.data.frame(
   matrix(as.numeric(unlist(sapply(strsplit(as.character(ssu.allpair.df$idents),","),"[",))),ncol=7,byrow = T))
 colnames(tmp) <- c("q01","q05","q25","q50","q75","q95","q99")
 ssu.allpair.df <- cbind(ssu.allpair.df,tmp)
 ssu.allpair.df$rank <- factor(ssu.allpair.df$rank,levels=c("domain","major_clade","kingdom","superphylum","phylum","class","subclass","order","suborder","family","genus","species","subspecies"))
+ssu.domain.lst <- read.table(
+    "../../Source/REF/KRAKEN2/SILVA138SSU/data/domain.lst",sep="\t",
+  comment.char = "",quote = "",col.names = c("domain","tax"))
+ssu.allpair.mdf <- merge(ssu.allpair.df,ssu.domain.lst,by="tax",all=T)
 ```
 
 ```{r}
@@ -113,6 +144,27 @@ ggplot(ssu.allpair.df,aes(x=q99,color=rank)) + geom_density() +
 ```{r}
 ggplot(ssu.allpair.df%>%filter(rank!="subspecies"),aes(x=q50,color=rank)) + geom_density() +
       scale_x_continuous(breaks=seq(0,100,2)) + ylim(c(0,0.2))
+ssu.allpair.mdf <- merge(ssu.allpair.df,domain.lst,by="tax")
+ggplot(ssu.allpair.mdf%>%filter(!rank%in%c("subclass","suborder","subphylum","superphylum")),
+       aes(x=rank,y=q05,fill=domain)) + geom_boxplot() +
+      scale_y_continuous(breaks=seq(0,100,2)) + coord_flip()
+
+lsu.allpair.mdf <- merge(lsu.allpair.df,domain.lst,by="tax")
+ggplot(lsu.allpair.mdf%>%filter(!rank%in%c("subclass","suborder","subphylum","superphylum")),
+       aes(x=rank,y=q05,fill=domain)) + geom_boxplot() +
+      scale_y_continuous(breaks=seq(0,100,2)) + coord_flip()
+
+its.allpair.mdf <- merge(its.allpair.df,domain.lst,by="tax")
+ggplot(lsu.allpair.mdf%>%filter(!rank%in%c("subclass","suborder","subphylum","superphylum")),
+       aes(x=rank,y=q05,fill=domain)) + geom_boxplot() +
+      scale_y_continuous(breaks=seq(0,100,2)) + coord_flip()
+```
+
+```{r}
+ggplot(ssu.allpair.mdf%>%filter(!rank%in%c("subclass","suborder","subphylum","superphylum")),
+       aes(x=rank,y=q05,fill=domain)) + geom_boxplot() +
+      scale_y_continuous(breaks=seq(0,100,2)) + coord_flip()
+
 ```
 
 
@@ -150,6 +202,27 @@ ggplot(comb.allpair.melt%>%filter(rank%in%c("domain","kingdom","phylum","class",
 #  facet_wrap(~rank,ncol=2,scale="free")
 ```
 
+```{r}
+its.allpair.mdf <- its.allpair.df
+its.allpair.mdf$domain <- "domain__Eukaryota"
+
+ssu.allpair.meltm <- melt(ssu.allpair.mdf,measure.vars = c("q01","q05","q25","q50","q75","q95","q99"),
+                        variable.name = "quant",value.name = "identity")
+lsu.allpair.meltm <- melt(lsu.allpair.mdf,measure.vars = c("q01","q05","q25","q50","q75","q95","q99"),
+                        variable.name = "quant",value.name = "identity")
+its.allpair.meltm <- melt(its.allpair.mdf,measure.vars = c("q01","q05","q25","q50","q75","q95","q99"),
+                        variable.name = "quant",value.name = "identity")
+comb.allpair.meltm <- rbind(
+  cbind(unit="ssu",ssu.allpair.meltm),
+  cbind(unit="lsu",lsu.allpair.meltm),
+  cbind(unit="its",its.allpair.meltm)
+)
+
+ggplot(comb.allpair.meltm%>%filter(rank%in%c("domain","kingdom","phylum","class","order","family","genus","species")&quant=="q50"&!is.na(domain)),
+       aes(x=rank,y=identity,fill=unit)) + geom_boxplot() +
+  scale_y_continuous(breaks=seq(0,100,2)) + coord_flip() + facet_grid(domain~.)
+
+```
 
 # ITS
 
@@ -171,6 +244,110 @@ ggplot(its.allpair.df,aes(x=q95,color=rank)) + geom_density() +
 ggplot(its.allpair.df,aes(x=q99,color=rank)) + geom_density() +
     scale_x_continuous(breaks=seq(0,100,2))
 
+```
+
+```{r}
+its.allpair.df$unkSp <- ifelse(grepl(" sp",its.allpair.df$tax),T,F)
+ggplot(its.allpair.df%>%filter(unkSp==F),aes(x=minIdent,color=rank)) + geom_density() +
+  scale_x_continuous(breaks=seq(0,100,2))
+ggplot(its.allpair.df%>%filter(unkSp==F),aes(x=q01,color=rank)) + geom_density() +
+    scale_x_continuous(breaks=seq(0,100,2))
+ggplot(its.allpair.df%>%filter(unkSp==F),aes(x=q05,color=rank)) + geom_density() +
+    scale_x_continuous(breaks=seq(0,100,2))
+ggplot(its.allpair.df%>%filter(unkSp==F),aes(x=q25,color=rank)) + geom_density() +
+    scale_x_continuous(breaks=seq(0,100,2))
+ggplot(its.allpair.df%>%filter(unkSp==F),aes(x=q50,color=rank)) + geom_density() +
+      scale_x_continuous(breaks=seq(0,100,2))
+ggplot(its.allpair.df%>%filter(unkSp==F),aes(x=q75,color=rank)) + geom_density() +
+      scale_x_continuous(breaks=seq(0,100,2))
+ggplot(its.allpair.df%>%filter(unkSp==F),aes(x=q95,color=rank)) + geom_density() +
+      scale_x_continuous(breaks=seq(0,100,2))
+ggplot(its.allpair.df%>%filter(unkSp==F),aes(x=q99,color=rank)) + geom_density() +
+    scale_x_continuous(breaks=seq(0,100,2))
+
+```
+
+```{r}
+ggplot(its.allpair.df%>%filter(seqs>9),aes(x=q50,color=rank)) + geom_density() +
+      scale_x_continuous(breaks=seq(0,100,2))
+```
+
+
+# Section for clips alignemnt results
+# load 
+```{r}
+all.clip.pair.df <- read.table(
+  "../../Results/JAN20/SAM/SFR/CLIP/vsearch.CLIP.allpair.txt",sep="\t",
+  col.names = c("rank","tax","seqs","minIdent","idents"))
+tmp <- as.data.frame(
+  matrix(as.numeric(unlist(sapply(strsplit(as.character(all.clip.pair.df$idents),","),"[",))),ncol=7,byrow = T))
+colnames(tmp) <- c("q01","q05","q25","q50","q75","q95","q99")
+all.clip.pair.df <- cbind(all.clip.pair.df,tmp)
+all.clip.pair.df$rank <- factor(all.clip.pair.df$rank,levels=c("domain","major_clade","kingdom","superphylum","phylum","class","subclass","order","suborder","family","genus","species","subspecies"))
+################################################################################
+lsu.clip.pair.df <- read.table(
+  "../../Results/JAN20/SAM/SFR/CLIP/vsearch.LSU.allpair.txt",sep="\t",
+  col.names = c("rank","tax","seqs","minIdent","idents"))
+tmp <- as.data.frame(
+  matrix(as.numeric(unlist(sapply(strsplit(as.character(lsu.clip.pair.df$idents),","),"[",))),ncol=7,byrow = T))
+colnames(tmp) <- c("q01","q05","q25","q50","q75","q95","q99")
+lsu.clip.pair.df <- cbind(lsu.clip.pair.df,tmp)
+lsu.clip.pair.df$rank <- factor(lsu.clip.pair.df$rank,levels=c("domain","major_clade","kingdom","superphylum","phylum","class","subclass","order","suborder","family","genus","species","subspecies"))
+################################################################################
+ssu.clip.pair.df <- read.table(
+  "../../Results/JAN20/SAM/SFR/CLIP/vsearch.SSU.allpair.txt",sep="\t",quote = "",
+  col.names = c("rank","tax","seqs","minIdent","idents"))
+tmp <- as.data.frame(
+  matrix(as.numeric(unlist(sapply(strsplit(as.character(ssu.clip.pair.df$idents),","),"[",))),ncol=7,byrow = T))
+colnames(tmp) <- c("q01","q05","q25","q50","q75","q95","q99")
+ssu.clip.pair.df <- cbind(ssu.clip.pair.df,tmp)
+ssu.clip.pair.df$rank <- factor(ssu.clip.pair.df$rank,levels=c("domain","major_clade","kingdom","superphylum","phylum","class","subclass","order","suborder","family","genus","species","subspecies"))
+```
+
+
+```{r}
+ssu.clip.pair.melt <- melt(ssu.clip.pair.df,measure.vars = c("q01","q05","q25","q50","q75","q95","q99"),
+                        variable.name = "quant",value.name = "identity")
+lsu.clip.pair.melt <- melt(lsu.clip.pair.df,measure.vars = c("q01","q05","q25","q50","q75","q95","q99"),
+                        variable.name = "quant",value.name = "identity")
+all.clip.pair.melt <- melt(all.clip.pair.df,measure.vars = c("q01","q05","q25","q50","q75","q95","q99"),
+                        variable.name = "quant",value.name = "identity")
+comb.clip.pair.melt <- rbind(
+  cbind(unit="ssu",ssu.clip.pair.melt),
+  cbind(unit="lsu",lsu.clip.pair.melt),
+  cbind(unit="clip",all.clip.pair.melt)
+)
+ggplot(comb.clip.pair.melt%>%filter(rank%in%c("domain","kingdom","phylum","class","order","family","genus","species")&unit!="clip"),
+       aes(x=identity,color=quant)) + geom_density() +
+  scale_x_continuous(breaks=seq(0,100,2)) +
+  facet_grid(rank~unit,scale="free")
+
+ggplot(comb.clip.pair.melt%>%filter(rank%in%c("domain","kingdom","phylum","class","order","family","genus","species")&quant=="q05"),
+       aes(x=identity,color=rank)) + geom_density() +
+  scale_x_continuous(breaks=seq(0,100,2)) +
+  facet_wrap(~unit,ncol=3,scale="free") + ylim(c(0,0.2))
+
+ggplot(comb.clip.pair.melt%>%filter(rank%in%c("domain","kingdom","phylum","class","order","family","genus","species")&quant=="q50"&unit!="clip"),
+       aes(x=identity,color=rank)) + geom_density() +
+  scale_x_continuous(breaks=seq(0,100,2)) +
+  facet_wrap(~unit,ncol=2,scale="free")
+
+ggplot(comb.clip.pair.melt%>%filter(rank%in%c("domain","kingdom","phylum","class","order","family","genus","species")&quant=="q50"&unit!="clip"),
+       aes(x=identity,color=unit)) + geom_density() +
+  scale_x_continuous(breaks=seq(0,100,10)) +
+  facet_wrap(~rank,ncol=4,scale="free")
+```
+
+
+compare of SSU
+```{r}
+compare.ssu.df <- rbind(
+  cbind(source="SILVA",ssu.allpair.melt),
+  cbind(source="CLIP",ssu.clip.pair.melt)
+)
+compare.ssu.ddf <- dcast(compare.ssu.df%>%filter(quant=="q50"),rank+tax~source,value.var = "identity",fun.aggregate = mean)
+compare.ssu.ddf$delta <- compare.ssu.ddf$CLIP/compare.ssu.ddf$SILVA
+ggplot(compare.ssu.ddf%>%filter(rank!="subspecies"),aes(x=delta,color=rank)) +geom_density()
 ```
 
 

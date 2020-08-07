@@ -45,7 +45,7 @@ Zymo mock strains:
 | Cryptococcus neoformans  | 2           | NA        | 3.3        | 0.37         | 0.18         |
 
 **stat on HPC**
-```{bash}
+```{bash, eval=False}
 
 
 for i in SAM/??/mash/BI.msh.tsv;do 
@@ -149,6 +149,9 @@ basic.sam.df2 <- merge(unique(metadata.df[,c(1,3,5:7)]),
   rbind(basic.SAM.S.tsv[,rn],basic.SAM.R.tsv,basic.SAM.N.tsv),
   by.x="SID",by.y=".ID")
 basic.sam.df2 <- merge(basic.sam.df2,SAM.BB.reads,by.x="SID",by.y="tag")
+
+basic.sam.df2%>%filter(RCA==T&SAM%in%c("S","O"))
+ddply(basic.sam.df2%>%filter(RCA==T&SAM%in%c("S","O")),c("kingdom"),summarise,count=sum(BB.reads))
 ```
 
 ```{r p1}
