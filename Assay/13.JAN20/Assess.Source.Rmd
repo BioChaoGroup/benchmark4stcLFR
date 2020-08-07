@@ -2,7 +2,7 @@
 title: "JAN20 DATA ASSESSMENT"
 author: "Chao"
 date: "1/21/2020"
-output: 
+output:
   html_notebook:
     code_fold: hide
 ---
@@ -60,7 +60,7 @@ metabbq beadsAnno.pl -m otupair -i CLIP/id90def4.clust.fa,$LFR/Source/REF/KRAKEN
 
 ```
 
-# load 
+# load
 ```{r}
 its.allpair.df <- read.table(
   "../../Source/REF/KRAKEN2/UNITE/data/vsearch.allpair.txt",sep="\t",
@@ -274,7 +274,7 @@ ggplot(its.allpair.df%>%filter(seqs>9),aes(x=q50,color=rank)) + geom_density() +
 
 
 # Section for clips alignemnt results
-# load 
+# load
 ```{r}
 all.clip.pair.df <- read.table(
   "../../Results/JAN20/SAM/SFR/CLIP/vsearch.CLIP.allpair.txt",sep="\t",

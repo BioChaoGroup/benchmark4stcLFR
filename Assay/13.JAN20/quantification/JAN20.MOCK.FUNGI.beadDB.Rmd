@@ -71,11 +71,19 @@ done > STAT/KRAKEN/MFR.reads2BEAD.$j.1.bracken & done
 #no-barcode
 for i in M{4,5,6,A,B,C};do
   bracken -d SAM/$i/KRAKEN/BEAD -i SAM/$i/KRAKEN/reads2BEAD.kreport2 \
+<<<<<<< HEAD
   -o SAM/$i/KRAKEN/reads2BEAD.read.bracken > SAM/$i/KRAKEN/reads2BEAD.read.breport2 &
 done
 
 for i in M{4,5,6,A,B,C};do 
   awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2BEAD.read.bracken;
+=======
+  -o SAM/$i/KRAKEN/reads2BEAD.raw.bracken > SAM/$i/KRAKEN/reads2BEAD.raw.breport2 &
+done
+
+for i in M{4,5,6,A,B,C};do 
+  awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2BEAD.raw.bracken;
+>>>>>>> 26ebb7067202e8867db44cee836c117d0ad08bb5
 done > STAT/KRAKEN/MFR.reads2BEAD.read.bracken
 
 ```
@@ -83,7 +91,11 @@ done > STAT/KRAKEN/MFR.reads2BEAD.read.bracken
 # cluster with trust reference 
 
 step 0. Add ref to databse
+<<<<<<< HEAD
 ```{bash, eval=False}
+=======
+```{bash}
+>>>>>>> 26ebb7067202e8867db44cee836c117d0ad08bb5
 cd $LFR/Source/REF/fungi/sanger/
 # get subunits
 perl onetime.cutSubunits.pl
@@ -103,6 +115,7 @@ cat $LFR/Source/REF/fungi/sanger/sanger.mock7.tax.txt $LFR/Source/REF/SILVA/138/
 
 
 ```
+
 
 ```{bash, eval=False}
 #remove singleton clips
@@ -136,6 +149,7 @@ cat $LFR/Source/REF/fungi/sanger/sanger.mock7.rRNA.fa SAM/MFR/CLIP/id90def4.clus
 
 metabbq IO clade2tree -i SAM/MFR/CLIP/refbead.clust.fa -a SAM/MFR/ANNO/refbead.map.merge.clip.anno \
  -d $LFR/Source/REF/KRAKEN2/rDNA -s SAM/MFR/CLIP/refbeads.clade.uc -o SAM/MFR/KRAKEN/refbead -v
+
 
 # rm SAM/MFR/KRAKEN/refbead/{database*,*.k2d} 
 metabbq buildKraken2db.sh SAM/MFR/KRAKEN/refbead 4
@@ -486,5 +500,6 @@ ggplot(MFR.r2BEAD.b.sp.ref.anno.stat.k,
 
 ```{r}
 range(MFR.r2BEAD.b.sp.ref.anno.stat.k$mean.fold.k)
+
 ```
 #FIN.
