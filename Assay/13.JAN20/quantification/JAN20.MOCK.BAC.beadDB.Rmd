@@ -23,7 +23,7 @@ source("../lib.R")
 
 # Quantification
 
-```{bash}
+```{bash, eval=False}
 # merge clips
 mkdir -p SAM/MBR/ANNO
 for i in Z{1,2,3};do 
@@ -85,7 +85,7 @@ done > STAT/KRAKEN/MBR.reads2BEAD.read.bracken
 # cluster with trust reference 
 
 step 0. Add ref to databse
-```{bash}
+```{bash,eval=False}
 #manually edit $LFR/Source/REF/zymo/D6305.rRNA.tax.txt
 
 cd $LFR/Assay/13.JAN20/SAM/MBR/KRAKEN/refbead/data
@@ -104,7 +104,7 @@ cat $LFR/Source/REF/zymo/D6305.rRNA.tax.txt $LFR/Source/REF/SILVA/138/taxmap_emb
 ```
 
 
-```{bash}
+```{bash,eval=False}
 #remove singleton clips
 metabbq smk -j -npk SAM/MBR/CLIP/id90def4.clust.fa
 
@@ -309,8 +309,6 @@ ggplot(MBR.sp.multi.pca.df,aes(x=PC1,y=PC2,color=LIB,shape=interaction(tech,CREF
 ```{r}
 pheatmap(cor(MBR.sp.cut.mtx[,-c(1:2)],method = "s"),display_numbers = T,cluster_rows = F,cluster_cols = F)
 pheatmap(cor(MBR.sp.C4.1.mtx,method = "s"),display_numbers = T,cluster_rows = F,cluster_cols = F)
-pheatmap(cor(MBR.sp.C4.2.mtx,method = "s"),display_numbers = T,cluster_rows = F,cluster_cols = F)
-pheatmap(cor(MBR.sp.C4.3.mtx,method = "s"),display_numbers = T,cluster_rows = F,cluster_cols = F)
 
 ```
 
@@ -500,6 +498,9 @@ ggplot(MBR.r2BEAD.b.sp.ref.anno.stat.k,
        aes(x=spName,y=log2(mean.fold.k),fill=spName)) +geom_bar(stat="identity",position="dodge") + 
   geom_errorbar(aes(ymin=log2(mean.fold.k-fsd.k),ymax=log2(mean.fold.k+fsd.k))) +
   coord_flip() + scale_y_continuous(breaks=seq(-3,3,1),limits=c(-2,1)) + theme_bw()
+```
+```{r}
+range(MBR.r2BEAD.b.sp.ref.anno.stat.k$mean.fold.k)
 ```
 
 #FIN.

@@ -22,7 +22,7 @@ source("../lib.R")
 
 # Quantification
 
-```{bash}
+```{bash, eval=False}
 # merge clips
 mkdir -p SAM/MFR/ANNO
 for i in M{4,5,6};do 
@@ -83,7 +83,7 @@ done > STAT/KRAKEN/MFR.reads2BEAD.read.bracken
 # cluster with trust reference 
 
 step 0. Add ref to databse
-```{bash}
+```{bash, eval=False}
 cd $LFR/Source/REF/fungi/sanger/
 # get subunits
 perl onetime.cutSubunits.pl
@@ -104,7 +104,7 @@ cat $LFR/Source/REF/fungi/sanger/sanger.mock7.tax.txt $LFR/Source/REF/SILVA/138/
 
 ```
 
-```{bash}
+```{bash, eval=False}
 #remove singleton clips
 metabbq smk -j -npk SAM/MFR/CLIP/id90def4.clust.fa
 
@@ -340,7 +340,7 @@ MFR.stat.sp.df2s.cor$corLabel <- paste0("r=",round(MFR.stat.sp.df2s.cor$cor,2))
 
 ggplot(MFR.stat.sp.df2s,aes(x=NORCA,y=RCA,color=factor(REP))) +geom_point() +
   geom_abline(intercept = 0,slope=c(0.8,1,1.2),linetype=2) + facet_grid(SAM+tech~CREF+REP) +
-  geom_text(data=MFR.stat.sp.df2s.cor,aes(x=1e-3,y=0.1,label=corLabel)) +
+  geom_text(data=MFR.stat.sp.df2s.cor,aes(x=1e-5,y=0.1,label=corLabel)) +
   scale_x_log10() + scale_y_log10() 
 
 ```
@@ -357,11 +357,11 @@ for(i in 6:8){
   MFR.stat.sp.df3S <- rbind(MFR.stat.sp.df3S,data.frame(set=colnames(MFR.stat.sp.df3s)[i],tmp))
 }
 MFR.stat.sp.df3S.cor <- ddply(MFR.stat.sp.df3S,c("CREF","SAM","tech","LIB","set"),summarise,cor=cor(rep1,rep2,method="s"))
-MFR.stat.sp.df3S.cor$corLabel <- paste0("r=",round(MFR.stat.sp.df3S.cor$cor,2))
+MFR.stat.sp.df3S.cor$corLabel <- paste0("r=",round(MFR.stat.sp.df3S.cor$cor,4))
 
 ggplot(MFR.stat.sp.df3S,aes(x=rep1,y=rep2,color=factor(LIB))) +geom_point() +
   geom_abline(intercept = 0,slope=c(0.85,1,1.15),linetype=2) + facet_grid(set+LIB~CREF+tech) + 
-  geom_text(data=MFR.stat.sp.df3S.cor,aes(x=1e-3,y=0.1,label=corLabel)) +
+  geom_text(data=MFR.stat.sp.df3S.cor,aes(x=1e-5,y=0.1,label=corLabel)) +
   scale_x_log10() + scale_y_log10()
 ```
 
@@ -484,4 +484,7 @@ ggplot(MFR.r2BEAD.b.sp.ref.anno.stat.k,
   coord_flip() + scale_y_continuous(breaks=seq(-3,3,1),limits=c(-2,1)) + theme_bw()
 ```
 
+```{r}
+range(MFR.r2BEAD.b.sp.ref.anno.stat.k$mean.fold.k)
+```
 #FIN.
