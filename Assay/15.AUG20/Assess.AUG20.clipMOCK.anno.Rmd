@@ -1,0 +1,443 @@
+---
+title: "AUG20 DATA ASSESSMENT"
+author: "Chao"
+date: "3/22/2020"
+output: 
+  html_notebook:
+    code_fold: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reshape2)
+library(ggplot2)
+library(plyr)
+library(dplyr)
+library(RColorBrewer)
+library(configr)
+library(tools)
+library(stringi)
+md5 <- function(f,m){
+  if(tools::md5sum(f)==m){
+    warning("MD5 check passed.\n")
+    return(f)
+  }else{
+    stop("MD5 check failed. Please check the version and content!\n")
+  }
+}
+```
+
+# Background
+
+Samples involved:
+
+| ID | lane | barcode | Kindom | RCA | Location    |
+| -- | ---- | ------- | -------| --- | ----------- |
+| U1 | FF1  | 1,17    | Bac    | RCA | Urine       |
+| S1 | FF1  | 3,4     | Bac    | RCA | Soil spot A |
+| O1 | FF1  | 5,22    | Bac    | RCA | Soil spot B |
+| M1 | FF1  | 7       | Bac    | RCA | Mock        |
+| Z1 | FF1  | 8       | Bac    | RCA | ZYMO 8      |
+
+Zymo mock strains:
+
+| Species                  | Genomic DNA | 16S Only1 | 16S & 18S1 | Genome Copy2 | Cell Number3 |
+| ------------------------ | ----------- | --------- | ---------- | ------------ | ------------ |
+| Pseudomonas aeruginosa   | 12          | 4.2       | 3.6        | 6.1          | 6.1          | +
+| Escherichia coli         | 12          | 10.1      | 8.9        | 8.5          | 8.5          | +
+| Salmonella enterica      | 12          | 10.4      | 9.1        | 8.7          | 8.8          | +
+| Lactobacillus fermentum  | 12          | 18.4      | 16.1       | 21.6         | 21.9         |
+| Enterococcus faecalis    | 12          | 9.9       | 8.7        | 14.6         | 14.6         | +
+| Staphylococcus aureus    | 12          | 15.5      | 13.6       | 15.2         | 15.3         | +
+| Listeria monocytogenes   | 12          | 14.1      | 12.4       | 13.9         | 13.9         | +
+| Bacillus subtilis        | 12          | 17.4      | 15.3       | 10.3         | 10.3         | +
+| Saccharomyces cerevisiae | 2           | NA        | 9.3        | 0.57         | 0.29         |
+| Cryptococcus neoformans  | 2           | NA        | 3.3        | 0.37         | 0.18         |
+
+#stat blast annotation of clips fasta to silva database
+```{bash,eval=FALSE}
+mkdir -p ../../Results/AUG20/STAT/mash
+mkdir -p ../../Results/AUG20/STAT/CLIP
+mkdir -p ../../Results/AUG20/STAT/ANNO
+
+# bac
+metabbq smk -j -npk SAM/Z{1,2,3}/ANNO/clip2MockRef.bead.anno
+for i in Z{1,2,3};do awk -v ID=$i '{print ID"\t"$0}' SAM/$i/ANNO/clip2MockRef.bead.anno;
+done > ../../Results/AUG20/STAT/ANNO/MBR.clip2MockRef.bead.anno
+
+for i in Z{1,2,3};do awk -v ID=$i '{print ID"\t"$0}' SAM/$i/ANNO/clip2MockRef.ref.cov;
+done > ../../Results/AUG20/STAT/ANNO/MBR.clip2MockRef.ref.cov
+
+for i in Z{1,2,3};do awk -v i=$i '{b=sprintf("BI%08d",FNR);print i"\t"b"\t"$0}' SAM/$i/mash/BI.msh.tsv;
+done > ../../Results/AUG20/STAT/mash/MBR.BI.msh.tsv
+
+# fungi
+metabbq smk --configfile config.F.yaml -j -npk SAM/M{4,5,6}/ANNO/clip2MockRef.bead.anno
+for i in M{4,5,6};do awk -v ID=$i '{print ID"\t"$0}' SAM/$i/ANNO/clip2MockRef.bead.anno;
+done > ../../Results/AUG20/STAT/ANNO/MFR.clip2MockRef.bead.anno
+
+for i in M{4,5,6};do awk -v ID=$i '{print ID"\t"$0}' SAM/$i/ANNO/clip2MockRef.ref.cov;
+done > ../../Results/AUG20/STAT/ANNO/MFR.clip2MockRef.ref.cov
+
+for i in M{4,5,6};do awk -v i=$i '{b=sprintf("BI%08d",FNR);print i"\t"b"\t"$0}' SAM/$i/mash/BI.msh.tsv;
+done > ../../Results/AUG20/STAT/mash/MFR.BI.msh.tsv
+
+#test
+mkdir -p ../../Results/AUG20/STAT/READ
+for i in Z{1,7};do awk -v ID=$i '{print ID"\t"$0}' SAM/$i/READ/fastp2MockRef.bam.depth;
+done > ../../Results/AUG20/STAT/READ/fastp2MockRef.bam.depth
+```
+
+Load data:
+```{r}
+#db
+zymo.bed <- read.table(md5("../../Source/REF/zymo/D6305.rRNA.barrnap.bed",
+                           "d322af1f013b4c037b74eedacb38f65b"),col.names = c(
+ "species","from","to","unit","primary","strand","from2","to2","color"))
+fungi.bed <- read.table(md5("../../Source/REF/fungi/sanger/sanger.mock7.rRNA.ITSx.bed",
+                           "51c084d9add03b4f63a617e57e774938"),col.names = c(
+ "species","from","to","unit","primary","strand","from2","to2","color"))
+
+#phenotype
+metadata <- read.csv("../../Results/JAN20/metadata.csv")
+mockdata <- metadata%>%filter(SID%in%c("Z1","Z2","Z3"))
+
+# previous res
+BM.BI.msh.tsv <- read.table(
+  md5("../../Results/AUG20/STAT/mash/MBR.BI.msh.tsv","4d0d4fdf31a9229d495b16b38ffe42f3"),
+  col.names = c("SID","BID","BB","rpb","kmers"))
+FM.BI.msh.tsv <- read.table(
+  md5("../../Results/AUG20/STAT/mash/MFR.BI.msh.tsv","3471149b554cf2de66d86906f3680174"),
+  col.names = c("SID","BID","BB","rpb","kmers"))
+
+# current res
+##bac
+zymo.cov <- read.table(
+  md5("../../Results/AUG20/STAT/ANNO/MBR.clip2MockRef.ref.cov","21488d5e6a7e33e207a748d68cd48ede"),
+  col.names = c("SID","species","pos","cov"))
+
+BM.bead.anno <- read.table(
+  md5("../../Results/AUG20/STAT/ANNO/MBR.clip2MockRef.bead.anno","dd8f9e48ad1e4b4fba0b1f3e7ddb288e"),sep="\t",
+   col.names = c("SID","BID","BLen","asms","clips","tax.clips","tax.pieces","tax",
+                 "ident","qMapLen","mismatch","gap","bitScore","bitScore2nd",
+                 "sMapPieces","sMapLen","MAPDESC","strands","qMaps","sMaps",
+                 "HYB","multiAnnos","bs.1st","bs.2nd","ident.1st","ident.2nd","tax.2nd"
+))
+
+#fungi
+fungi.cov <- read.table(
+  md5("../../Results/AUG20/STAT/ANNO/MFR.clip2MockRef.ref.cov","607c33739a8417192e06243bb20a98ae"),
+  col.names = c("SID","species","pos","cov"))
+
+FM.bead.anno <- read.table(
+  md5("../../Results/AUG20/STAT/ANNO/MFR.clip2MockRef.bead.anno","5f59962bdd3a579077d1efd547139171"),sep="\t",
+   col.names = c("SID","BID","BLen","asms","clips","tax.clips","tax.pieces","tax",
+                 "ident","qMapLen","mismatch","gap","bitScore","bitScore2nd",
+                 "sMapPieces","sMapLen","MAPDESC","strands","qMaps","sMaps",
+                  "HYB","multiAnnos","bs.1st","bs.2nd","ident.1st","ident.2nd","tax.2nd"
+
+))
+
+#test
+test.cov <- read.table("../../Results/AUG20/STAT/READ/fastp2MockRef.bam.depth",
+                       col.names = c("SID","species","pos","cov"))
+```
+
+Data curation:
+```{r}
+badf <- merge(metadata,rbind(BM.bead.anno,FM.bead.anno),by="SID")
+badf$delta.clips <- badf$clips-badf$tax.clips
+getMapPropFun <- function(d){
+  uOrder <- c("ALL","SSU","ITS1","5.8S","ITS2","LSU")
+  ulist <- data.frame(key=c("ALL","SSU","16S","ITS","ITS1","5.8S","ITS2","LSU","23S"),
+                      ind=c(1,2,2,3,3,4,5,6,6))
+  getM <- stri_match_all_regex(d,"(ALL|23S|LSU|ITS|ITS1|ITS2|5.8S|SSU|16S)\\((\\d+)%\\)")
+  getN <- length(getM)
+  res <- matrix(0,ncol = 6,nrow = getN)
+  for(i in 1:length(getM)){
+    geti <- getM[[i]]
+    for(j in 1:nrow(geti)){
+      res[i,ulist$ind[which(ulist$key==geti[j,2])]] <- geti[j,3]
+    }
+  }
+  res <- matrix(as.numeric(res),ncol=6)
+  colnames(res) <- uOrder
+  return(res)
+}
+badf <- cbind(badf,getMapPropFun(badf$MAPDESC))
+badf$mainUnit <- ifelse(badf$SSU>badf$LSU,"SSU","LSU")
+```
+
+```{r}
+ggplot(badf,aes(x=ident,linetype=SID,color=factor(delta.clips))) + geom_density() +
+  scale_x_continuous(breaks=seq(84,100,2),limits=c(85,100)) + facet_grid(kindom~.)
+```
+
+```{r}
+delta.clips.stat <- ddply(badf,c("SID","kindom","delta.clips"),summarise,count=length(BID))
+delta.clips.stat <- ddply(
+  delta.clips.stat,c("SID"),transform,
+  pct=round(count/sum(count),4),cumsum=cumsum(round(count/sum(count),4)))
+ggplot(delta.clips.stat,aes(x = "x" , y = pct, fill = factor(delta.clips))) + 
+  geom_bar(stat = 'identity', position = 'fill', width = 1) + coord_polar(theta = 'y') +
+  facet_wrap(~SID,ncol=3) + labs(x = '', y = '', title = '') + theme_bw() +
+  geom_text(aes(y = 1- cumsum + pct/2, x = 1, label = paste0(pct*100,"%"))) +
+  theme(axis.text = element_blank()) + theme(axis.ticks = element_blank()) 
+
+```
+
+```{r}
+badf$clip5 <- factor(ifelse(badf$clips>5,">5",badf$clips),levels=c(seq(1,5),">5"))
+clips.stat <- ddply(badf,c("SID","clip5"),summarise,count=length(BID))
+clips.stat <- ddply(
+  clips.stat,c("SID"),transform,
+  pct=round(count/sum(count),4),cumsum=cumsum(round(count/sum(count),4)))
+ggplot(clips.stat,aes(x = "x" , y = pct, fill = clip5)) + 
+  geom_bar(stat = 'identity', position = 'fill', width = 1) + coord_polar(theta = 'y') +
+  facet_wrap(~SID,ncol=3) + labs(x = '', y = '', title = '') + theme_bw() +
+  geom_text(aes(y = 1- cumsum + pct/2, x = 1, label = paste0(pct*100,"%"))) +
+  theme(axis.text = element_blank()) + theme(axis.ticks = element_blank())
+
+```
+
+
+```{r}
+ggplot(badf,aes(x=BLen,y=sMapLen)) + 
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
+  facet_wrap(~SID,ncol=3,scale="free") + 
+  ggtitle("Length of Beads and mapped reference")
+```
+
+```{r}
+ggplot(badf,aes(x=sMapLen/BLen,color=factor(delta.clips))) + geom_density()+
+  facet_wrap(~SID,ncol=2,dir="v",scale="free") + 
+  ggtitle("Length proportion of mapped length")
+```
+
+```{r}
+baMdat <- melt(badf[,c("SID","BID","ALL","SSU","ITS1","5.8S","ITS2","LSU")],
+  id.vars = c("SID","BID"),variable.name = "unit",value.name = "pct")
+
+ggplot(baMdat%>%filter(pct>0),aes(x=pct,color=unit)) + geom_density() +
+  facet_wrap(~SID,ncol=3,scale="free")
+```
+
+```{r}
+baMdat2 <- melt(badf[,c("SID","BID","sMapLen","ALL","SSU","ITS1","5.8S","ITS2","LSU")],
+  id.vars = c("SID","BID","sMapLen"),variable.name = "unit",value.name = "pct")
+
+ggplot(baMdat2%>%filter(pct>0), aes(x=sMapLen,y=pct)) +
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
+  facet_grid(unit~SID,scales="free") + 
+  ggtitle("Relationship of sMapLen and pct")
+
+ggplot(baMdat2%>%filter(pct>0&sMapLen>999), aes(x=sMapLen,y=pct)) +
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
+  facet_grid(unit~SID,scales="free") + 
+  ggtitle("Relationship of sMapLen and pct")
+
+ggplot(baMdat2%>%filter(pct>0&sMapLen>2999), aes(x=sMapLen,y=pct)) +
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
+  facet_grid(unit~SID,scales="free") + 
+  ggtitle("Relationship of sMapLen and pct")
+```
+
+MockRef bed coverage:
+```{r}
+covTemplateFun <- function(d){
+  d <- d%>%filter(unit!="5S_rRNA")
+  d$unit <- droplevels(d$unit)
+  dmin <- min(d$from)
+  dmax <- max(d$to)
+  res <- data.frame(species=d$species[1],pos=seq(1,dmax))
+  res$unit <- factor(NA,levels=levels(d$unit))
+  for(i in 1:nrow(d)){
+    res$unit[d$from[i]:d$to[i]] <- d$unit[i]
+  }
+  res <- res[dmin:dmax,]
+  return(res)
+}
+
+#bac
+BM.bed.tmp <- ddply(zymo.bed,"species",covTemplateFun)
+BM.bed.cov.df <- merge(zymo.cov,BM.bed.tmp,by=c("species","pos"),all=T)
+BM.bed.cov.df <- BM.bed.cov.df%>%filter(species%in%levels(zymo.cov$species))
+BM.bed.cov.df$cov[which(is.na(BM.bed.cov.df$cov))] <- 0
+levels(BM.bed.cov.df$unit) <- c("SSU","LSU","ITS1")
+#fungi
+FM.bed.tmp <- ddply(fungi.bed,"species",covTemplateFun)
+FM.bed.cov.df <- merge(fungi.cov,FM.bed.tmp,by=c("species","pos"),all=T)
+FM.bed.cov.df <- FM.bed.cov.df%>%filter(species%in%levels(fungi.cov$species))
+FM.bed.cov.df$cov[which(is.na(FM.bed.cov.df$cov))] <- 0
+
+bed.cov.df <- rbind(cbind(kingdom="bac",BM.bed.cov.df), cbind(kingdom="fungi",FM.bed.cov.df))
+#basic stat
+ddply(bed.cov.df,c("kingdom","species"),summarise,
+      Amin=min(pos[which(cov>99)]),Amax=max(pos[which(cov>99)]),Bmax=max(pos),
+      Apct=(max(pos[which(cov>99)])-min(pos[which(cov>99)]))/(max(pos)-min(pos)),
+      Lmin=min(pos[which(cov>99&unit=="LSU")]),Lmax=max(pos[which(cov>99&unit=="LSU")]),
+      LBmin=min(pos[which(unit=="LSU")]),LBmax=max(pos[which(unit=="LSU")]),
+      Lpct=(Lmax-Lmin)/(LBmax-LBmin))
+```
+
+```{r}
+ggplot(bed.cov.df,aes(x=pos,y=cov)) + 
+  geom_tile(aes(y=cov/2,width=1,height=cov,fill=unit),alpha=.5) +
+  geom_line(aes(linetype=SID)) + 
+  facet_wrap(~kingdom+species,ncol=4,scale="free")
+
+ggplot(bed.cov.df%>%filter(unit%in%c("ITS1","ITS2","5.8S")),aes(x=pos,y=cov)) + 
+  geom_tile(aes(y=cov/2,width=1,height=cov,fill=unit),alpha=.5) +
+  geom_line(aes(linetype=SID)) + scale_fill_manual(values=brewer.pal(3,"Set1")) +
+  facet_wrap(~kingdom+species,ncol=4,scale="free")
+```
+
+test.cov:
+```{r}
+shotgun.df <- data.frame(SID="t.shotgun",read.table("../../Results/AUG20/TEST/shotgun/read2MockRef.bam.depth",
+                         col.names = c("species","pos","cov")))
+test.cov.df <- merge(BM.bed.tmp,rbind(shotgun.df,test.cov),by=c("species","pos"))
+ggplot(test.cov.df%>%filter(SID=="t.shotgun"),aes(x=pos,y=cov)) + 
+  geom_tile(aes(y=cov/2,width=1,height=cov,fill=unit),alpha=.5) +
+  geom_line(aes(linetype=SID)) + 
+  facet_wrap(~species,ncol=4,scale="free")
+ggplot(test.cov.df,aes(x=pos,y=cov)) + 
+  geom_tile(aes(y=cov/2,width=1,height=cov,fill=unit),alpha=.5) +
+  geom_line(aes(linetype=SID)) + 
+  facet_wrap(~species,ncol=4,scale="free")
+
+ggplot(test.cov.df%>%filter(unit=="ITS_rRNA"),aes(x=pos,y=cov)) + 
+  geom_tile(aes(y=cov/2,width=1,height=cov,fill=unit),alpha=.5) +
+  geom_line(aes(linetype=SID)) + scale_fill_manual(values=brewer.pal(3,"Set1")[2]) +
+  facet_wrap(~species,ncol=4,scale="free")
+```
+fixed ref cov:
+```{r}
+zymo.fix.bed <- read.table("../../Source/REF/zymo/D6305.fix.rRNA.barrnap.bed",col.names = c(
+ "species","from","to","unit","primary","strand","from2","to2","color"))
+zymo.fix.cov <- read.table("../../Results/AUG20/STAT/CLIP/clip2MockRef.fix.ref.cov",
+                           col.names = c("SID","species","pos","cov"))
+BM.fix.bed.tmp <- ddply(zymo.fix.bed,"species",covTemplateFun)
+BM.fix.bed.cov.df <- merge(zymo.fix.cov,BM.fix.bed.tmp,by=c("species","pos"),all=T)
+BM.fix.bed.cov.df <- BM.fix.bed.cov.df%>%filter(species%in%levels(zymo.fix.cov$species))
+BM.fix.bed.cov.df$cov[which(is.na(BM.fix.bed.cov.df$cov))] <- 0
+levels(BM.fix.bed.cov.df$unit) <- c("SSU","LSU","ITS1")
+
+ggplot(BM.fix.bed.cov.df,aes(x=pos,y=cov)) + 
+  geom_tile(aes(y=cov/2,width=1,height=cov,fill=unit),alpha=.5) +
+  geom_line(aes(linetype=SID)) + 
+  facet_wrap(~species,ncol=4,scale="free")
+
+```
+
+Merge with kmers:
+```{r}
+bkadf <- merge(BI.msh.tsv[,-3],badf,by=c("SID","BID"))
+
+ggplot(bkadf%>%filter(ALL>0), aes(x=kmers,y=ALL)) +
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
+  facet_grid(SID~.,scales="free") + 
+  ggtitle("Relationship of kmers and ALL pct")
+
+ggplot(bkadf%>%filter(ALL>0&mainUnit=="16S"), aes(x=kmers,y=`16S`)) +
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
+  facet_grid(SID~.,scales="free") + 
+  ggtitle("Relationship of kmers and ALL pct")
+
+ggplot(bkadf%>%filter(ALL>0&mainUnit=="23S"), aes(x=kmers,y=`23S`)) +
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
+  facet_grid(SID~.,scales="free") + 
+  ggtitle("Relationship of kmers and ALL pct")
+
+
+bkadf$kmerH <- round(bkadf$kmers/200,0)*200
+ggplot(bkadf%>%filter(kmerH<9999), aes(x=factor(kmerH),y=sMapLen)) + geom_boxplot() +
+  facet_grid(SID~.,scales="free") + 
+  ggtitle("Relationship of kmers and ALL pct") + theme(axis.text.x = element_text(angle=-90))
+```
+
+See BI with coverage > 90%
+```{r}
+bkadf90 <- bkadf%>%filter(ALL>80)
+
+ggplot(bkadf90,aes(x=tax,fill=SID)) +geom_bar() + coord_flip()
+
+ggplot(bkadf90,aes(x=kmers,linetype=SID)) +geom_density() 
+ggplot(bkadf90,aes(x=ident,linetype=SID)) +geom_density() 
+```
+
+
+# Compare with beads distance file
+```{r}
+dist.Z1 <- read.table("../../Results/AUG20/SAM/Z1/CLIP/all.clip.rename.clust.debug.dist.tsv",
+                      col.names = c("BID","BID2","clips","dist"))
+BM.bead.anno.Z1 <- BM.bead.anno%>%filter(SID=="Z1")
+
+dist.Z1.df <- merge(dist.Z1,BM.bead.anno.Z1[,c("BID","clips","tax","ident")],by.x="BID",by.y="BID")
+dist.Z1.df <- merge(dist.Z1.df,BM.bead.anno.Z1[,c("BID","clips","tax","ident")],by.x="BID2",by.y="BID")
+colnames(dist.Z1.df) <- c("BID2","BID","overlapClips","dist","clips1","tax1","ident1","clips2","tax2","ident2")
+dist.Z1.df$checkTax <- ifelse(dist.Z1.df$tax1==dist.Z1.df$tax2,"Same","Diff")
+```
+
+```{r}
+```
+
+```{r}
+ggplot(dist.Z1.df,aes(x=-dist/overlapClips,fill=checkTax)) +geom_histogram(position="dodge") +scale_x_log10()
+```
+
+```{r}
+ggplot(dist.Z1.df, aes(x=ident1,y=ident2,color=checkTax)) +
+  stat_density_2d() + 
+  scale_x_continuous(breaks=seq(90,100,2)) + 
+  scale_y_continuous(breaks=seq(90,100,2)) + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral")))+
+  ggtitle("Relationship of sMapLen and pct")
+```
+
+
+```{r}
+stat.dist.Z1 <- ddply(dist.Z1.df,c("BID"),summarise,
+                      Scount=sum(overlapClips[checkTax=="Same"]),
+                      Dcount=sum(overlapClips[checkTax=="Diff"]),
+                      Sdist=sum(dist[checkTax=="Same"]),
+                      Ddist=sum(dist[checkTax=="Diff"])
+                      )
+
+ggplot(stat.dist.Z1, aes(x=Scount+Dcount,y=Sdist/(Ddist+Sdist))) +
+  stat_density_2d() + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral")))+
+  ggtitle("Relationship of sMapLen and pct")
+
+
+```
+
+```{r}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#FIN.

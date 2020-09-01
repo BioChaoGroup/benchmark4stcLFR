@@ -105,25 +105,6 @@ SAM.BB.stat <- read.table("../../Results/AUG20/STAT/SAM.BB.stat",
 BI.msh.tsv <- read.table("../../Results/AUG20/STAT/BI.msh.tsv",
                          col.names = c("SID","count","rpb","kmers"))
 ```
-```{r}
-contig.tsv <- read.table("../../Results/RCAs/RCA197FIN/A42/summary.BI.megahit.contig.tsv",
-                         col.names = c("BI","id","flag","cov","len"))
-B.kmer <- read.table("../../Results/RCAs/RCA197FIN/A02/mash/bMin2.msh.2.tsv",
-                     col.names = c("BB","rpb","kmers"))
-#clip.num <- read.table("../../Results/RCAs/RCA197FIN/A42/summary.BI.megahit.clip.num",                       col.names = c("BI","len"))
-
-clip2zymo <- read.table("../../Results/RCAs/RCA197FIN/A42/clip2zymo.stat",
-                       col.names = c("BI","id","flag","cov","len0","clip","len","ref","cigar","match","fLen","NM"))
-clip2zymo.region <- read.table("../../Results/RCAs/RCA197FIN/A42/summary.BI.megahit.clip.zymo.region",
-                       col.names = c("BI","id","flag","cov","len0","clip","len","ref","region","match","fLen","regionLen","regionPos","PosPct"))
-rnahead.stat <- read.table("../../Results/RCAs/RCA197FIN/A42/summary.BI.megahit.rRNA.stat",
-                       col.names = c("BI","id","len","start","end","unit"))
-BI.lst <- read.table("../../Results/RCAs/RCA197FIN/A42/Assemble_BI/ID.lst",
-                     col.names = c("BI0","BB","kmers","rpb"))
-
-BI.freq.tsv <- read.table("../../Results/RCAs/RCA197FIN/A42/mash/BI.msh.freq.tsv", sep="\t",
-                           col.names = c("BB","rpb","kmers","bins","hash","hash1","hash2"))
-```
 
 
 # Curate
@@ -144,7 +125,7 @@ SAM.BB.reads <- ddply(SAM.BB.stat,"tag",summarise,BB.reads=sum(count*rpb))
 ```{r}
 basic.ori.df2 <- merge(metadata.df,basic.ORI.tsv,by.x="tag",by.y=".ID")
 rn <- colnames(basic.SAM.R.tsv)
-basic.SAM.N.tsv$ASM.clips <- NA
+basic.SAM.N.tsv$ASM.beads <- NA
 basic.sam.df2 <- merge(unique(metadata.df[,c(1,3,5:7)]),
   rbind(basic.SAM.S.tsv[,rn],basic.SAM.R.tsv,basic.SAM.N.tsv),
   by.x="SID",by.y=".ID")
@@ -161,12 +142,15 @@ p1.1 <- ggplot(basic.ori.df2,aes(x=SID)) +
   ggtitle("Beofre/after filter reads number")
 p1.1
 
+ggplot(basic.ori.df2,aes(x=SID)) +
+  geom_bar(aes(y=fastp.before_filtering.total_reads),position="stack",stat="identity",fill=NA,color="black") +
+  geom_bar(aes(y=fastp.after_filtering.total_reads),position="stack",stat="identity",fill="grey50",alpha=.5) +
+  ggtitle("Beofre/after filter reads number") + facet_grid(.~kingdom,scale="free")
+
 rm.name <- c("fastp.before_filtering.read1_mean_length","fastp.before_filtering.read2_mean_length")
 basic.ori.df3 <- melt(basic.ori.df2[,-which(colnames(basic.ori.df2)%in%rm.name)],
                       id.vars = colnames(basic.ori.df2)[1:7],
                       variable.name = "var",value.name = "val")
-ggplot(basic.ori.df3,aes(x=lane,y=val)) + geom_boxplot() + coord_flip() +
-  facet_wrap(~var,ncol=5,scale="free")
 ggplot(basic.ori.df3,aes(x=kingdom,y=val)) + geom_boxplot() + coord_flip() +
   facet_wrap(~var,ncol=5,scale="free")
 ```
@@ -220,13 +204,13 @@ ggplot(zymo.RCA.df,aes(x="Zymo")) +
 
 ```{r}
 ggplot(basic.sam.df2,aes(x=SID)) +
-  geom_bar(aes(y=ASM.beads),stat="identity",fill=NA,color="black") +
-  geom_bar(aes(y=ASM.clips),stat="identity",fill="grey50",color=NA)
+  geom_bar(aes(y=ASM.beads),stat="identity",fill=NA,color="black")
+  #geom_bar(aes(y=ASM.clips),stat="identity",fill="grey50",color=NA)
 
 ggplot(basic.sam.df2%>%filter(lane%in%seq(1,6)),aes(x=SID)) +
   geom_bar(aes(y=BB.beads),stat="identity",fill=NA,color="black") +
-  geom_bar(aes(y=ASM.beads),stat="identity",fill="grey50",color=NA) +
-  geom_bar(aes(y=ASM.clips),stat="identity",fill="brown1",color=NA)
+  geom_bar(aes(y=ASM.beads),stat="identity",fill="grey50",color=NA)
+  #geom_bar(aes(y=ASM.clips),stat="identity",fill="brown1",color=NA)
 
 ggplot(ddply(basic.sam.df2%>%filter(lane%in%seq(1,6)),c("kingdom","SID"),summarise,pct=ASM.beads/BB.beads),
        aes(x=kingdom,y=pct)) +geom_boxplot()

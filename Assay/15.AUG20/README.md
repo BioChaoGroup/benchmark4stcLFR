@@ -113,8 +113,8 @@ for i in `ls -d SAM/??`;do mkdir -p $i/stat && metabbq stat basic -p $i -o $i/st
 for i in `ls ORI|grep FF`;do awk -v i=$i '{print i"\t"$0}' ORI/$i/clean/BB.stat; done > STAT/ORI.BB.stat
 for i in `ls SAM`;do awk -v i=$i '{print i"\t"$0}' SAM/$i/clean/BB.stat; done > STAT/SAM.BB.stat
 
-cat SAM/{{M,Z}{1,2,3},{M,Y}{4,5,6}}/stat/basic.log|sort|uniq > STAT/SAM.basic.single.log
-cat SAM/{{U,S,O}{1,2,3},{S,O}{4,5,6}}/stat/basic.log|sort|uniq > STAT/SAM.basic.RCA.log
+cat SAM/{Z{1,2,3},M{4,5,6}}/stat/basic.log|sort|uniq > STAT/SAM.basic.single.log
+cat SAM/{{S,O}{1,2,3},{S,O}{4,5,6}}/stat/basic.log|sort|uniq > STAT/SAM.basic.RCA.log
 cat SAM/{{S,O,Z}{7,8,9},{S,O,M}{A,B,C}}/stat/basic.log|sort|uniq > STAT/SAM.basic.NOR.log
 
 ```
@@ -126,7 +126,7 @@ metabbq smk -j --resources mem=120 -npk SAM/{{U,S,O,M,Z}{1,2,3},{S,O,M,Y}{4,5,6}
 ```
 
 **IMPORTANT** Set proper primers config
-```
+```bash
 # prep asm config for bac
 metabbq smk --configfile config.yaml -j -npk SAM/{Z,S,O}{1,2,3}/primers.cfg
 # prep asm config for euk
@@ -147,6 +147,9 @@ RCA isolate assemble:
 metabbq smk -j -npk SAM/{U,S,O}{1,2,3}}/summary.BI.megahit.clip.all.fasta
 # for fungi
 metabbq smk -j -npk SAM/{S,O,M,Y}{4,5,6}/summary.BI.megahit.clip.all.fasta
+
+
+#sum
 
 ```
 
