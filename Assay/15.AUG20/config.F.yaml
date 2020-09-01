@@ -9,12 +9,6 @@ distCutoff: 0.04
 divideSH: 8
 
 BB_LIST: "../../Source/REF/barcode.list"
-#REF_GEN: "../../Source/REF/fungal7mix/MIX7.fa"
-
-#REF_FA: "../../Source/REF/fungal7mix/MIX7.fa"
-#REF_ID: "../../Source/REF/fungal7mix/MIX7.faID"
-
-#REF_nt: "$MDB/NCBI/blast_nt/nt"
 
 sampleType: "F" # F(ungi) or B(acteria)
 
@@ -24,12 +18,12 @@ MockRef:
     bed: "$LFR/Source/REF/fungi/sanger/sanger.mock7.rRNA.ITSx.bed"
 
 OpenRef:
-    silva_SSU_blastdb: "$LFR/Source/REF/SILVA/138/SSURef_tax_silva_trunc"
-    silva_SSU_taxomap: "$LFR/Source/REF/SILVA/138/taxmap_embl_ssu_ref_138.tax"
-    silva_LSU_blastdb: "$LFR/Source/REF/SILVA/132/LSURef_tax_silva_trunc"
-    silva_LSU_taxomap: "$LFR/Source/REF/SILVA/132/taxmap_embl_lsu_ref_132.tax"
+    silva_SSU_blastdb: "$LFR/Source/REF/SILVA/138.1/SSURef_tax_silva_trunc"
+    silva_SSU_taxomap: "$LFR/Source/REF/SILVA/138.1/taxmap_slv_ssu_ref_138.1.tax"
+    silva_LSU_blastdb: "$LFR/Source/REF/SILVA/138.1/LSURef_tax_silva_trunc"
+    silva_LSU_taxomap: "$LFR/Source/REF/SILVA/138.1/taxmap_slv_lsu_ref_138.1.tax"
     unite_ITS_blastdb: "$LFR/Source/REF/UNITE/sh_general_release_all_04.02.2020/UNITE_ITS_ONLY.fasta"
-    unite_ITS_taxomap: "$LFR/Source/REF/UNITE/sh_general_release_all_04.02.2020/taxmap_taxonkit_merge_ref.tax" 
+    unite_ITS_taxomap: "$LFR/Source/REF/UNITE/sh_general_release_all_04.02.2020/taxmap_taxonkit_merge_ref.tax"
 
 ### adapters of Amplicon and RCA
 AdRCA: AAGTCGGACGCTGATAAGGTCGCCATGCCTCTCAGTACTCCGACTT

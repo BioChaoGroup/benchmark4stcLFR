@@ -43,6 +43,8 @@ pmrRev:
 
 ### method selection
 method:
+  QC:
+    cutOA: False
   cluster:
     mash: False
     dups: False

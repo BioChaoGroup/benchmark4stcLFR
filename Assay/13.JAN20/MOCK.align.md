@@ -9,6 +9,7 @@ if($1==arr[1] && $7==arr[7] && (($9 == "16S_rRNA" && arr[9] == "23S_rRNA")|| ($9
 print $1"\t"$4"\t"$5"\t"$9"\t1\t"$7"\t"$4"\t"$5"\t50,50,05"; \
 arr[1]=$1;arr[4]=$4;arr[5]=$5;arr[9]=$9;arr[7]=$7;}' \
 < $LFR/Source/REF/zymo/D6305.rRNA.barrnap.gff > $LFR/Source/REF/zymo/D6305.rRNA.barrnap.bed
+barrnap --threads 4 --kingdom euk < $LFR/Source/REF/zymo/D6305.rRNA.fa > $LFR/Source/REF/zymo/D6305.rRNA.barrnap.euk.gff 2> $LFR/Source/REF/zymo/D6305.rRNA.barrnap.euk.log
 
 #fungi
 makeblastdb -dbtype nucl -in $LFR/Source/REF/fungi/sanger/sanger.mock7.rRNA.fa
@@ -338,7 +339,7 @@ grep -Eo "BI[0-9]+" SAM/Z1/CLIP/all.16S.fasta|sort|uniq > SAM/Z1/CLIP/all.16S.BI
 
 
 #test LOTU phylotree
-```
+```bash
 barrnap --threads 4 --kingdom bac < SAM/Z2/CLIP/all.clust.fa > SAM/Z2/CLIP/all.clust.fa.barrnap.gff 2> SAM/Z2/CLIP/all.clust.fa.barrnap.log
 metabbq getAmpSeq -r B -g SAM/Z2/CLIP/all.clust.fa.barrnap.gff -i SAM/Z2/CLIP/all.clust.fa -o SAM/Z2/CLIP/all.clust.fa.barrnap.rRNA.fa
 awk -F "=|:" 'FNR%2==1{if($2>=50){p=1}else{p=0}}(p==1){print}' SAM/Z2/CLIP/all.clust.fa.barrnap.rRNA.fa > SAM/Z2/CLIP/all.clust.fa.barrnap.rRNA.size50.fa
@@ -360,11 +361,196 @@ mafft --thread 16 SAM/Z2/CLIP/all.clust.fa.barrnap.rRNA.cov3.addRef.fa > SAM/Z2/
 
 trimal -gappyout -in SAM/Z2/CLIP/all.clust.fa.barrnap.rRNA.cov3.addRef.mafft.fa -out SAM/Z2/CLIP/all.clust.fa.barrnap.rRNA.cov3.addRef.mafft.trimal.fa
 
+
 ```
 
 #test LOTU_270:
 ```bash
-grep BI00054276_k43_2 SAM/Z2/CLIP/all.clust.uc|perl -e 'while(<>){chomp;@s=split;$HS{$s[8]}=1};open I,"<SAM/Z2/summary.BI.megahit.clip.fasta";$/=">";while(<I>){chomp;next unless $_;@s=split /\n/;if(exists $HS{$s[0]}){print ">".$_}}' > SAM/Z2/CLIP/all.LOTU270.fa
-mafft --thread 16 --op 2 --ep 1 --genafpair  --maxiterate 16 --phylipout --inputorder SAM/Z2/CLIP/all.LOTU270.fa > SAM/Z2/CLIP/all.LOTU270.mafft.fa
+metabbq IO tree2fa -i SAM/SBR/PREDICT/barrnap.ssu.fa -r phylum -d CLADE0.72 -t SAM/SBR/KRAKEN/test/data/added.txt -o SAM/SBR/PREDICT/phylum.ssu.fa -v
+mafft --thread 16 SAM/SBR/PREDICT/phylum.ssu.fa > SAM/SBR/PREDICT/phylum.ssu.mafft.fa
+trimal -gappyout -in SAM/SBR/PREDICT/phylum.ssu.mafft.fa -out SAM/SBR/PREDICT/phylum.ssu.mafft.trimal.fa
+
+raxmlHPC-HYBRID-AVX -f a -p 12345 -s SAM/SBR/PREDICT/phylum.ssu.mafft.trimal.fa -x 12345 -T 20 -# 20 -m GTRCAT  -w $PWD/SAM/SBR/PREDICT -n phylum.ssu.raxml
 
 ```
+
+# test raxml
+```bash
+metabbq IO clade2tree -i SAM/SBR/CLIP/id90def4.clust.fa -a SAM/SBR/ANNO/CLIP.map.merge.clip.anno \
+ -d $LFR/Source/REF/KRAKEN2/rDNA -s SAM/SBR/CLIP/id90def4.clade.uc -o SAM/SBR/KRAKEN/test -m bac -v
+
+awk '/^>/{if($0~/23S|28S/){p=1}else{p=0}};(p==1){print}' $LFR/Source/REF/zymo/D6305.markers.fa > $LFR/Source/REF/zymo/D6305.markers.LSU.fa
+
+awk '/^>/{if($0~/16S|18S|23S|25S|28S/){p=1}else{p=0}};(p==1){print}' $LFR/Source/REF/zymo/D6305.markers.fa > $LFR/Source/REF/zymo/D6305.markers.both.fa
+
+#perl -e 'while(<>){@s=split;if($s[3]=~/16S|18S/ && $s[5] eq "+"){print "$s[0]:$s[6]-$s[7]\n"}}' < $LFR/Source/REF/zymo/D6305.rRNA.barrnap.bed > $LFR/Source/REF/zymo/D6305.rRNA.barrnap.16S+.region
+#perl -e 'while(<>){@s=split;if($s[3]=~/16S|18S/ && $s[5] eq "-"){print "$s[0]:$s[6]-$s[7]\n"}}' < $LFR/Source/REF/zymo/D6305.rRNA.barrnap.bed > $LFR/Source/REF/zymo/D6305.rRNA.barrnap.16S-.region
+samtools faidx -r $LFR/Source/REF/zymo/D6305.rRNA.barrnap.16S+.region $LFR/Source/REF/zymo/D6305.rRNA.fa > $LFR/Source/REF/zymo/D6305.select.both.ssu.rep.fa
+samtools faidx -i -r $LFR/Source/REF/zymo/D6305.rRNA.barrnap.16S-.region $LFR/Source/REF/zymo/D6305.rRNA.fa >> $LFR/Source/REF/zymo/D6305.select.both.ssu.rep.fa
+sed -i 's/:/ /' $LFR/Source/REF/zymo/D6305.select.both.ssu.rep.fa
+
+#perl -e 'while(<>){@s=split;if($s[3]=~/23S|28S|25S/ && $s[5] eq "+"){print "$s[0]:$s[6]-$s[7]\n"}}' < $LFR/Source/REF/zymo/D6305.rRNA.barrnap.bed > $LFR/Source/REF/zymo/D6305.rRNA.barrnap.23S+.region
+#perl -e 'while(<>){@s=split;if($s[3]=~/23S|28S|25S/ && $s[5] eq "-"){print "$s[0]:$s[6]-$s[7]\n"}}' < $LFR/Source/REF/zymo/D6305.rRNA.barrnap.bed > $LFR/Source/REF/zymo/D6305.rRNA.barrnap.23S-.region
+samtools faidx -r $LFR/Source/REF/zymo/D6305.rRNA.barrnap.23S+.region $LFR/Source/REF/zymo/D6305.rRNA.fa > $LFR/Source/REF/zymo/D6305.select.both.lsu.rep.fa
+samtools faidx -i -r $LFR/Source/REF/zymo/D6305.rRNA.barrnap.23S-.region $LFR/Source/REF/zymo/D6305.rRNA.fa >> $LFR/Source/REF/zymo/D6305.select.both.lsu.rep.fa
+sed -i 's/:/ /' $LFR/Source/REF/zymo/D6305.select.both.lsu.rep.fa
+
+
+```
+
+For species:
+
+**with anno*
+```bash
+metabbq IO tree2fa -s SAM/SBR/CLIP/all.SSU.fa -l SAM/SBR/CLIP/all.LSU.fa -r species -d CLADE0.99 -t SAM/SBR/KRAKEN/test/data/added.txt -o SAM/SBR/PREDICT/sp.a.fa -a -v
+#SSU:497,LSU:131,BOTH
+cat $LFR/Source/REF/zymo/D6305.ssrRNA.rep.fasta SAM/SBR/PREDICT/sp.a.SSU.fa > SAM/SBR/PREDICT/sp.a.ssu.fa
+
+mafft --thread 16 SAM/SBR/PREDICT/sp.a.ssu.fa > SAM/SBR/PREDICT/sp.a.ssu.mafft.fa
+trimal -gappyout -in SAM/SBR/PREDICT/sp.a.ssu.mafft.fa -out SAM/SBR/PREDICT/sp.a.ssu.mafft.trimal.fa
+
+raxmlHPC-HYBRID-AVX -f a -x 12345 -p 12345 -s SAM/SBR/PREDICT/sp.a.ssu.mafft.trimal.fa -T 20 -# 40 -m GTRCAT  -w $PWD/SAM/SBR/PREDICT -n sp.a.ssu.raxml
+
+
+```
+
+```bash
+metabbq IO tree2fa -s SAM/SBR/CLIP/all.SSU.fa -l SAM/SBR/CLIP/all.LSU.fa -r species -d CLADE0.99 -t SAM/SBR/KRAKEN/test/data/added.txt -o SAM/SBR/PREDICT/species.fa -p -v
+```
+Written 32307 clade seqs. 37697 records cannot found seqs.
+SSU: 26572 (561+25475+536) | LSU: 7240(132+6158+950) | BOTH:1505(72+1433+1486)
+
+```bash
+#SSU:497,LSU:131,BOTH
+perl -e 'open I,"<SAM/SBR/PREDICT/species.SSU.fa";$o=$/;$/=">";while(<I>){chomp;@s=split /\n/;$id=shift @s;$HS{$id}=join("",@s)};$/=$o;
+open M,"<SAM/SBR/summary.BI.megahit.clip.metadata.tsv";while(<M>){@s=split;my %H=();while($s[7]=~s/(FWD|REV)(\+|\-)//){
+  $H{$1}++;$H{$2}++};if($H{"FWD"} ==1 && $H{"REV"} == 0){$s[6]=~s/C//;$AD{"$s[0].$s[2].$s[6]"}++ }};
+while(<>){@s=split /\t/;if($s[3]>1399&&$AD{$s[2]}){$count ++;if($HS{$s[0]}){print ">$s[0]\n$HS{$s[0]}\n"}else{print STDERR "$s[0]\n"}}};print STDERR $count."\n"' \
+< SAM/SBR/PREDICT/species.SSU.inf > SAM/SBR/PREDICT/species.ssu.filter.fa 2> SAM/SBR/PREDICT/species.ssu.filter.log
+
+cat $LFR/Source/REF/zymo/D6305.select.both.ssu.rep.fa SAM/SBR/PREDICT/species.ssu.filter.fa > SAM/SBR/PREDICT/species+ref.ssu.fa
+
+mafft --thread 48 SAM/SBR/PREDICT/species+ref.ssu.fa > SAM/SBR/PREDICT/species+ref.ssu.mafft.fa
+trimal -gappyout -in SAM/SBR/PREDICT/species+ref.ssu.mafft.fa -out SAM/SBR/PREDICT/species+ref.ssu.mafft.trimal.fa
+
+raxmlHPC-HYBRID-AVX -f a -p 12345 -x 12345 -s SAM/SBR/PREDICT/species+ref.ssu.mafft.trimal.fa -T 40 -# 40 -m GTRCAT  -w $PWD/SAM/SBR/PREDICT -n species+ref.ssu.raxml
+
+perl phylo.trans.pl < SAM/SBR/PREDICT/RAxML_bipartitionsBranchLabels.species+ref.ssu.raxml > SAM/SBR/PREDICT/RAxML_bipartitionsBranchLabels.species.a.ssu.raxml
+
+#both
+perl -e 'open I,"<SAM/SBR/PREDICT/species.both.SSU.fa";$o=$/;$/=">";while(<I>){chomp;@s=split /\n/;$id=shift @s;$HS{$id}=join("",@s)};$/=$o;
+while(<>){@s=split /\t/;if($s[3]>999&&$s[4]>999){$count ++;if($HS{$s[0]}){print ">$s[0]\n$HS{$s[0]}\n"}else{print STDERR "$s[0]\n"}}};print STDERR $count."\n"' \
+< SAM/SBR/PREDICT/species.both.inf > SAM/SBR/PREDICT/species.both.ssu.filter.fa 2> SAM/SBR/PREDICT/species.both.ssu.filter.log
+perl -e 'open I,"<SAM/SBR/PREDICT/species.both.LSU.fa";$o=$/;$/=">";while(<I>){chomp;@s=split /\n/;$id=shift @s;$HS{$id}=join("",@s)};$/=$o;
+while(<>){@s=split /\t/;if($s[3]>999&&$s[4]>999){$count ++;if($HS{$s[0]}){print ">$s[0]\n$HS{$s[0]}\n"}else{print STDERR "$s[0]\n"}}};print STDERR $count."\n"' \
+< SAM/SBR/PREDICT/species.both.inf > SAM/SBR/PREDICT/species.both.lsu.filter.fa 2> SAM/SBR/PREDICT/species.both.lsu.filter.log
+
+cat $LFR/Source/REF/zymo/D6305.select.both.ssu.rep.fa SAM/SBR/PREDICT/species.both.ssu.filter.fa > SAM/SBR/PREDICT/species.both.ssu+.filter.fa
+cat $LFR/Source/REF/zymo/D6305.select.both.lsu.rep.fa SAM/SBR/PREDICT/species.both.lsu.filter.fa > SAM/SBR/PREDICT/species.both.lsu+.filter.fa
+
+#ssu part
+mafft --thread 16 SAM/SBR/PREDICT/species.both.ssu+.filter.fa > SAM/SBR/PREDICT/species.both.ssu.mafft.fa
+trimal -gappyout -in SAM/SBR/PREDICT/species.both.ssu.mafft.fa -out SAM/SBR/PREDICT/species.both.ssu.trimal.fa
+#lsu part
+mafft --thread 16 SAM/SBR/PREDICT/species.both.lsu+.filter.fa > SAM/SBR/PREDICT/species.both.lsu.mafft.fa
+trimal -gappyout -in SAM/SBR/PREDICT/species.both.lsu.mafft.fa -out SAM/SBR/PREDICT/species.both.lsu.trimal.fa
+# merge
+perl -e 'open I,"<SAM/SBR/PREDICT/species.both.ssu.trimal.fa";$/=">";while(<I>){chomp;next unless $_; @s=split;$id=shift @s;$id=~s/ .*//;$HS{$id}=join("",@s)};
+while(<>){chomp;next unless $_; @s=split;$id=shift @s;$id=~s/ .*//;die "ssu missin for $id" unless exists $HS{$id};
+$str = join("",$HS{$id},@s); @parts = $str =~ /(.{1,60})/g;print ">$id\n".join("\n",@parts)."\n"}' \
+< SAM/SBR/PREDICT/species.both.lsu.trimal.fa > SAM/SBR/PREDICT/species.both.trimal.fa
+
+
+raxmlHPC-HYBRID-AVX -f a -p 12345 -s SAM/SBR/PREDICT/species.both.trimal.fa -x 12345 -T 40 -# 40 -m GTRCAT  -w $PWD/SAM/SBR/PREDICT/RAXML -n species+ref.both.raxml
+perl phylo.trans.pl SAM/SBR/PREDICT/species.both.inf < SAM/SBR/PREDICT/RAXML/RAxML_bipartitionsBranchLabels.species+ref.both.raxml > SAM/SBR/PREDICT/RAXML/RAxML_bipartitionsBranchLabels.species+ref.both.anno.raxml
+
+```
+> Written 49750 clade seqs. 20253 records cannot found seqs.
+> SSU: 36902 (558+33561+2783) | LSU: 17640(128+15589+1923) | BOTH:4792(126+4666+4706)
+
+
+For genus:
+```bash
+metabbq IO tree2fa -s SAM/SBR/CLIP/all.SSU.fa -l SAM/SBR/CLIP/all.LSU.fa -r genus -d CLADE0.97 -t SAM/SBR/KRAKEN/test/data/added.txt -o SAM/SBR/PREDICT/genus.fa -v
+cat $LFR/Source/REF/zymo/D6305.ssrRNA.fasta SAM/SBR/PREDICT/genus.ssu.fa > SAM/SBR/PREDICT/genus+ref.ssu.fa
+mafft --thread 16 SAM/SBR/PREDICT/genus+ref.ssu.fa > SAM/SBR/PREDICT/genus+ref.ssu.mafft.fa
+trimal -gappyout -in SAM/SBR/PREDICT/genus+ref.ssu.mafft.fa -out SAM/SBR/PREDICT/genus+ref.ssu.mafft.trimal.fa
+raxmlHPC-HYBRID-AVX -f a -p 12345 -s SAM/SBR/PREDICT/genus+ref.ssu.mafft.trimal.fa -x 12345 -T 20 -# 20 -m GTRCAT  -w $PWD/SAM/SBR/PREDICT -n genus+ref.ssu.raxml
+
+```
+> Written 398 seqs (SSU:335,LSU:288,BOTH:225). 8 records cannot found seqs
+> SSU: 5691 (278+4946+467) | LSU: 3002(195+2252+555) | BOTH:1114(225+889+1022)
+
+For family:
+```bash
+metabbq IO tree2fa -s SAM/SBR/CLIP/all.SSU.fa -l SAM/SBR/CLIP/all.LSU.fa -r family -d CLADE0.89 -t SAM/SBR/KRAKEN/test/data/added.txt -o SAM/SBR/PREDICT/family.fa -v
+cat $LFR/Source/REF/zymo/D6305.ssrRNA.fasta SAM/SBR/PREDICT/family.SSU.fa > SAM/SBR/PREDICT/family+ref.ssu.fa
+mafft --thread 16 SAM/SBR/PREDICT/family+ref.ssu.fa > SAM/SBR/PREDICT/family+ref.ssu.mafft.fa
+trimal -gappyout -in SAM/SBR/PREDICT/family+ref.ssu.mafft.fa -out SAM/SBR/PREDICT/family+ref.ssu.mafft.trimal.fa
+raxmlHPC-HYBRID-AVX -f a -p 12345 -s SAM/SBR/PREDICT/family+ref.ssu.mafft.trimal.fa -x 12345 -T 40 -# 40 -m GTRCAT  -w $PWD/SAM/SBR/PREDICT -n family+ref.ssu.raxml
+
+```
+> Written 560 clade seqs. 2606 records cannot found seqs.
+> SSU: 530 (93+389+48) | LSU: 223(79+29+115) | BOTH:193(99+94+163)
+
+For phylum:
+```bash
+metabbq IO tree2fa -s SAM/SBR/CLIP/all.SSU.fa -l SAM/SBR/CLIP/all.LSU.fa -r phylum -d CLADE0.72 -t SAM/SBR/KRAKEN/test/data/added.txt -o SAM/SBR/PREDICT/phylum.fa -v
+```
+  Written 34 clade seqs. 1310 records cannot found seqs.
+  SSU: 32 (19+6+7) | LSU: 28(11+2+15) | BOTH:26(24+2+22)
+
+  Written 27 clade seqs. 1317 records cannot found seqs.
+  SSU: 25 (21+1+3) | LSU: 15(7++8) | BOTH:13(13++11)
+
+```bash
+#SSU
+perl -e 'open I,"<SAM/SBR/PREDICT/phylum.SSU.fa";$o=$/;$/=">";while(<I>){chomp;@s=split /\n/;$id=shift @s;$HS{$id}=join("",@s)};$/=$o;
+while(<>){@s=split /\t/;if($s[3]>999){$count ++;if($HS{$s[0]}){print ">$s[0]\n$HS{$s[0]}\n"}else{print STDERR "$s[0]\n"}}};print STDERR $count."\n"' \
+< SAM/SBR/PREDICT/phylum.SSU.inf > SAM/SBR/PREDICT/phylum.ssu.filter.fa 2> SAM/SBR/PREDICT/species.ssu.filter.log
+
+cat $LFR/Source/REF/zymo/D6305.select.both.ssu.rep.fa SAM/SBR/PREDICT/phylum.ssu.filter.fa > SAM/SBR/PREDICT/phylum+ref.ssu.fa
+mafft --thread 16 SAM/SBR/PREDICT/phylum+ref.ssu.fa > SAM/SBR/PREDICT/phylum+ref.ssu.mafft.fa
+trimal -gappyout -in SAM/SBR/PREDICT/phylum+ref.ssu.mafft.fa -out SAM/SBR/PREDICT/phylum+ref.ssu.mafft.trimal.fa
+raxmlHPC-HYBRID-AVX -f a -p 12345 -s SAM/SBR/PREDICT/phylum+ref.ssu.mafft.trimal.fa -x 12345 -T 40 -# 40 -m GTRCAT  -w $PWD/SAM/SBR/PREDICT/RAXML -n phylum+ref.ssu.raxml
+perl phylo.trans.pl SAM/SBR/PREDICT/phylum.SSU.inf < SAM/SBR/PREDICT/RAXML/RAxML_bipartitionsBranchLabels.phylum+ref.ssu.raxml > SAM/SBR/PREDICT/RAXML/RAxML_bipartitionsBranchLabels.phylum+ref.ssu.anno.raxml
+
+#LSU
+cat $LFR/Source/REF/zymo/D6305.select.both.lsu.rep.fa SAM/SBR/PREDICT/phylum.LSU.fa > SAM/SBR/PREDICT/phylum+ref.lsu.fa
+mafft --thread 16 SAM/SBR/PREDICT/phylum+ref.lsu.fa > SAM/SBR/PREDICT/phylum+ref.lsu.mafft.fa
+trimal -gappyout -in SAM/SBR/PREDICT/phylum+ref.lsu.mafft.fa -out SAM/SBR/PREDICT/phylum+ref.lsu.mafft.trimal.fa
+raxmlHPC-HYBRID-AVX -f a -p 12345 -s SAM/SBR/PREDICT/phylum+ref.lsu.mafft.trimal.fa -x 12345 -T 40 -# 40 -m GTRCAT  -w $PWD/SAM/SBR/PREDICT/RAXML -n phylum+ref.lsu.raxml
+perl phylo.trans.pl SAM/SBR/PREDICT/phylum.LSU.inf < SAM/SBR/PREDICT/RAXML/RAxML_bipartitionsBranchLabels.phylum+ref.lsu.raxml > SAM/SBR/PREDICT/RAXML/RAxML_bipartitionsBranchLabels.phylum+ref.lsu.anno.raxml
+
+
+#both
+perl -e 'open I,"<SAM/SBR/PREDICT/phylum.both.SSU.fa";$o=$/;$/=">";while(<I>){chomp;@s=split /\n/;$id=shift @s;$HS{$id}=join("",@s)};$/=$o;
+while(<>){@s=split /\t/;if($s[3]>999&&$s[4]>999){$count ++;if($HS{$s[0]}){print ">$s[0]\n$HS{$s[0]}\n"}else{print STDERR "$s[0]\n"}}};print STDERR $count."\n"' \
+< SAM/SBR/PREDICT/phylum.both.inf > SAM/SBR/PREDICT/phylum.both.ssu.filter.fa 2> SAM/SBR/PREDICT/species.both.ssu.filter.log
+perl -e 'open I,"<SAM/SBR/PREDICT/phylum.both.LSU.fa";$o=$/;$/=">";while(<I>){chomp;@s=split /\n/;$id=shift @s;$HS{$id}=join("",@s)};$/=$o;
+while(<>){@s=split /\t/;if($s[3]>999&&$s[4]>999){$count ++;if($HS{$s[0]}){print ">$s[0]\n$HS{$s[0]}\n"}else{print STDERR "$s[0]\n"}}};print STDERR $count."\n"' \
+< SAM/SBR/PREDICT/phylum.both.inf > SAM/SBR/PREDICT/phylum.both.lsu.filter.fa 2> SAM/SBR/PREDICT/species.both.lsu.filter.log
+
+cat $LFR/Source/REF/zymo/D6305.select.both.ssu.rep.fa SAM/SBR/PREDICT/phylum.both.ssu.filter.fa > SAM/SBR/PREDICT/phylum.both.ssu+.filter.fa
+cat $LFR/Source/REF/zymo/D6305.select.both.lsu.rep.fa SAM/SBR/PREDICT/phylum.both.lsu.filter.fa > SAM/SBR/PREDICT/phylum.both.lsu+.filter.fa
+
+#ssu part
+mafft --thread 16 SAM/SBR/PREDICT/phylum.both.ssu+.filter.fa > SAM/SBR/PREDICT/phylum.both.ssu.mafft.fa
+trimal -gappyout -in SAM/SBR/PREDICT/phylum.both.ssu.mafft.fa -out SAM/SBR/PREDICT/phylum.both.ssu.trimal.fa
+#lsu part
+mafft --thread 16 SAM/SBR/PREDICT/phylum.both.lsu+.filter.fa > SAM/SBR/PREDICT/phylum.both.lsu.mafft.fa
+trimal -gappyout -in SAM/SBR/PREDICT/phylum.both.lsu.mafft.fa -out SAM/SBR/PREDICT/phylum.both.lsu.trimal.fa
+# merge
+perl -e 'open I,"<SAM/SBR/PREDICT/phylum.both.ssu.trimal.fa";$/=">";while(<I>){chomp;next unless $_; @s=split;$id=shift @s;$id=~s/ .*//;$HS{$id}=join("",@s)};
+while(<>){chomp;next unless $_; @s=split;$id=shift @s;$id=~s/ .*//;die "ssu missin for $id" unless exists $HS{$id};
+$str = join("",$HS{$id},@s); @parts = $str =~ /(.{1,60})/g;print ">$id\n".join("\n",@parts)."\n"}' \
+< SAM/SBR/PREDICT/phylum.both.lsu.trimal.fa > SAM/SBR/PREDICT/phylum.both.trimal.fa
+
+
+raxmlHPC-HYBRID-AVX -f a -p 12345 -s SAM/SBR/PREDICT/phylum.both.trimal.fa -x 12345 -T 40 -# 40 -m GTRCAT  -w $PWD/SAM/SBR/PREDICT/RAXML -n phylum+ref.both.raxml
+perl phylo.trans.pl SAM/SBR/PREDICT/phylum.both.inf < SAM/SBR/PREDICT/RAXML/RAxML_bipartitionsBranchLabels.phylum+ref.both.raxml > SAM/SBR/PREDICT/RAXML/RAxML_bipartitionsBranchLabels.phylum+ref.both.anno.raxml
+
+```
+
+
+>("domain",0.66,"kingdom",0.7,"phylum",0.76,"class",0.77,"order",0.83,"family",0.89,"genus",0.97,"species",0.995);
