@@ -3,8 +3,9 @@ title: "AUG20 DATA ASSESSMENT: annotation part"
 author: "Chao"
 date: "3/22/2020"
 output: 
-  html_notebook:
+  html_notebook: 
     code_fold: hide
+    toc: yes
 ---
 
 ```{r setup, include=FALSE}
@@ -158,7 +159,7 @@ SBR.bead.metadata.df <- read.table(
 
 SBR.barrnap.gff3.tsv <- read.table(
   md5("../../Results/AUG20/STAT/CLIP/SBR.all.barrnap.sum.tsv","29bbb927d453d8caa1cd51838d3ab26b"),
-  col.names = c("SID","BID","len16S","pct16S","len5.8S","pct5.8S","len23S","pct23S","unit")
+  col.names = c("SID","BID","len16S","pct16S","len23S","pct23S","len5.8S","pct5.8S","unit")
 )
 #levels(SBR.barrnap.gff3.tsv$SID)[which(levels(SBR.barrnap.gff3.tsv$SID)%in%c("O2","S2"))] <- c("S2","O2")
 
@@ -347,13 +348,13 @@ ggplot(combine.unit.df,aes(x=BLen)) +geom_histogram(aes(fill=foundUNIT),position
 
 ```{r}
 combine.unit.df$foundSSU <- as.factor(combine.unit.df$foundSSU)
-levels(combine.unit.df$foundSSU) <- c("Unknown","predicted by barrnap","predicted by ITSx","cross validated","aligned to reference","cross validated","cross validated","cross validated")
+levels(combine.unit.df$foundSSU) <- c("Unknown","predicted by barrnap","aligned to reference","cross validated")
 source.SSU <- ddply(combine.unit.df%>%filter(foundSSU!="Unknown"),"foundSSU",summarise,count=length(BID))
 source.SSU$pct <- source.SSU$count/sum(source.SSU$count)
 source.SSU$lab <- sprintf("%.2f%%",100*source.SSU$pct)
 
 combine.unit.df$foundLSU <- as.factor(combine.unit.df$foundLSU)
-levels(combine.unit.df$foundLSU) <- c("Unknown","predicted by barrnap","predicted by ITSx","cross validated","aligned to reference","cross validated","cross validated","cross validated")
+levels(combine.unit.df$foundLSU) <- c("Unknown","predicted by barrnap","aligned to reference","cross validated")
 source.LSU <- ddply(combine.unit.df%>%filter(foundLSU!="Unknown"),"foundLSU",summarise,count=length(BID))
 source.LSU$pct <- source.LSU$count/sum(source.LSU$count)
 source.LSU$lab <- sprintf("%.2f%%",100*source.LSU$pct)

@@ -47,7 +47,7 @@ metabbq IO makeclade -i SAM/SBR/CLIP/id90def4.clust.fa -o SAM/SBR/CLIP/id90def4.
 
 # with anno
 metabbq IO clade2tree -i SAM/SBR/CLIP/id90def4.clust.fa -a SAM/SBR/ANNO/CLIP.map.merge.clip.anno \
- -d $LFR/Source/REF/KRAKEN2/rDNA -s SAM/SBR/CLIP/id90def4.clade.uc -o SAM/SBR/KRAKEN/BEAD -v
+ -d $LFR/Source/REF/KRAKEN2/SUS -s SAM/SBR/CLIP/id90def4.clade.uc -o SAM/SBR/KRAKEN/BEAD -v
 
 # rm SAM/SBR/KRAKEN/BEAD/{database*,*.k2d} 
 metabbq buildKraken2db.sh SAM/SBR/KRAKEN/BEAD 4

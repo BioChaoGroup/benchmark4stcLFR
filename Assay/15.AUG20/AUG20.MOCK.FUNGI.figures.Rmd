@@ -356,10 +356,10 @@ getMapPropFun2 <- function(d){
 sbinfo <- matrix(unlist(strsplit(as.character(MFR.silva.bead.anno$BINFO),"|",fixed = T)),ncol=4,byrow = T)
 sbinfodf <- data.frame(BID=sbinfo[,1],clips=as.numeric(sbinfo[,3]),hits=as.numeric(sbinfo[,4]))
 covdf <- getMapPropFun2(as.character(MFR.silva.bead.anno$covs))
-
-MFR.slv.bead.df <- cbind(sbinfodf,MFR.silva.bead.anno[,-c(2,16:19)],covdf[,c(2,6)])
-MFR.slv.bead.df$unit <- factor(ifelse(MFR.slv.bead.df$SSU>0,1,0) + ifelse(MFR.slv.bead.df$LSU>0,2,0),levels = seq(0,3))
-levels(MFR.slv.bead.df$unit) <- c("NONE","SSU","LSU","BOTH")
+covdf <- cbind(covdf,ITS=covdf[,3]+covdf[,5])
+MFR.slv.bead.df <- cbind(sbinfodf,MFR.silva.bead.anno[,-c(2,16:19)],covdf[,c(2,6,7)])
+MFR.slv.bead.df$unit <- factor(ifelse(MFR.slv.bead.df$SSU>0,1,0) + ifelse(MFR.slv.bead.df$ITS>0,2,0) + ifelse(MFR.slv.bead.df$LSU>0,4,0),levels = seq(0,7))
+levels(MFR.slv.bead.df$unit) <- c("NONE","SSU","ITS","SSU+ITS","LSU","SSU+LSU","ITS+LSU","ALL")
 ```
 
 ```{r}
@@ -398,6 +398,10 @@ ggplot(MFR.slv.bead.df,aes(x=qlen,y=ident)) +
 ggplot(MFR.slv.bead.df,aes(x=qlen,fill=TopAnno)) + geom_histogram(position="stack") + xlim(c(0,4000))
 ggplot(MFR.slv.bead.df,aes(x=qlen,fill=TopAnno)) + geom_histogram(position="fill") + xlim(c(0,4000))
 
+MFR.tmp.bead.df <- ddply(MFR.slv.bead.df,c("SID","TopAnno"),transform,ATCt=length(BID))
+
+ggplot(MFR.tmp.bead.df,aes(x=qlen,color=TopAnno)) + geom_density(aes(y=..density..)) + xlim(c(0,4000))
+
 ggplot(MFR.slv.bead.df,aes(x=qlen,y=ident)) + 
   stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
   scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
@@ -409,6 +413,7 @@ ggplot(MFR.slv.bead.df,aes(x=qlen,y=ident)) +
 # compare annotation : mock ref vs. silva (bead scale)
 ```{r}
 levels(MFR.bead.df$tax) <- sub("_"," ",levels(MFR.bead.df$tax))
+MFR.bead.df$ITS <- (MFR.bead.df$ITS1 + MFR.bead.df$ITS2)/2
 MFR.compare.anno <- merge(MFR.bead.df,MFR.slv.bead.df,by=c("SID","BID"),all.x=T)
 #MFR.compare.anno <- merge(MFR.bead.df%>%filter(COR>999&flag!=0&D9P/COR<0.01),MFR.silva.anno,by=c("SID","LOTU"),all.x=T)
 checkTaxConsitRank <- function(d){
@@ -435,7 +440,62 @@ MFR.compare.anno$validAnno <- ifelse(grepl("metagenome|uncultured ",MFR.compare.
 
 
 ```
+```{r}
+MFR.compare.anno$hybG <- ifelse(MFR.compare.anno$hybCt>0&MFR.compare.anno$hybLen/MFR.compare.anno$BLen>0.1,T,F)
+ggplot(MFR.compare.anno%>%filter(hybCt>0),aes(x=hybLen,fill=hybG)) + geom_histogram()
 
+MFR.compare.anno$BLenK <- round(MFR.compare.anno$BLen/100-0.5,0) * 100
+MFR.compare.anno.cut <- MFR.compare.anno
+MFR.compare.anno.cut$BLenK[which(MFR.compare.anno.cut$BLenK>4000)] <- 4000
+
+MFR.compare.win <- MFR.compare.anno.cut %>% 
+  group_by(SID,BLenK) %>% summarise( 
+    hybT=length(which(hybG==T)), TAM=length(which(TopAnno.y=="multi")),
+    count=length(BID), pct.hyb=hybT/count, pct.multi=TAM/count,
+    pct.normal=length(which(hybG==F&TopAnno.y!="multi"))/count
+  ) %>% melt(
+    id.vars = c("SID","BLenK"),measure.vars = c("pct.hyb","pct.multi","pct.normal"),
+    variable.name = "type", value.name = "ratio"
+  )
+
+ggplot(MFR.compare.win,aes(x=BLenK,linetype=SID)) + 
+  geom_line(aes(y=ratio,color=type)) +
+  xlim(c(100,4000)) + scale_y_continuous(breaks=seq(0,1,.2))
+
+MFR.compare.win.mean <- MFR.compare.win %>% 
+  group_by(BLenK,type) %>% 
+  summarise( sd=sd(ratio),ratio=mean(ratio) )
+
+ggplot(MFR.compare.win.mean,aes(x=BLenK)) + 
+  geom_line(aes(y=ratio,color=type)) + 
+  geom_ribbon(aes(ymax=ratio+sd,ymin=ratio-sd,fill=type),alpha=.3) +
+  xlim(c(100,4000))
+
+ggplot(MFR.compare.anno%>%filter(hybCt>0),aes(x=BLen,y=hybLen)) + 
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
+  facet_grid(SID~.,scale="free_x")
+
+
+```
+```{r}
+MFR.compare.anno.cut2 <- MFR.compare.anno
+MFR.compare.anno.cut2$BLenK[which(MFR.compare.anno.cut2$BLenK>3000)] <- 3000
+MFR.compare.unit <- MFR.compare.anno.cut2 %>% 
+  group_by(SID,BLenK,unit.x) %>% summarise( 
+    hybT=length(which(hybG==T)), TAM=length(which(TopAnno.y=="multi")),
+    count=length(BID), pct.hyb=hybT/count, pct.multi=TAM/count,
+    pct.normal=length(which(hybG==F&TopAnno.y!="multi"))/count
+  ) %>% melt(
+    id.vars = c("SID","BLenK","unit.x"),measure.vars = c("pct.hyb","pct.multi","pct.normal"),
+    variable.name = "type", value.name = "ratio"
+  )
+
+ggplot(MFR.compare.unit,aes(x=BLenK,linetype=SID)) + 
+  geom_line(aes(y=ratio,color=type)) + facet_grid(unit.x~.) +
+  xlim(c(100,3000)) + scale_y_continuous(breaks=seq(0,1,.2))
+
+```
 
 ### FDR
 ```{r}
@@ -456,6 +516,7 @@ ggplot(MFR.compare.anno%>%filter(!is.na(TopAnno.y)&!is.na(FDR)),aes(x=BLen,y=ide
   facet_grid(FDR~TopAnno.y+hitDB)
 
 ```
+
 
 ```{r}
 MFR.badfm$ident5 <- round(MFR.badfm$ident+0.49,)-0.5

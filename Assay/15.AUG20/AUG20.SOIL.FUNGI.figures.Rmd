@@ -140,7 +140,7 @@ SFR.bead.metadata.df <- read.table(
 
 SFR.barrnap.gff3.tsv <- read.table(
   md5("../../Results/AUG20/STAT/CLIP/SFR.all.barrnap.sum.tsv","73b061a4db0d4c0272bf9d02e28fe7a7"),
-  col.names = c("SID","BID","len18S","pct18S","len5.8S","pct5.8S","len28S","pct28S","unit")
+  col.names = c("SID","BID","len18S","pct18S","len28S","pct28S","len5.8S","pct5.8S","unit")
 )
 
 SFR.itsx.pos.tsv <- read.table(
@@ -149,7 +149,7 @@ SFR.itsx.pos.tsv <- read.table(
 )
 
 SFR.silva.bead.anno <- read.table(
-  md5("../../Results/AUG20/STAT/ANNO/SFR.CLIP.map.merge.bead.anno","3ed4e2810b59a9fdddd3c815e05ba5ef"),comment.char = "",sep="\t", quote = "", 
+  md5("../../Results/AUG20/STAT/ANNO/SFR.CLIP.map.merge.bead.anno","c5fd3bd58d44da170a1b3b9ffeaa2640"),comment.char = "",sep="\t", quote = "", 
   fill = NA,col.names = c("SID","BINFO","tax","ident","mapLen","mismatch","gap","qs","qe","ss","se","eval","bitscore","qlen","slen","strands","qDesc","sDesc","covs","taxID","TopAnno","TANum","TALv","score1st","score2nd","ident1st","ident2nd","TANames","hybCt","hybLen","hybPct")
 )
 
@@ -174,7 +174,6 @@ ggplot(SFR.bdmeta.df,aes(x=BLen,y=clips)) +
   scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
   facet_wrap(~SID,ncol=3)
 ```
-
 
 # subunits detection (ITSx)
 ```{r}
@@ -377,13 +376,12 @@ ggplot(source.ITS,aes(x="X",y=pct,fill=foundITS)) +geom_bar(stat="identity") + c
 
 # Assess TopAnno
 ```{r}
-tmp.bead.df <- SFR.slv.bead.df
-tmp.bead.df <- ddply(tmp.bead.df,c("SID","TopAnno"),transform,ATCt=length(BID))
-tmp.bead.df <- ddply(tmp.bead.df,c("SID"),transform,ATWeigth=ATCt/length(BID))
 ggplot(SFR.slv.bead.df,aes(x=qlen,fill=TopAnno)) + geom_histogram(position="stack") + xlim(c(0,4000))
 ggplot(SFR.slv.bead.df,aes(x=qlen,fill=TopAnno)) + geom_histogram(position="fill") + xlim(c(0,4000))
 
-ggplot(tmp.bead.df,aes(x=qlen,color=TopAnno)) + geom_density(aes(y=..density..*clips)) + xlim(c(0,4000))
+SFR.tmp.bead.df <- ddply(SFR.slv.bead.df,c("SID","TopAnno"),transform,ATCt=length(BID))
+
+ggplot(SFR.tmp.bead.df,aes(x=qlen,color=TopAnno)) + geom_density(aes(y=..density..)) + xlim(c(0,4000))
 
 ggplot(SFR.slv.bead.df,aes(x=qlen,y=ident)) + 
   stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 

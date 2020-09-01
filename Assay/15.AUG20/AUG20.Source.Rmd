@@ -39,6 +39,11 @@ ln -s $MDB/silva/release_138.1/taxmap_slv_lsu_ref_138.1.txt $LFR/Source/REF/SILV
 awk -F "\t" 'FNR>1{b=$5;gsub(" \\(.+\\)","",b); if(b == "unidentified"){split($4,a,";");b=a[length(a)-1]};print $1"."$2"."$3"\t"b}' $MDB/silva/release_138.1/taxmap_slv_lsu_ref_138.1.txt| taxonkit name2taxid -i 2 \
 | taxonkit lineage -r -i 3 | taxonkit reformat -i 4 -f "{k};{p};{c};{o};{f};{g};{s};{S}" \
 | awk -F "\t" '{print $1"\t"$2"\t"$3"\t"$5"\t"$4"\t"$6}' > $LFR/Source/REF/SILVA/138.1/taxmap_slv_lsu_ref_138.1.tax
+
+#check board by ITSx
+cd $LFR/Source/REF/SILVA/138.1
+ITSx -i $MDB/silva/release_138.1/SILVA_138.1_LSURef_tax_silva_trunc.fasta \
+-o ITSx/SILVA_138.1_LSURef_tax_silva_trunc -t F --cpu 8
 ```
 
 ### cluster with trust reference

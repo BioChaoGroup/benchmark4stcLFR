@@ -16,12 +16,12 @@ library(ggplot2)
 
 # Background
 
-Ref: 
-1. https://guangchuangyu.github.io/ggtree-book/chapter-ggtree.html
+Ref:  
+1. https://guangchuangyu.github.io/ggtree-book/chapter-ggtree.html  
 2. https://yulab-smu.github.io/treedata-book/chapter2.html
 
 
-**RUN RAxML**
+**Get subunits sequence**
 ```{bash, eval=FALSE}
 cd $LFR/Assay/15.AUG20
 
@@ -31,17 +31,53 @@ done > SAM/SBR/CLIP/all.SSU.fa
 for i in {S,O}{1,2,3};do 
   awk -v n=$i 'FNR%2==1{if(/>23S_rRNA/){gsub("23S_rRNA::",n);p=1}else{p=0}} (p==1){print}' SAM/$i/CLIP/all.barrnap.fa;
 done > SAM/SBR/CLIP/all.LSU.fa
+# or
+for i in {S,O}{1,2,3};do 
+  awk -v n=$i 'FNR%2==1{gsub(">",">"n)};{print}' SAM/$i/PREDICT/barrnap.ssu.fa;
+done > SAM/SBR/PREDICT/barrnap.ssu.fa
+for i in {S,O}{1,2,3};do 
+  awk -v n=$i 'FNR%2==1{gsub(">",">"n)};{print}' SAM/$i/PREDICT/barrnap.lsu.fa;
+done > SAM/SBR/PREDICT/barrnap.lsu.fa
+```
 
-metabbq IO tree2fa -s SAM/SBR/CLIP/SSU.barrnap.fa -l SAM/SBR/CLIP/LSU.barrnap.fa -r genus -d CLADE0.97 -t SAM/SBR/KRAKEN/db/data/added.txt -o SAM/SBR/PREDICT/genus.fa -p -v
+Get species level OTUs:
+```{bash,eval=FALSE}
+metabbq IO tree2fa -s SAM/SBR/PREDICT/barrnap.ssu.fa -l SAM/SBR/PREDICT/barrnap.lsu.fa -r species -d CLADE0.99 -t SAM/SBR/KRAKEN/BEAD/data/added.txt -o SAM/SBR/PREDICT/species.fa -p -v
+```
+```
+[tree2fa] start
+  Reading SAM/SBR/CLIP/all.SSU.fa ... done
+  Reading SAM/SBR/CLIP/all.LSU.fa ... done
+  Reading SAM/SBR/KRAKEN/BEAD/data/added.txt ... done
+  Writing to SAM/SBR/PREDICT/species.fa ...done
+  Written 24206 clade seqs. 23793 records cannot found seqs.
+  SSU: 23599 (875+22687+37) | LSU: 1438(778+56+604) | BOTH:831(207+624+641)
+[All done!]
+```
+Get genus level OTUs:
+```{bash,eval=FALSE}
+metabbq IO tree2fa -s SAM/SBR/CLIP/all.SSU.fa -l SAM/SBR/CLIP/all.LSU.fa -r genus -d CLADE0.97 -t SAM/SBR/KRAKEN/BEAD/data/added.txt -o SAM/SBR/PREDICT/genus.fa -p -v
+```
+```
+[tree2fa] start
+  Reading SAM/SBR/CLIP/all.SSU.fa ... done
+  Reading SAM/SBR/CLIP/all.LSU.fa ... done
+  Reading SAM/SBR/KRAKEN/BEAD/data/added.txt ... done
+  Writing to SAM/SBR/PREDICT/genus.fa ...done
+  Written 3105 clade seqs. 10653 records cannot found seqs.
+  SSU: 3090 (212+2867+11) | LSU: 199(49+15+135) | BOTH:184(74+110+146)
+[All done!]
+```
 
-metabbq IO tree2fa -i SAM/SBR/CLIP/all.SSU.fa -r genus -d CLADE0.97 -t SAM/SBR/KRAKEN/BEAD/data/added.txt -o SAM/SBR/PREDICT/genus.ssu.fa -v
-mafft --thread 16 SAM/SBR/PREDICT/genus.ssu.fa > SAM/SBR/PREDICT/genus.ssu.mafft.fa
+**RUN RAxML **
+genus: both subunits joint:
+```{bash, eval=FALSE}
+mafft --thread 16 SAM/SBR/PREDICT/genus.both.fa > SAM/SBR/PREDICT/genus.both.mafft.fa
 trimal -gappyout -in SAM/SBR/PREDICT/genus.ssu.mafft.fa -out SAM/SBR/PREDICT/genus.ssu.mafft.trimal.fa
 
 raxmlHPC-HYBRID-AVX -f a -p 12345 -s SAM/SBR/PREDICT/genus.ssu.mafft.trimal.fa -x 12345 -T 20 -# 20 -m GTRCAT  -w $PWD/SAM/SBR/PREDICT -n genus.ssu.raxml
-
-
 ```
+
 treeio practices:
 ```{r}
 beast_file <- system.file("examples/MCC_FluA_H3.tree", 

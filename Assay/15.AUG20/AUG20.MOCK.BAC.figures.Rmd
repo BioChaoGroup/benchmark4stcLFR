@@ -167,9 +167,6 @@ for i in Z{1,2,3};do awk -v n=$i '{print n"\t"$0}' SAM/$i/ANNO/clip2MockRef.clip
 awk '{if(p!=$2){print $0};p=$2}' STAT/ANNO/clip2MockRef.clip.anno > STAT/ANNO/clip2MockRef.top1.anno
 for i in Z{1,2,3};do awk -v n=$i '{print n"\t"$0}' SAM/$i/ANNO/clip2MockRef.bead.anno;done > STAT/ANNO/ZBR.clip2MockRef.bead.anno
 
-metabbq smk --force -j -npk SAM/Z{1,2,3}/ANNO/LOTU.to.MockRef.bead.anno
-for i in Z{1,2,3};do awk -v n=$i '{print n"\t"$0}' SAM/$i/ANNO/LOTU.to.MockRef.bead.anno;done > STAT/ANNO/ZBR.LOTU.to.MockRef.bead.anno
-
 #open silva ref mapping
 metabbq smk -j -npk SAM/Z{1,2,3}/ANNO/CLIP.map.merge.bead.anno
 for i in Z{1,2,3};do awk -v n=$i '{print n"\t"$0}' SAM/$i/ANNO/CLIP.map.merge.bead.anno;done > STAT/ANNO/ZBR.CLIP.map.merge.bead.anno
@@ -291,14 +288,6 @@ if(do.write){
 ```
 
 ```{r}
-ge1st <- sapply(strsplit(as.character(ZBR.bead.df$tax),"_"),"[",1)
-ge2nd <- sapply(strsplit(as.character(ZBR.bead.df$TANames),"_"),"[",1)
-ZBR.bead.df$hybEst <- ifelse(ZBR.bead.df$ident2nd>ZBR.bead.df$ident1st&!is.na(ge2nd)&ge2nd!=ge1st,T,F)
-ggplot(ZBR.bead.df,aes(x=BLen,fill=hybEst)) +geom_histogram(position="fill")
-
-```
-
-```{r}
 ZBR.mock.bead.stat <- ddply(ZBR.mock.bead.anno,c("SID","tax"),summarise,count=length(BID))
 ZBR.mock.bead.stat$tax <- sub("_"," ",levels(ZBR.mock.bead.stat$tax))
 ZBR.mock.bead.stat <- merge(ddply(ZBR.mock.bead.stat,c("SID"),transform,prop=100*count/sum(count)),
@@ -316,7 +305,6 @@ ggplot(ZBR.mock.bead.anno,aes(x=score1st,y=score2nd)) +
   scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) + 
   geom_abline(intercept = 0, slope = 1,linetype=2) +
   facet_grid(.~SID) + ggtitle("Polygon between COR and ident")
-
 ```
 
 ```{r}
@@ -353,89 +341,7 @@ ggplot(ZBR.bead.df,aes(x=ident,color=SID)) +geom_density()
 ZBR.bead.df$qMap1k <- round(ZBR.bead.df$qMapLen/1000-0.49,0)*1000
 ggplot(ZBR.bead.df,aes(x=ident,color=factor(qMap1k),linetype=SID)) +geom_density()
 ggplot(ZBR.bead.df,aes(x=ident,fill=factor(qMap1k))) +geom_histogram(position = "dodge") + facet_grid(SID~.)
-
-ZBR.bead.df$S75.2 <- 2^round(log2(ZBR.bead.df$S75),0)
-
-ggplot(ZBR.bead.df,aes(x=S75,fill=SID)) +geom_histogram(position="dodge") +
-  scale_x_log10() + annotation_logticks(side="b")
-ggplot(ZBR.bead.df,aes(y=ident,x=factor(S75.2),fill=SID)) +geom_boxplot(aes(fill=SID)) +
-  scale_y_continuous(breaks=seq(94,102,1),limits=c(94,100))
-ggplot(ZBR.bead.df%>%filter(S75<20),aes(y=ident,x=factor(S75),fill=SID)) +geom_boxplot(aes(fill=SID)) +
-  scale_y_continuous(breaks=seq(94,102,1),limits=c(94,100))
-
-ZBR.bead.df$SBP.2 <- 2^round(log2(ZBR.bead.df$SBP),0)
-ggplot(ZBR.bead.df,aes(y=ident,x=factor(SBP.2),fill=SID)) +geom_boxplot(aes(fill=SID)) +
-  scale_y_continuous(breaks=seq(94,102,1),limits=c(94,100))
-ggplot(ZBR.bead.df%>%filter(SBP<32),aes(y=ident,x=factor(SBP))) +geom_boxplot() +
-  scale_y_continuous(breaks=seq(94,102,1),limits=c(94,100))
-
-ZBR.bead.df$P1D.2 <- 2^round(log2(ZBR.bead.df$P1D),0)
-ggplot(ZBR.bead.df,aes(y=ident,x=factor(P1D.2),fill=SID)) +geom_boxplot(aes(fill=SID)) +
-  scale_y_continuous(breaks=seq(94,102,1),limits=c(94,100))
-ggplot(ZBR.bead.df%>%filter(P1D<32),aes(y=ident,x=factor(P1D))) +geom_boxplot() +
-  scale_y_continuous(breaks=seq(94,102,1),limits=c(94,100))
-
-ZBR.bead.df$D9P.2 <- 2^round(log2(ZBR.bead.df$D9P),0)
-ggplot(ZBR.bead.df,aes(y=ident,x=factor(D9P.2),fill=SID)) +geom_boxplot(aes(fill=SID)) +
-  scale_y_continuous(breaks=seq(94,102,1),limits=c(94,100))
-
-ggplot(ZBR.bead.df,aes(x=CL,fill=unit)) +geom_histogram(position="stack",binwidth=50)  + facet_grid(.~SID)
-ggplot(ZBR.bead.df,aes(x=COR,fill=unit)) +geom_histogram(position="stack",binwidth=50)  + facet_grid(.~SID)
-ggplot(ZBR.bead.df%>%filter(CL>499),aes(x=CL,fill=unit)) +geom_histogram(position="stack",binwidth=100) +
-  theme(legend.position = c(0.99,.9),legend.justification = c(1,1))
-
 ```
-
-```{r}
-ZBR.bead.df$KMERG <- ifelse(ZBR.bead.df$KMER<=111,"<=111",ZBR.bead.df$KMER)
-
-ggplot(ZBR.bead.df%>%filter(!is.na(flag)),aes(x=multi,y=ident)) + 
-  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
-  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
-  facet_grid(SID~flag,scale="free_x")
-
-```
-
-
-```{r}
-ZBR.bead.df$ident5 <- round(ZBR.bead.df$ident+0.49,)-0.5
-ZBR.bead.df$ident5 <- ifelse(ZBR.bead.df$ident5<95,94.5,ZBR.bead.df$ident5)
-
-ggplot(ZBR.bead.df%>%filter(COR>999&flag!=0&D9P/COR<0.01),aes(x=ident5)) +
-  geom_bar(aes(fill=unit),stat="count",position="stack") + 
-  scale_x_continuous(breaks=seq(94,102,1),limits=c(94,100)) +
-  coord_flip() + facet_grid(.~SID)
-
-badf.stat2 <- ddply(
-  ddply(ZBR.bead.df%>%filter(COR>999&flag!=0&D9P/COR<0.01),c("SID","ident5"),summarise,count=length(SID)),
-  c("ident5"),summarise,mean.count=mean(count),sd=sd(count))
-
-badf.stat3 <- ddply(
-  ddply(ZBR.bead.df%>%filter(COR>999&flag!=0&D9P/COR<0.01),c("SID","ident5","unit"),summarise,count=length(SID)),
-  c("ident5","unit"),summarise,mean.count=mean(count))
-
-ggplot(badf.stat3,aes(x=ident5,y=mean.count)) + geom_bar(aes(fill=unit),stat="identity",position="stack") + 
-  geom_errorbar(data=badf.stat2,aes(ymax=mean.count+sd,ymin=mean.count-sd),width=.1) + 
-  scale_x_continuous(breaks=seq(94,102,1),limits=c(94,100)) +
-  coord_flip()
-
-ZBR.bead.df$CORG <- round(ZBR.bead.df$COR/500-0.49,0)*500
-
-badf.stat4 <- ddply(
-  ddply(ZBR.bead.df%>%filter(COR>999&flag!=0&D9P/COR<0.01),c("SID","CORG","ident5","unit"),summarise,count=length(SID)),
-  c("CORG","ident5","unit"),summarise,mean.count=mean(count))
-
-ggplot(badf.stat4,aes(x=ident5,y=mean.count)) + geom_bar(aes(fill=unit),stat="identity",position="stack") + 
-  coord_flip() + facet_wrap(~CORG,scale="free")
-
-badf.stat5 <- ddply(
-  ddply(ZBR.bead.df%>%filter(COR>999&flag!=0&D9P/COR<0.01),c("SID","flag","ident5","unit"),summarise,count=length(SID)),
-  c("flag","ident5","unit"),summarise,mean.count=mean(count))
-
-ggplot(badf.stat5,aes(x=ident5,y=mean.count)) + geom_bar(aes(fill=unit),stat="identity",position="stack") + 
-  coord_flip() + facet_wrap(~flag)
-```
-
 
 # silva mapping annotation
 ```{r}
@@ -500,6 +406,10 @@ ggplot(ZBR.slv.bead.df,aes(x=qlen,y=ident)) +
 ggplot(ZBR.slv.bead.df,aes(x=qlen,fill=TopAnno)) + geom_histogram(position="stack") + xlim(c(0,4000))
 ggplot(ZBR.slv.bead.df,aes(x=qlen,fill=TopAnno)) + geom_histogram(position="fill") + xlim(c(0,4000))
 
+ZBR.tmp.bead.df <- ddply(ZBR.slv.bead.df,c("SID","TopAnno"),transform,ATCt=length(BID))
+
+ggplot(ZBR.tmp.bead.df,aes(x=qlen,color=TopAnno)) + geom_density(aes(y=..density..)) + xlim(c(0,4000))
+
 ggplot(ZBR.slv.bead.df,aes(x=qlen,y=ident)) + 
   stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
   scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
@@ -543,11 +453,31 @@ ZBR.compare.anno$hybG <- ifelse(ZBR.compare.anno$hybCt>0&ZBR.compare.anno$hybLen
 ggplot(ZBR.compare.anno%>%filter(hybCt>0),aes(x=hybLen,fill=hybG)) + geom_histogram()
 
 ZBR.compare.anno$BLenK <- round(ZBR.compare.anno$BLen/100-0.5,0) * 100
-ZBR.compare.win <- ddply(ZBR.compare.anno,c("SID","BLenK"),summarise,hybT=length(which(hybG==T)),TAM=length(which(TopAnno.y=="multi")),count=length(BID))
+ZBR.compare.anno.cut <- ZBR.compare.anno
+ZBR.compare.anno.cut$BLenK[which(ZBR.compare.anno.cut$BLenK>4000)] <- 4000
+ZBR.compare.win <- ddply(ZBR.compare.anno.cut,c("SID","BLenK"),summarise,hybT=length(which(hybG==T)),TAM=length(which(TopAnno.y=="multi")),count=length(BID),pct.hyb=hybT/count,pct.multi=TAM/count)
+ZBR.compare.win <- ZBR.compare.anno.cut %>% 
+  group_by(SID,BLenK) %>% summarise( 
+    hybT=length(which(hybG==T)), TAM=length(which(TopAnno.y=="multi")),
+    count=length(BID), pct.hyb=hybT/count, pct.multi=TAM/count,
+    pct.normal=length(which(hybG==F&TopAnno.y!="multi"))/count
+  ) %>% melt(
+    id.vars = c("SID","BLenK"),measure.vars = c("pct.hyb","pct.multi","pct.normal"),
+    variable.name = "type", value.name = "ratio"
+  )
+
 ggplot(ZBR.compare.win,aes(x=BLenK,linetype=SID)) + 
-  geom_line(aes(y=hybT/count),color="red") +
-  geom_line(aes(y=TAM/count),color="blue") +
-  xlim(c(0,6000))
+  geom_line(aes(y=ratio,color=type)) +
+  xlim(c(0,4000))
+
+ZBR.compare.win.mean <- ZBR.compare.win %>% 
+  group_by(BLenK,type) %>% 
+  summarise( sd=sd(ratio),ratio=mean(ratio) )
+
+ggplot(ZBR.compare.win.mean,aes(x=BLenK)) + 
+  geom_line(aes(y=ratio,color=type)) + 
+  geom_ribbon(aes(ymax=ratio+sd,ymin=ratio-sd,fill=type),alpha=.3) +
+  xlim(c(100,4000))
 
 ggplot(ZBR.compare.anno%>%filter(hybCt>0),aes(x=BLen,y=hybLen)) + 
   stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
