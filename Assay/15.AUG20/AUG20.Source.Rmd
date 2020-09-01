@@ -1,7 +1,7 @@
 ---
 title: "JAN20 DATA ASSESSMENT"
 author: "Chao"
-date: "1/21/2020"
+date: "8/30/2020"
 output:
   html_notebook:
     code_fold: hide
@@ -18,15 +18,156 @@ library(configr)
 ```
 
 # Background
+### blastn database source:
+1. SILVA release 138.1 SSU:
+```{bash, eval=FALSE}
+mkdir -p $LFR/Source/REF/SILVA/138.1
+makeblastdb -dbtype nucl -in $MDB/silva/release_138.1/SILVA_138.1_SSURef_tax_silva_trunc.fasta \
+-title nucl -out $LFR/Source/REF/SILVA/138.1/SSURef_tax_silva_trunc
+ln -s $MDB/silva/release_138.1/taxmap_slv_ssu_ref_138.1.txt $LFR/Source/REF/SILVA/138.1/taxmap_slv_ssu_ref_138.1.txt
 
-KRAKEN2 database source:
+awk -F "\t" 'FNR>1{b=$5;gsub(" \\(.+\\)","",b); if(b == "unidentified"){split($4,a,";");b=a[length(a)-1]};print $1"."$2"."$3"\t"b}' $MDB/silva/release_138.1/taxmap_slv_ssu_ref_138.1.txt | taxonkit name2taxid -i 2 \
+| taxonkit lineage -r -i 3 | taxonkit reformat -i 4 -f "{k};{p};{c};{o};{f};{g};{s};{S}" \
+| awk -F "\t" '{print $1"\t"$2"\t"$3"\t"$5"\t"$4"\t"$6}' > $LFR/Source/REF/SILVA/138.1/taxmap_slv_ssu_ref_138.1.tax
+```
+2. SILVA release 138.1 LSU:
+```{bash, eval=FALSE}
+mkdir -p $LFR/Source/REF/SILVA/138.1
+makeblastdb -dbtype nucl -in $MDB/silva/release_138.1/SILVA_138.1_LSURef_tax_silva_trunc.fasta \
+-title nucl -out $LFR/Source/REF/SILVA/138.1/LSURef_tax_silva_trunc
+ln -s $MDB/silva/release_138.1/taxmap_slv_lsu_ref_138.1.txt $LFR/Source/REF/SILVA/138.1/taxmap_slv_lsu_ref_138.1.txt
+awk -F "\t" 'FNR>1{b=$5;gsub(" \\(.+\\)","",b); if(b == "unidentified"){split($4,a,";");b=a[length(a)-1]};print $1"."$2"."$3"\t"b}' $MDB/silva/release_138.1/taxmap_slv_lsu_ref_138.1.txt| taxonkit name2taxid -i 2 \
+| taxonkit lineage -r -i 3 | taxonkit reformat -i 4 -f "{k};{p};{c};{o};{f};{g};{s};{S}" \
+| awk -F "\t" '{print $1"\t"$2"\t"$3"\t"$5"\t"$4"\t"$6}' > $LFR/Source/REF/SILVA/138.1/taxmap_slv_lsu_ref_138.1.tax
+```
 
-SILVA version 138 SSU
-SILVA version 132 LSU
+### cluster with trust reference
+
+step 0. Add ref to database
+For bacteria:
+```{bash,eval=False}
+#manually edit $LFR/Source/REF/zymo/D6305.rRNA.tax.txt
+
+cd $LFR/Assay/15.AUG20/SAM/MBR/KRAKEN/refbead/data
+
+cat $LFR/Source/REF/zymo/D6305.rRNA.fa $MDB/silva/release_138.1/SILVA_138.1_SSURef_tax_silva_trunc.fasta > 138.1_SSURef_tax_silva_trunc+.fasta &
+cat $LFR/Source/REF/zymo/D6305.rRNA.fa $MDB/silva/release_138.1/SILVA_138.1_LSURef_tax_silva_trunc.fasta > 138.1_LSURef_tax_silva_trunc+.fasta &
+cat $LFR/Source/REF/zymo/D6305.rRNA.fa $LFR/Source/REF/KRAKEN2/bak/rDNA/data/UNITE_ITS_ONLY.fasta > UNITE_ITS_ONLY+.fasta &
+for i in {138.1_SSURef_tax_silva_trunc+.fasta,138.1_LSURef_tax_silva_trunc+.fasta,UNITE_ITS_ONLY+.fasta};do
+  echo makeblastdb -dbtype nucl -in $i -title nucl -out ${i/.fasta/} \&
+done
+cat $LFR/Source/REF/zymo/D6305.rRNA.tax.txt $MDB/silva/release_138.1/taxmap_slv_ssu_ref_138.1.txt > taxmap_slv_ssu_ref_138.1+.tax
+cat $LFR/Source/REF/zymo/D6305.rRNA.tax.txt $LFR/Source/REF/UNITE/sh_general_release_all_04.02.2020/taxmap_taxonkit_merge_ref.tax > taxmap_unite_ref+.tax
+cat $LFR/Source/REF/zymo/D6305.rRNA.tax.txt $MDB/silva/release_138.1/taxmap_slv_lsu_ref_138.1.txt > taxmap_slv_lsu_ref_138.1+.tax
+```
+
+For fungi
+```{bash,eval=False}
+cd $LFR/Source/REF/fungi/sanger/
+# get subunits
+perl onetime.cutSubunits.pl
+# manually edit sanger.mock7.tax.txt
+
+cd $LFR/Assay/15.AUG20/SAM/MFR/KRAKEN/refbead/data
+
+cat $LFR/Source/REF/fungi/sanger/sanger.mock7.rRNA.fa $MDB/silva/release_138.1/SILVA_138.1_SSURef_tax_silva_trunc.fasta > 138.1_SSURef_tax_silva_trunc+.fasta &
+cat $LFR/Source/REF/fungi/sanger/sanger.mock7.rRNA.fa $MDB/silva/release_138.1/SILVA_138.1_LSURef_tax_silva_trunc.fasta > 138.1_LSURef_tax_silva_trunc+.fasta &
+cat $LFR/Source/REF/fungi/sanger/sanger.mock7.rRNA.fa $LFR/Source/REF/KRAKEN2/bak/rDNA/data/UNITE_ITS_ONLY.fasta > UNITE_ITS_ONLY+.fasta & 
+for i in {138.1_SSURef_tax_silva_trunc+.fasta,138.1_LSURef_tax_silva_trunc+.fasta,UNITE_ITS_ONLY+.fasta};do
+  makeblastdb -dbtype nucl -in $i -title nucl -out ${i/.fasta/} &
+done
+cat $LFR/Source/REF/fungi/sanger/sanger.mock7.tax.txt $MDB/silva/release_138.1/taxmap_slv_ssu_ref_138.1.txt > taxmap_slv_ssu_ref_138.1+.tax
+cat $LFR/Source/REF/fungi/sanger/sanger.mock7.tax.txt $LFR/Source/REF/UNITE/sh_general_release_all_04.02.2020/taxmap_taxonkit_merge_ref.tax > taxmap_unite_ref+.tax
+cat $LFR/Source/REF/fungi/sanger/sanger.mock7.tax.txt $MDB/silva/release_138.1/taxmap_slv_lsu_ref_138.1.txt > taxmap_slv_lsu_ref_138.1+.tax
+```
+
+
+### KRAKEN2 database source:
+
+1. SILVA release 138.1 SSU
+prepare a `config.cfg` file with following context:
+```
+path:ssu = $MDB/silva/release_138.1/tax_slv_ssu_138.1.txt
+acc:ssu = $MDB/silva/release_138.1/tax_slv_ssu_138.1.acc_taxid
+map:ssu = $MDB/silva/release_138.1/taxmap_slv_ssu_ref_138.1.txt
+fna:ssu = $MDB/silva/release_138.1/SILVA_138.1_SSURef_tax_silva_trunc.fasta
+```
+and make sure above files are accessible.
+```{bash, eval=FALSE}
+export DB=$LFR/Source/REF/KRAKEN2/SILVA138.1SSU
+mkdir -p $DB/{data,library}
+cd $DB/data
+vi config.cfg
+metabbq mergeTaxonPath.pl added &> added.log
+mv added.fasta ../library/added.fna
+metabbq buildKraken2db.sh .. 4
+```
+
+2.SILVA release 138.1 LSU
+prepare a `config.cfg` file with following context:
+```
+path:lsu = $MDB/silva/release_138.1/tax_slv_lsu_138.1.txt
+acc:lsu = $MDB/silva/release_138.1/tax_slv_lsu_138.1.acc_taxid
+map:lsu = $MDB/silva/release_138.1/taxmap_slv_lsu_ref_138.1.txt
+fna:lsu = $MDB/silva/release_138.1/SILVA_138.1_LSURef_tax_silva_trunc.fasta
+```
+and make sure above files are accessible.
+```{bash, eval=FALSE}
+export DB=$LFR/Source/REF/KRAKEN2/SILVA138.1LSU
+mkdir -p $DB/{data,library}
+cd $DB/data
+vi config.cfg
+metabbq mergeTaxonPath.pl added &> added.log
+mv added.fasta ../library/added.fna
+metabbq buildKraken2db.sh .. 4
+```
+
+3. UNITE release 8.2
+prepare a `config.cfg` file with following context:
+```
+map:unite = $MDB/UNITE/8.2/sh_general_release_dynamic_all.tax
+fna:unite = $MDB/UNITE/8.2/sh_general_release_dynamic_all.fasta
+```
+and make sure above files are accessible.
+```{bash, eval=FALSE}
+export DB=$LFR/Source/REF/KRAKEN2/UNITE8.2
+mkdir -p $DB/{data,library}
+cd $DB/data
+vi config.cfg
+metabbq mergeTaxonPath.pl added &> added.log
+sed -e '/^>/!y/U/T/' added.fasta > ../library/added.fna
+metabbq buildKraken2db.sh .. 4
+```
+
+merge above 3 databases:
+prepare a `config.cfg` file with following context:
+```
+path:ssu = tax_slv_ssu_138.1.txt
+path:lsu = tax_slv_lsu_138.1.txt
+acc:ssu = tax_slv_ssu_138.1.acc_taxid
+acc:lsu = tax_slv_lsu_138.1.acc_taxid
+map:ssu = taxmap_slv_ssu_ref_138.1.txt
+map:lsu = taxmap_slv_lsu_ref_138.1.txt
+map:unite = sh_general_release_dynamic_all.tax
+fna:ssu = SILVA_138.1_SSURef_tax_silva_trunc.fasta
+fna:lsu = SILVA_138.1_LSURef_tax_silva_trunc.fasta
+fna:unite = UNITE_ITS_ONLY.fasta
+```
+and make sure above files are accessible.
+```{bash, eval=FALSE}
+export DB=$LFR/Source/REF/KRAKEN2/SUS
+mkdir -p $DB/{data,library}
+cd $DB/data
+vi config.cfg
+metabbq mergeTaxonPath.pl added &> added.log
+mv added.fasta ../library/added.fna
+metabbq buildKraken2db.sh .. 4
+```
+
 
 **stat**
 ```{bash, eval=FALSE}
-cd $LFR/Source/REF/KRAKEN2/SILVA132LSU
+cd $LFR/Source/REF/KRAKEN2/SILVA138.1LSU
 metabbq beadsAnno.pl -m otupair -i library/lsu.fna,data/lsu.txt,data/lsu.acc_taxid -o data/vsearch.allpair.txt -v
 perl -e 'while(<>){@s=split /\t/;@t=split /;/,$s[0];print "$t[0]\t$t[-1]\n"}' \
 < data/lsu.txt > data/domain.lst

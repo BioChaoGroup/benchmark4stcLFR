@@ -1,5 +1,5 @@
 ---
-title: "JAN20 DATA ASSESSMENT: annotation part"
+title: "AUG20 DATA ASSESSMENT: annotation part"
 author: "Chao"
 date: "3/22/2020"
 output: 
@@ -17,7 +17,8 @@ library(RColorBrewer)
 library(configr)
 library(tools)
 library(stringi)
-source("../lib.R")
+source("../13.JAN20/lib.R")
+do.write <- F
 ```
 
 # Quantification
@@ -31,14 +32,18 @@ done > SAM/MFR/summary.BI.megahit.clip.all.fasta
 
 for i in M{4,5,6};do 
   awk -v n=$i '{print n$0}' SAM/$i/ANNO/CLIP.map.merge.clip.anno;
-done > SAM/MFR/ANNO/CLIP.map.merge.clip.ori.anno
+done > SAM/MFR/ANNO/CLIP.map.merge.clip.anno
+
+for i in M{4,5,6};do 
+  awk -v n=$i '{print n$0}' SAM/$i/ANNO/CLIP.map.merge.bead.anno;
+done > SAM/MFR/ANNO/CLIP.map.merge.bead.anno
 
 #remove singleton clips
 metabbq smk -j -npk SAM/MFR/CLIP/id90def4.clust.fa
 
 metabbq IO makeclade -i SAM/MFR/CLIP/id90def4.clust.fa -o SAM/MFR/CLIP/id90def4.clade.uc -t 48 -v
 
-metabbq IO clade2tree -i SAM/MFR/CLIP/id90def4.clust.fa -a SAM/MFR/ANNO/CLIP.map.merge.clip.ori.anno \
+metabbq IO clade2tree -i SAM/MFR/CLIP/id90def4.clust.fa -a SAM/MFR/ANNO/CLIP.map.merge.clip.anno \
  -d $LFR/Source/REF/KRAKEN2/rDNA -s SAM/MFR/CLIP/id90def4.clade.uc -o SAM/MFR/KRAKEN/BEAD -v
 
 # rm SAM/MFR/KRAKEN/BEAD/{database*,*.k2d} 
@@ -50,6 +55,7 @@ print "$t[0]\t$s[1]\t$s[2]\t$s[3]\t$s[4]\t$sp\n"}' SAM/MFR/KRAKEN/BEAD/taxonomy/
 ####
 # mapping to merged db
 for i in M{4,5,6,A,B,C};do
+mkdir -p SAM/$i/KRAKEN
 ln -s ../../MFR/KRAKEN/BEAD SAM/$i/KRAKEN/BEAD;
 done
 
@@ -71,19 +77,11 @@ done > STAT/KRAKEN/MFR.reads2BEAD.$j.1.bracken & done
 #no-barcode
 for i in M{4,5,6,A,B,C};do
   bracken -d SAM/$i/KRAKEN/BEAD -i SAM/$i/KRAKEN/reads2BEAD.kreport2 \
-<<<<<<< HEAD
   -o SAM/$i/KRAKEN/reads2BEAD.read.bracken > SAM/$i/KRAKEN/reads2BEAD.read.breport2 &
 done
 
 for i in M{4,5,6,A,B,C};do 
   awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2BEAD.read.bracken;
-=======
-  -o SAM/$i/KRAKEN/reads2BEAD.raw.bracken > SAM/$i/KRAKEN/reads2BEAD.raw.breport2 &
-done
-
-for i in M{4,5,6,A,B,C};do 
-  awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2BEAD.raw.bracken;
->>>>>>> 26ebb7067202e8867db44cee836c117d0ad08bb5
 done > STAT/KRAKEN/MFR.reads2BEAD.read.bracken
 
 ```
@@ -91,46 +89,40 @@ done > STAT/KRAKEN/MFR.reads2BEAD.read.bracken
 # cluster with trust reference 
 
 step 0. Add ref to databse
-<<<<<<< HEAD
 ```{bash, eval=False}
-=======
-```{bash}
->>>>>>> 26ebb7067202e8867db44cee836c117d0ad08bb5
 cd $LFR/Source/REF/fungi/sanger/
 # get subunits
 perl onetime.cutSubunits.pl
 # manually edit sanger.mock7.tax.txt
 
-cd $LFR/Assay/13.JAN20/SAM/MFR/KRAKEN/refbead/data
+cd $LFR/Assay/15.AUG20/SAM/MFR/KRAKEN/refbead/data
 
-cat $LFR/Source/REF/fungi/sanger/sanger.mock7.rRNA.fa $LFR/Source/REF/KRAKEN2/rDNA/data/SILVA_138_SSURef_tax_silva_trunc.fasta > SILVA_138_SSURef_tax_silva_trunc+.fasta &
-cat $LFR/Source/REF/fungi/sanger/sanger.mock7.rRNA.fa $LFR/Source/REF/KRAKEN2/rDNA/data/SILVA_132_LSURef_tax_silva_trunc.fasta > SILVA_132_LSURef_tax_silva_trunc+.fasta &
-cat $LFR/Source/REF/fungi/sanger/sanger.mock7.rRNA.fa $LFR/Source/REF/KRAKEN2/rDNA/data/UNITE_ITS_ONLY.fasta > UNITE_ITS_ONLY+.fasta & 
-for i in {SILVA_138_SSURef_tax_silva_trunc+.fasta,SILVA_132_LSURef_tax_silva_trunc+.fasta,UNITE_ITS_ONLY+.fasta};do
+cat $LFR/Source/REF/fungi/sanger/sanger.mock7.rRNA.fa $MDB/silva/release_138.1/SILVA_138.1_SSURef_tax_silva_trunc.fasta > 138.1_SSURef_tax_silva_trunc+.fasta &
+cat $LFR/Source/REF/fungi/sanger/sanger.mock7.rRNA.fa $MDB/silva/release_138.1/SILVA_138.1_LSURef_tax_silva_trunc.fasta > 138.1_LSURef_tax_silva_trunc+.fasta &
+cat $LFR/Source/REF/fungi/sanger/sanger.mock7.rRNA.fa $LFR/Source/REF/KRAKEN2/bak/rDNA/data/UNITE_ITS_ONLY.fasta > UNITE_ITS_ONLY+.fasta & 
+for i in {138.1_SSURef_tax_silva_trunc+.fasta,138.1_LSURef_tax_silva_trunc+.fasta,UNITE_ITS_ONLY+.fasta};do
   makeblastdb -dbtype nucl -in $i -title nucl -out ${i/.fasta/} &
 done
-cat $LFR/Source/REF/fungi/sanger/sanger.mock7.tax.txt $LFR/Source/REF/SILVA/132/taxmap_embl_lsu_ref_132.tax > taxmap_embl_lsu_ref_132+.tax
-cat $LFR/Source/REF/fungi/sanger/sanger.mock7.tax.txt $LFR/Source/REF/UNITE/sh_general_release_all_04.02.2020/taxmap_taxonkit_merge_ref.tax > taxmap_unite_ref+.tax
-cat $LFR/Source/REF/fungi/sanger/sanger.mock7.tax.txt $LFR/Source/REF/SILVA/138/taxmap_embl_ssu_ref_138.tax > taxmap_embl_ssu_ref_138+.tax
 
+for i in `cat $LFR/Source/REF/fungi/sanger/sanger.mock7.tax`; do b=${i/_/ }; awk -F "\t" -v i="$i" -v b="$b" '($2==b){$1=i;print $1"\t"$2"\t"$3"\t"$4"\t"$5"\t"$6}' $LFR/Source/REF/SILVA/138.1/taxmap_slv_{s,l}su_ref_138.1.tax|head -1 ;done > $LFR/Source/REF/fungi/sanger/sanger.mock7.tax.txt
+
+cat $LFR/Source/REF/fungi/sanger/sanger.mock7.tax.txt $LFR/Source/REF/SILVA/138.1/taxmap_slv_ssu_ref_138.1.tax > taxmap_slv_ssu_ref_138.1+.tax
+cat $LFR/Source/REF/fungi/sanger/sanger.mock7.tax.txt $LFR/Source/REF/UNITE/sh_general_release_all_04.02.2020/taxmap_taxonkit_merge_ref.tax > taxmap_unite_ref+.tax
+cat $LFR/Source/REF/fungi/sanger/sanger.mock7.tax.txt $LFR/Source/REF/SILVA/138.1/taxmap_slv_lsu_ref_138.1.tax > taxmap_slv_lsu_ref_138.1+.tax
 
 ```
 
 
 ```{bash, eval=False}
-#remove singleton clips
-metabbq smk -j -npk SAM/MFR/CLIP/id90def4.clust.fa
-
-
 # get ref anno
-export DBDIR=$LFR/Results/JAN20/SAM/MFR/KRAKEN/refbead/data
-blastn -num_threads 8 -perc_identity 95 -word_size 77 -db $DBDIR/SILVA_132_LSURef_tax_silva_trunc+ -query $LFR/Source/REF/fungi/sanger/sanger.mock7.rRNA.fa -outfmt '6 std qlen slen' -out SAM/MFR/ANNO/mock.map.LSU.m6 & 
+export DBDIR=$LFR/Results/AUG20/SAM/MFR/KRAKEN/refbead/data
+blastn -num_threads 8 -perc_identity 95 -word_size 77 -db $DBDIR/138.1_SSURef_tax_silva_trunc+ -query $LFR/Source/REF/fungi/sanger/sanger.mock7.rRNA.fa -outfmt '6 std qlen slen' -out SAM/MFR/ANNO/mock.map.LSU.m6 & 
 blastn -num_threads 8 -perc_identity 95 -word_size 77 -db $DBDIR/UNITE_ITS_ONLY+ -query $LFR/Source/REF/fungi/sanger/sanger.mock7.rRNA.fa -outfmt '6 std qlen slen' -out SAM/MFR/ANNO/mock.map.ITS.m6 & 
-blastn -num_threads 8 -perc_identity 95 -word_size 77 -db $DBDIR/SILVA_138_SSURef_tax_silva_trunc+ -query $LFR/Source/REF/fungi/sanger/sanger.mock7.rRNA.fa -outfmt '6 std qlen slen' -out SAM/MFR/ANNO/mock.map.SSU.m6 &
+blastn -num_threads 8 -perc_identity 95 -word_size 77 -db $DBDIR/138.1_LSURef_tax_silva_trunc+ -query $LFR/Source/REF/fungi/sanger/sanger.mock7.rRNA.fa -outfmt '6 std qlen slen' -out SAM/MFR/ANNO/mock.map.SSU.m6 &
 
-metabbq anno.pl -l 6 $DBDIR/taxmap_embl_lsu_ref_132+.tax SAM/MFR/ANNO/mock.map.LSU.m6 > SAM/MFR/ANNO/mock.map.LSU.m6.more &
+metabbq anno.pl -l 6 $DBDIR/taxmap_slv_lsu_ref_138.1+.tax SAM/MFR/ANNO/mock.map.LSU.m6 > SAM/MFR/ANNO/mock.map.LSU.m6.more &
 metabbq anno.pl -l 6 $DBDIR/taxmap_unite_ref+.tax SAM/MFR/ANNO/mock.map.ITS.m6 > SAM/MFR/ANNO/mock.map.ITS.m6.more &
-metabbq anno.pl -l 6 $DBDIR/taxmap_embl_ssu_ref_138+.tax SAM/MFR/ANNO/mock.map.SSU.m6 > SAM/MFR/ANNO/mock.map.SSU.m6.more 
+metabbq anno.pl -l 6 $DBDIR/taxmap_slv_ssu_ref_138.1+.tax SAM/MFR/ANNO/mock.map.SSU.m6 > SAM/MFR/ANNO/mock.map.SSU.m6.more 
 
 metabbq beadsAnno.pl  -m cbr -i SAM/MFR/ANNO/mock.map.LSU.m6.more,SAM/MFR/ANNO/mock.map.SSU.m6.more,SAM/MFR/ANNO/mock.map.ITS.m6.more -o SAM/MFR/ANNO/mock.map.merge.clip.anno -b SAM/MFR/ANNO/mock.map.merge.bead.anno -l 6 -v
 ## manually edit mock.map.merge.bead.anno
@@ -188,10 +180,10 @@ done > STAT/KRAKEN/MFR.reads2refbead.read.bracken
 
 
 ```{r}
-BEAD.topRank.map <- read.table("../../../Results/JAN20/SAM/MFR/KRAKEN/BEAD/data/topRank.map",
+BEAD.topRank.map <- read.table("../../Results/AUG20/SAM/MFR/KRAKEN/BEAD/data/topRank.map",
   comment.char = "",quote="",sep="\t",col.names=c("domain","taxID","RANK","clade","anno","spName"))
-refbead.topRank.map <- read.table("../../../Results/JAN20/SAM/MFR/KRAKEN/refbead/data/topRank.map",comment.char = "",
-                         sep="\t",col.names=c("domain","taxID","RANK","clade","anno","spName"))
+refbead.topRank.map <- read.table("../../Results/AUG20/SAM/MFR/KRAKEN/refbead/data/topRank.map",
+  comment.char = "",quote="",sep="\t",col.names=c("domain","taxID","RANK","clade","anno","spName"))
 
 ref.topRank.map <- rbind(
   cbind(CREF="NONE",BEAD.topRank.map),
@@ -202,22 +194,22 @@ BEAD.topRank.map$anno[which(BEAD.topRank.map$anno=="")] <- "Unknown"
 
 #rank level: S
 MFR.r2BEAD.species.read.bracken <- read.table(
-  md5("../../../Results/JAN20/STAT/KRAKEN/MFR.reads2BEAD.read.bracken","b6b6ba82780bcff41a3a7205d6d5c2b7"),
+  md5("../../Results/AUG20/STAT/KRAKEN/MFR.reads2BEAD.read.bracken","f89b78ffcc81fd9e63ca1281b6160405"),
   as.is = T,quote = "",comment.char = "", sep="\t",
   col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
 
 MFR.r2BEAD.species.bead.bracken <- read.table(
-  md5("../../../Results/JAN20/STAT/KRAKEN/MFR.reads2BEAD.bead.bracken","3b377e587f072c08688cf3eedb01e60e"),
+  md5("../../Results/AUG20/STAT/KRAKEN/MFR.reads2BEAD.bead.bracken","d91cca499cf5410c3973a9d67af6761d"),
   as.is = T,quote = "",comment.char = "", sep="\t",
   col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
 
 MFR.r2refbead.species.read.bracken <- read.table(
-  md5("../../../Results/JAN20/STAT/KRAKEN/MFR.reads2refbead.read.bracken","89db43a32df4d04ba8ef1653822eca39"),
+  md5("../../Results/AUG20/STAT/KRAKEN/MFR.reads2refbead.read.bracken","83f70c6d495bf3d737a4215b87d1994d"),
   as.is = T,quote = "",comment.char = "", sep="\t",
   col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
 
 MFR.r2refbead.species.bead.bracken <- read.table(
-  md5("../../../Results/JAN20/STAT/KRAKEN/MFR.reads2refbead.bead.bracken","35ba6566c190276ca637562fe25ad328"),
+  md5("../../Results/AUG20/STAT/KRAKEN/MFR.reads2refbead.bead.bracken","99b8a5226f055dc7cee534cb860c5a88"),
   as.is = T,quote = "",comment.char = "", sep="\t",
   col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
 
@@ -325,10 +317,6 @@ ggplot(MFR.sp.multi.pca.df,aes(x=PC1,y=PC2,color=LIB,shape=interaction(tech,CREF
 
 ```{r}
 pheatmap(cor(MFR.sp.cut.mtx[,-c(1:2)],method = "s"),display_numbers = T,cluster_rows = F,cluster_cols = F)
-pheatmap(cor(MFR.sp.C4.1.mtx,method = "s"),display_numbers = T,cluster_rows = F,cluster_cols = F)
-pheatmap(cor(MFR.sp.C4.2.mtx,method = "s"),display_numbers = T,cluster_rows = F,cluster_cols = F)
-pheatmap(cor(MFR.sp.C4.3.mtx,method = "s"),display_numbers = T,cluster_rows = F,cluster_cols = F)
-
 ```
 
 
@@ -380,9 +368,9 @@ ggplot(MFR.stat.sp.df3S,aes(x=rep1,y=rep2,color=factor(LIB))) +geom_point() +
 ```
 
 ```{r}
-ddply(MFR.stat.sp.df2s,c("SAM","rep"),summarise,
-      sumRCAwith0NoRCA=sum(RCA[which(NoRCA==0)]),
-      sumNoRCAwith0RCA=sum(NoRCA[which(RCA==0)]))
+ddply(MFR.stat.sp.df2s,c("SAM","REP"),summarise,
+      sumRCAwith0NoRCA=sum(RCA[which(NORCA==0)]),
+      sumNoRCAwith0RCA=sum(NORCA[which(RCA==0)]))
 ```
 
 # add annotation
@@ -392,6 +380,7 @@ library(doSNOW)
 
 sFun <- function(d){
   res <- ddply(d,c("CREF","SID","tech","SAM","REP","LIB","spName"),summarise,
+              k.read=sum(kraken_assigned_reads),n.read=sum(new_est_reads),
                pct.k=sum(pct.k),pct=sum(pct))
   return(res)
 }
@@ -421,13 +410,25 @@ mock.fungi.df <- data.frame(species=mock.fungi.name,TC=1/7)
 ```
 
 ```{r}
-MFR.r2BEAD.b.sp.ref.anno <- merge(MFR.r2BEAD.b.sp.anno,mock.fungi.df,by.x="topTax",by.y="species",all.x=T)
-levels(MFR.r2BEAD.b.sp.ref.anno$spName) <- ifelse(levels(MFR.r2BEAD.b.sp.ref.anno$spName)%in%mock.fungi.name,levels(MFR.r2BEAD.b.sp.ref.anno$spName),"Others")
+MFR.r2BEAD.b.sp.select <- MFR.r2BEAD.b.sp.anno%>%filter(spName!="")
+# MFR.r2BEAD.b.sp.select <- merge(MFR.r2BEAD.b.sp.select,
+#    data.frame(spName=zymo.bac.g,spName2=zymo.bac),by="spName",all.x=T )
+# MFR.r2BEAD.b.sp.select$spName2 <- as.character(MFR.r2BEAD.b.sp.select$spName2)
+# MFR.r2BEAD.b.sp.select$spName2[which(is.na(MFR.r2BEAD.b.sp.select$spName2))] <- 
+#  as.character(MFR.r2BEAD.b.sp.select$spName[which(is.na(MFR.r2BEAD.b.sp.select$spName2))])
+#MFR.r2BEAD.b.sp.select$spName <- as.factor(MFR.r2BEAD.b.sp.select$spName2)
+levels(MFR.r2BEAD.b.sp.select$spName) <- ifelse(levels(MFR.r2BEAD.b.sp.select$spName)%in%mock.fungi.name,levels(MFR.r2BEAD.b.sp.select$spName),"Others")
+MFR.r2BEAD.b.sp.select <- ddply(MFR.r2BEAD.b.sp.select,colnames(MFR.r2BEAD.b.sp.select)[1:8],
+                                summarise,k.read=sum(k.read),n.read=sum(n.read),
+                                pct.k=sum(pct.k),pct=sum(pct))
+MFR.r2BEAD.b.sp.ref.anno <- merge(MFR.r2BEAD.b.sp.select,mock.fungi.df, by.x="spName",by.y="species",all.x=T)
 
 MFR.r2BEAD.b.sp.ref.anno$TC[which(is.na(MFR.r2BEAD.b.sp.ref.anno$TC))] <- 0
+MFR.r2BEAD.b.sp.ref.anno$TC <- MFR.r2BEAD.b.sp.ref.anno$TC/100
 
-MFR.r2BEAD.b.sp.ref.anno <- ddply(MFR.r2BEAD.b.sp.ref.anno,c("UID"),transform,
-                                  pct8=pct/sum(pct[which(spName!="Others")]),pct8k=pct.k/sum(pct.k[which(spName!="Others")]))
+MFR.r2BEAD.b.sp.ref.anno <- ddply(MFR.r2BEAD.b.sp.ref.anno,c("UID"), transform, 
+   pct=n.read/sum(n.read), pct.k=k.read/sum(k.read),
+   pct8=pct/sum(pct[which(spName!="Others")]), pct8k=pct.k/sum(pct.k[which(spName!="Others")]))
 
 MFR.r2BEAD.b.sp.ref.anno$delta <- MFR.r2BEAD.b.sp.ref.anno$pct - MFR.r2BEAD.b.sp.ref.anno$TC
 MFR.r2BEAD.b.sp.ref.anno$delta.k <- MFR.r2BEAD.b.sp.ref.anno$pct.k - MFR.r2BEAD.b.sp.ref.anno$TC
@@ -444,27 +445,38 @@ MFR.r2BEAD.b.sp.ref.anno.stat <- ddply(MFR.r2BEAD.b.sp.ref.anno,c("CREF","LIB","
 MFR.r2BEAD.b.sp.ref.anno.stat$spName <- reorder(droplevels(MFR.r2BEAD.b.sp.ref.anno.stat$spName),MFR.r2BEAD.b.sp.ref.anno.stat$mean.delta,min)
 
 ggplot(MFR.r2BEAD.b.sp.ref.anno.stat,
-       aes(x=spName,y=mean.delta,fill=LIB)) +geom_bar(stat="identity",position="dodge") + 
+       aes(x=spName,y=mean.delta,fill=LIB)) +geom_bar(stat="identity",position="dodge") +
   geom_errorbar(aes(ymin=mean.delta-sd,ymax=mean.delta+sd)) +
   coord_flip() + facet_grid(LIB~CREF+tech)
 
 ggplot(MFR.r2BEAD.b.sp.ref.anno.stat,
-       aes(x=spName,y=mean.delta.k,fill=LIB)) +geom_bar(stat="identity",position="dodge") + 
+       aes(x=spName,y=mean.delta.k,fill=LIB)) +geom_bar(stat="identity",position="dodge") +
   geom_errorbar(aes(ymin=mean.delta.k-sd.k,ymax=mean.delta.k+sd.k)) +
   coord_flip() + facet_grid(LIB~CREF+tech)
 
 ggplot(MFR.r2BEAD.b.sp.ref.anno.stat,
-       aes(x=spName,y=mean.delta8,fill=LIB)) +geom_bar(stat="identity",position="dodge") + 
+       aes(x=spName,y=mean.delta8,fill=LIB)) +geom_bar(stat="identity",position="dodge") +
   geom_errorbar(aes(ymin=mean.delta8-sd8,ymax=mean.delta8+sd8)) +
   coord_flip() + facet_grid(LIB~CREF+tech)
 
 ggplot(MFR.r2BEAD.b.sp.ref.anno.stat,
-       aes(x=spName,y=mean.delta8.k,fill=LIB)) +geom_bar(stat="identity",position="dodge") + 
+       aes(x=spName,y=mean.delta8.k,fill=LIB)) +geom_bar(stat="identity",position="dodge") +
   geom_errorbar(aes(ymin=mean.delta8.k-sd8.k,ymax=mean.delta8.k+sd8.k)) +
   coord_flip() + facet_grid(LIB~CREF+tech)
+
 ```
 
 
+```{r}
+MFR.r2BEAD.b.sp.ref.anno.stat.k <- MFR.r2BEAD.b.sp.ref.anno.stat%>%filter(LIB=="RCA"&CREF=="CLOSE"&tech=="BEAD")
+MFR.r2BEAD.b.sp.ref.anno.stat.k$spName<-reorder(MFR.r2BEAD.b.sp.ref.anno.stat.k$spName,MFR.r2BEAD.b.sp.ref.anno.stat.k$mean.delta.k,sum)
+p.MFR.rca.quantify.hist <- ggplot(MFR.r2BEAD.b.sp.ref.anno.stat.k,
+       aes(x=spName,y=mean.delta.k,fill=spName)) +geom_bar(stat="identity",position="dodge") +
+  geom_errorbar(aes(ymin=mean.delta.k-sd.k,ymax=mean.delta.k+sd.k)) +
+  coord_flip() + scale_y_continuous(limits=c(-0.2,0.2)) + theme_bw()
+
+p.MFR.rca.quantify.hist
+```
 
 ```{r}
 MFR.r2BEAD.b.sp.ref.anno$fold <- MFR.r2BEAD.b.sp.ref.anno$pct / MFR.r2BEAD.b.sp.ref.anno$TC
@@ -490,7 +502,7 @@ ggplot(MFR.r2BEAD.b.sp.ref.anno.stat,
 ```
 
 ```{r}
-MFR.r2BEAD.b.sp.ref.anno.stat.k <- MFR.r2BEAD.b.sp.ref.anno.stat%>%filter(LIB=="RCA"&CREF=="CLOSE",tech=="BEAD"&spName!="Others")
+MFR.r2BEAD.b.sp.ref.anno.stat.k <- MFR.r2BEAD.b.sp.ref.anno.stat%>%filter(LIB=="RCA"&CREF=="CLOSE"&tech=="BEAD")
 MFR.r2BEAD.b.sp.ref.anno.stat.k$spName<-reorder(MFR.r2BEAD.b.sp.ref.anno.stat.k$spName,MFR.r2BEAD.b.sp.ref.anno.stat.k$mean.fold.k,min)
 ggplot(MFR.r2BEAD.b.sp.ref.anno.stat.k,
        aes(x=spName,y=log2(mean.fold.k),fill=spName)) +geom_bar(stat="identity",position="dodge") + 

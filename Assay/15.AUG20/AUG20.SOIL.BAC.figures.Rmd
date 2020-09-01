@@ -1,0 +1,407 @@
+---
+title: "AUG20 DATA ASSESSMENT: annotation part"
+author: "Chao"
+date: "3/22/2020"
+output: 
+  html_notebook:
+    code_fold: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reshape2)
+library(ggplot2)
+library(plyr)
+library(dplyr)
+library(RColorBrewer)
+library(configr)
+library(tools)
+library(stringi)
+
+#functions
+
+#https://www.biostars.org/p/9335/
+matcher <- function(pattern, x) {
+
+  ind = gregexpr(pattern, x)[[1]]
+  start = as.numeric(ind)
+  if(length(start)==1 && start <1){
+    return(NA)
+  }else{
+    end = start + attr(ind, "match.length") - 2
+    res <- as.numeric(apply(cbind(start,end), 1, function(y) substr(x, start=y[1], stop=y[2])))
+    res[which(is.na(res))] <- 1
+    return(res)
+  }
+}
+
+doone <- function(c, cigar) {
+  pat <- paste("\\d*", c , sep="")
+  sum(as.numeric(matcher(pat, cigar)), na.rm=T)
+}
+
+
+## takes a cigar string and parses it, not very fast but...
+cigarsums <- function(cigar, chars=c("M","N","D","I","S","H", "P", "X", "=")) {
+   sapply (chars, doone, cigar)
+}
+
+
+n50 <- function(x){
+  x1 <- rev(sort(x))
+  cumsum.x1 <- cumsum(x1)
+  find.n50 <- which(cumsum.x1 >= sum(x1)/2)
+  return(x1[find.n50[1]])
+}
+
+md5 <- function(f,m){
+  if(tools::md5sum(f)==m){
+    warning("MD5 check passed.\n")
+    return(f)
+  }else{
+    stop("MD5 check failed. Please check the version and content!\n")
+  }
+}
+
+getMapPropFun <- function(d){
+  uOrder <- c("ALL","SSU","ITS1","5.8S","ITS2","LSU")
+  ulist <- data.frame(key=c("ALL","SSU","16S","ITS","ITS1","5.8S","ITS2","LSU","23S"),
+                      ind=c(1,2,2,3,3,4,5,6,6))
+  getM <- stri_match_all_regex(d,"(ALL|23S|LSU|ITS|ITS1|ITS2|5.8S|SSU|16S)\\((\\d+)%\\)")
+  getN <- length(getM)
+  res <- matrix(0,ncol = 6,nrow = getN)
+  for(i in 1:length(getM)){
+    geti <- getM[[i]]
+    for(j in 1:nrow(geti)){
+      res[i,ulist$ind[which(ulist$key==geti[j,2])]] <- geti[j,3]
+    }
+  }
+  res <- matrix(as.numeric(res),ncol=6)
+  colnames(res) <- uOrder
+  return(res)
+}
+```
+
+# Background
+
+Samples involved:
+
+| ID | lane | barcode | Kindom | RCA | Location    |
+| -- | ---- | ------- | -------| --- | ----------- |
+| U1 | FF1  | 1,17    | Bac    | RCA | Urine       |
+| S1 | FF1  | 3,4     | Bac    | RCA | Soil spot A |
+| O1 | FF1  | 5,22    | Bac    | RCA | Soil spot B |
+| M1 | FF1  | 7       | Bac    | RCA | Mock        |
+| Z1 | FF1  | 8       | Bac    | RCA | ZYMO 8      |
+
+Zymo mock strains:
+
+| Species                  | Genomic DNA | 16S Only1 | 16S & 18S1 | Genome Copy2 | Cell Number3 | Gram | 16/18 Copy Num |
+| ------------------------ | ----------- | --------- | ---------- | ------------ | ------------ | ---- | -------------- |
+| Pseudomonas aeruginosa   | 12          | 4.2       | 3.6        | 6.1          | 6.1          | -    | 4              |
+| Escherichia coli         | 12          | 10.1      | 8.9        | 8.5          | 8.5          | -    | 7              |
+| Salmonella enterica      | 12          | 10.4      | 9.1        | 8.7          | 8.8          | -    | 7              |
+| Lactobacillus fermentum  | 12          | 18.4      | 16.1       | 21.6         | 21.9         | +    | 5              |
+| Enterococcus faecalis    | 12          | 9.9       | 8.7        | 14.6         | 14.6         | +    | 4              |
+| Staphylococcus aureus    | 12          | 15.5      | 13.6       | 15.2         | 15.3         | +    | 6              |
+| Listeria monocytogenes   | 12          | 14.1      | 12.4       | 13.9         | 13.9         | +    | 6              |
+| Bacillus subtilis        | 12          | 17.4      | 15.3       | 10.3         | 10.3         | +    | 10             |
+| Saccharomyces cerevisiae | 2           | NA        | 9.3        | 0.57         | 0.29         | Y    | 109            |
+| Cryptococcus neoformans  | 2           | NA        | 3.3        | 0.37         | 0.18         | Y    | 60             |
+
+# stat assembly clips
+```{bash, eval=FALSE}
+for i in {S,O}{1,2,3};do 
+ awk -v n=$i '{print n"\t"$0}' SAM/$i/summary.BI.megahit.clip.metadata.tsv;
+done > STAT/CLIP/SBR.clip.metadata.tsv
+md5sum STAT/CLIP/SBR.bead.metadata.tsv
+awk '!/#skip/{if($2!=pB){if(FNR>1){print $1"\t"pB"\t"blen"\t"ctg"\t"clips};blen=$10;ctg=1;clips=1}else{blen=blen+$10;clips=clips+1;if($4!=pc){ctg=ctg+1}};pc=$4;pB=$2}END{print $1"\t"pB"\t"blen"\t"ctg"\t"clips}' STAT/CLIP/SBR.clip.metadata.tsv > STAT/CLIP/SBR.bead.metadata.tsv
+md5sum STAT/CLIP/SBR.bead.metadata.tsv
+```
+
+
+# map clips and OTUs to zymo ref
+```{bash,eval=FALSE}
+#mkdir -p ../../Results/AUG20/STAT/ANNO
+
+# Subunits detection
+metabbq smk -j -npk SAM/{S,O}{1,2,3}/CLIP/all.barrnap.sum.tsv
+for i in {S,O}{1,2,3};do awk -v n=$i '{print n"\t"$0}' SAM/$i/CLIP/all.barrnap.sum.tsv;done > STAT/CLIP/SBR.all.barrnap.sum.tsv
+
+
+#open silva ref mapping
+metabbq smk -j -npk SAM/{S,O}{1,2,3}/ANNO/CLIP.map.merge.bead.anno
+for i in {S,O}{1,2,3};do awk -v n=$i '{print n"\t"$0}' SAM/$i/ANNO/CLIP.map.merge.bead.anno;done > STAT/ANNO/SBR.CLIP.map.merge.bead.anno
+
+
+#SNV
+metabbq smk -j -npk SAM/{S,O}{1,2,3}/CLIP/clips2REF.bcf.tsv
+for i in {S,O}{1,2,3};do awk -v n=$i '{print n"\t"$0}' SAM/$i/CLIP/clips2REF.bcf.tsv;done > STAT/CLIP/SBR.clips2REF.bcf.tsv
+
+#diversity
+for i in {S,O}{1,2,3};do metabbq diversityEst -e 0 -s $i -t 100 -d SAM/$i -m SAM/SBR -o SAM/$i/CLIP/divEst.tsv & done
+for i in {S,O}{1,2,3};do awk -v n=$i '{print n"\t"$0}' SAM/$i/CLIP/divEst.tsv;done > STAT/CLIP/SBR.divEst.tsv
+
+```
+
+
+
+
+Load data:
+```{r}
+metadata <- read.csv("../../Results/JAN20/metadata.csv")
+SBR.bead.metadata.df <- read.table(
+  md5("../../Results/AUG20/STAT/CLIP/SBR.bead.metadata.tsv","9c812b3bfe88ea3c5b0c9244a4388355"),
+  sep="\t",col.names = c("SID","BID","BLen","contigs","clips")
+)
+#levels(SBR.bead.metadata.df$SID)[which(levels(SBR.bead.metadata.df$SID)%in%c("O2","S2"))] <- c("S2","O2")
+
+SBR.barrnap.gff3.tsv <- read.table(
+  md5("../../Results/AUG20/STAT/CLIP/SBR.all.barrnap.sum.tsv","29bbb927d453d8caa1cd51838d3ab26b"),
+  col.names = c("SID","BID","len16S","pct16S","len5.8S","pct5.8S","len23S","pct23S","unit")
+)
+#levels(SBR.barrnap.gff3.tsv$SID)[which(levels(SBR.barrnap.gff3.tsv$SID)%in%c("O2","S2"))] <- c("S2","O2")
+
+SBR.silva.bead.anno <- read.table(
+  md5("../../Results/AUG20/STAT/ANNO/SBR.CLIP.map.merge.bead.anno","05cba2ebf4f1c71f62843b530dd59406"),comment.char = "",sep="\t", quote = "", 
+  fill = NA,col.names = c("SID","BINFO","tax","ident","mapLen","mismatch","gap","qs","qe","ss","se","eval","bitscore","qlen","slen","strands","qDesc","sDesc","covs","taxonID","TopAnno","TANum","TALv","score1st","score2nd","ident1st","ident2nd","TANames","hybCt","hybLen","hybPct")
+)
+#levels(SBR.silva.bead.anno$SID)[which(levels(SBR.silva.bead.anno$SID)%in%c("O2","S2"))] <- c("S2","O2")
+
+# SBR.silva.LOTU.anno <- read.table(md5("../../Results/AUG20/STAT/ANNO/SBR.LOTU.map.merge.anno",
+#       "5d079afbd752d1f2de3ee7fb2d2c1e52"), sep="\t",comment.char = "",
+#    col.names = c("SID","LOTU","tax","idents","lens","mis","gap","bit","qlen","qcov","scov","scov.ITS","scov.SSU","scov.LSU","taxID","rank","taxPath")
+# )
+# 
+SBR.clip2REF.bcf <- read.table(md5("../../Results/AUG20/STAT/CLIP/SBR.clips2REF.bcf.tsv",
+  "81530199b373f140c43135df17c7fb2e"), sep="\t",col.names = c("SID","CHR","POS","REF","ALT","QUAL","TYPE","IDV","DP","DR","DA","BQR","BQA","MQR","MQA","MDR","MDA","BQB","MQSB"))
+# 
+# SBR.prop <- read.table(md5("../../Results/AUG20/STAT/PROFILE/SBR.LOTU.bwa.sbb1_rand3","12564411f41155ab37b0a07f92d0c57c"),sep="\t",
+#                       col.names = c("SID","rand","count0","count","LOTU"))
+# #
+```
+
+
+# bead info
+```{r}
+SBR.bdmeta.df <- merge(metadata,SBR.bead.metadata.df,by="SID")
+ggplot(SBR.bdmeta.df,aes(x=BLen,color=SID)) + geom_density() + xlim(c(0,6000))
+```
+
+```{r}
+ggplot(SBR.bdmeta.df,aes(x=BLen,y=clips)) +
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") +
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
+  facet_wrap(~SID,ncol=3)
+```
+
+# subunits detection
+```{r}
+SBR.bac.subunit.df <- SBR.barrnap.gff3.tsv
+SBR.bac.subunit.df$unit <- factor(SBR.bac.subunit.df$unit,levels = seq(0,7))
+SBR.subunits.df <- merge(SBR.bdmeta.df,SBR.bac.subunit.df,by=c("SID","BID"),all.x=T)
+SBR.subunits.df$unit[which(is.na(SBR.subunits.df$unit))] <- 0
+#levels(SBR.subunits.df$unit) <- c("None","SSU","5S","SSU+5S","LSU","SSU+LSU","LSU+5S","ALL")
+levels(SBR.subunits.df$unit) <- c("None","SSU","5S","SSU","LSU","Both","LSU","Both")
+SBR.subunits.df$SAM <- substr(SBR.subunits.df$SID,1,1)
+ggplot(SBR.subunits.df,aes(x=BLen)) +geom_histogram(aes(fill=unit),position="stack",binwidth=100) +
+  geom_density(aes(x=BLen,y=..density..*(-4e6),color=unit,linetype=SAM),size=1,alpha=.7) +
+  geom_vline(xintercept = 900,linetype=2,size=1) +
+  scale_fill_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,5,9,10,11)])) +
+  scale_color_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,5,9,10,11)])) + theme_bw() +
+  #theme(legend.position = c(0.99,.9),legend.justification = c(1,1)) +
+  scale_x_continuous(breaks=seq(0,10000,1000),limits=c(-1,6000))
+
+pct.unit <- ddply(SBR.subunits.df,"unit",summarise,count=length(BID))
+pct.unit$pct <- pct.unit$count/sum(pct.unit$count)
+pct.unit$lab <- sprintf("%.2f%%",100*pct.unit$pct)
+ggplot(pct.unit,aes(x="X",y=pct,fill=unit)) +geom_bar(stat="identity") + coord_polar(theta = 'y')+ 
+  geom_text(aes(y=cumsum(rev(pct)) - rev(pct)/2, x = sum(pct)*1.5, label = rev(lab))) +
+  scale_fill_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,2,3,8,9,10,7,11)])) +
+  labs(x = '', y = '', title = '') +
+  theme_classic() + theme(axis.text = element_blank())
+
+pct.unitS <- ddply(SBR.subunits.df,c("SID","unit"),summarise,count=length(BID))
+pct.unitS <- ddply(pct.unitS,c("SID"),transform,pct=count/sum(count))
+pct.unitS$lab <- sprintf("%.2f%%",100*pct.unitS$pct)
+ggplot(pct.unitS,aes(x="X",y=pct,fill=unit)) +geom_bar(stat="identity") + coord_polar(theta = 'y')+ 
+  #geom_text(aes(y=cumsum(rev(pct)) - rev(pct)/2, x = sum(pct)*.3, label = rev(lab))) +
+  scale_fill_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,2,3,8,9,10,7,11)])) +
+  labs(x = '', y = '', title = '') + facet_wrap(~SID,ncol=3) +
+  theme_bw() + theme(axis.text = element_blank())
+
+ggplot(SBR.subunits.df%>%filter(len16S>0),aes(x=BLen,y=pct16S)) +
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) + 
+  geom_abline(intercept = 0, slope = 1,linetype=2) +
+  facet_wrap(~SAM,ncol=2) + ggtitle("Polygon between 16S coverage and bead len")
+
+ggplot(SBR.subunits.df%>%filter(len23S>0),aes(x=BLen,y=pct23S)) +
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) + 
+  geom_abline(intercept = 0, slope = 1,linetype=2) +
+  facet_wrap(~SAM,ncol=2) + ggtitle("Polygon between 23S coverage and bead len")
+```
+
+# silva mapping annotation
+```{r}
+
+getMapPropFun2 <- function(d){
+  uOrder <- c("ALL","SSU","ITS1","5.8S","ITS2","LSU")
+  ulist <- data.frame(key=c("ALL","SSU","16S","ITS","ITS1","5.8S","ITS2","LSU","23S"),
+                      ind=c(1,2,2,3,3,4,5,6,6))
+  getM <- stri_match_all_regex(d,"(ALL|23S|LSU|ITS|ITS1|ITS2|5.8S|SSU|16S)\\((\\d+)\\)")
+  getN <- length(getM)
+  res <- matrix(0,ncol = 6,nrow = getN)
+  for(i in 1:length(getM)){
+    geti <- getM[[i]]
+    for(j in 1:nrow(geti)){
+      res[i,ulist$ind[which(ulist$key==geti[j,2])]] <- geti[j,3]
+    }
+  }
+  res <- matrix(as.numeric(res),ncol=6)
+  colnames(res) <- uOrder
+  return(res)
+}
+sbinfo <- matrix(unlist(strsplit(as.character(SBR.silva.bead.anno$BINFO),"|",fixed = T)),ncol=4,byrow = T)
+sbinfodf <- data.frame(BID=sbinfo[,1],clips=as.numeric(sbinfo[,3]),hits=as.numeric(sbinfo[,4]))
+covdf <- getMapPropFun2(as.character(SBR.silva.bead.anno$covs))
+
+SBR.slv.bead.df <- merge(SBR.bdmeta.df,cbind(sbinfodf[,-2],SBR.silva.bead.anno[,-c(2,16:19)],covdf[,c(2,6)]),by=c("SID","BID"),all.x=T)
+SBR.slv.bead.df$unit <- factor(ifelse(SBR.slv.bead.df$SSU>0,1,0) + ifelse(SBR.slv.bead.df$LSU>0,2,0), levels=c(0,2,1,3))
+SBR.slv.bead.df$unit[which(is.na(SBR.slv.bead.df$unit))] <- 0
+levels(SBR.slv.bead.df$unit) <- c("Missing","LSU","SSU","BOTH")
+```
+
+```{r}
+n50(SBR.slv.bead.df$qlen)
+
+SBR.slv.bead.df$identG <- ifelse(SBR.slv.bead.df$ident == 100,100,ifelse(SBR.slv.bead.df$ident >=99.5,99.5,
+       ifelse(SBR.slv.bead.df$ident <97,96,round(SBR.slv.bead.df$ident-0.5,0))))
+
+SBR.slv.bead.df$identG[which(is.na(SBR.slv.bead.df$identG))] <- 0
+
+pct.identG <- ddply(SBR.slv.bead.df,"identG",summarise,count=length(BID))
+pct.identG$pct <- pct.identG$count/sum(pct.identG$count)
+pct.identG$lab <- sprintf("%.2f%%",100*pct.identG$pct)
+pct.identG$identG <- factor(pct.identG$identG,levels=c(0,96,97,98,99,99.5,100))
+ggplot(pct.identG,aes(x="X",y=pct,fill=identG)) +geom_bar(stat="identity") + coord_polar(theta = 'y')+ 
+  geom_text(aes(y=cumsum(rev(pct)) - rev(pct)/2, x = sum(pct)*1.55, label = rev(lab))) +
+  scale_fill_brewer(palette="Blues") +labs(x = '', y = '', title = '') +
+  theme_classic() + theme(axis.text = element_blank())
+
+
+ggplot(SBR.slv.bead.df,aes(x=BLen)) +geom_histogram(aes(fill=unit),position="stack",binwidth=100) +
+  geom_density(aes(x=BLen,y=..density..*(-2e6),color=unit,linetype=SID),size=1) +
+  scale_fill_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(3,8,11)])) +
+  scale_color_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(3,8,11)])) + theme_bw() +
+  #theme(legend.position = c(0.99,.9),legend.justification = c(1,1)) +
+  scale_x_continuous(breaks=seq(0,10000,1000),limits=c(0,6000))
+
+
+pct.unit <- ddply(SBR.slv.bead.df,c("SID","unit"),summarise,count=length(BID))
+pct.unit <- ddply(pct.unit,c("SID"),transform,pct=count/sum(count))
+pct.unit$lab <- sprintf("%.2f%%",100*pct.unit$pct)
+ggplot(pct.unit,aes(x="X",y=pct,fill=unit)) +geom_bar(stat="identity") + coord_polar(theta = 'y')+ 
+  #geom_text(aes(y=cumsum(rev(pct)) - rev(pct)/2, x = sum(pct)*.3, label = rev(lab))) +
+  scale_fill_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,3,8,10,11)])) +
+  labs(x = '', y = '', title = '') + facet_wrap(~SID,ncol=3) +
+  theme_bw() + theme(axis.text = element_blank())
+
+```
+
+
+```{r}
+combine.unit.df <- merge(SBR.subunits.df,SBR.slv.bead.df[,c(1,2,36,37)],by=c("SID","BID"))
+combine.unit.df$len16S[which(is.na(combine.unit.df$len16S))] <- 0
+combine.unit.df$len23S[which(is.na(combine.unit.df$len23S))] <- 0
+combine.unit.df$SSU[which(is.na(combine.unit.df$SSU))] <- 0
+combine.unit.df$LSU[which(is.na(combine.unit.df$LSU))] <- 0
+combine.unit.df$foundSSU <- ifelse(combine.unit.df$len16S>0,1,0) + ifelse(combine.unit.df$SSU>0,2,0)
+#combine.unit.df$foundSSU[which(is.na(combine.unit.df$foundSSU))] <- 0
+combine.unit.df$foundLSU <- ifelse(combine.unit.df$len23S>0,1,0) + ifelse(combine.unit.df$LSU>0,2,0)
+#combine.unit.df$foundLSU[which(is.na(combine.unit.df$foundLSU))] <- 0
+combine.unit.df$foundUNIT <- as.factor(
+  ifelse(combine.unit.df$len16S>0,1,0) + 
+  ifelse(combine.unit.df$SSU>0,2,0) + 
+  ifelse(combine.unit.df$len23S>0,4,0) + 
+  ifelse(combine.unit.df$LSU>0,8,0)
+)
+levels(combine.unit.df$foundUNIT) <- c("Unknown","SSU(predicted)","SSU(aligned)","SSU(cross validated)",
+                                       "LSU(predicted)","Both(predicted)","Both(a&p)","Both(c&p)",
+                                       "LSU(aligned)","Both(p&a)","Both(aligned)","Both(c&a)","LSU(cross validated)",
+                                       "Both(c&p)","Both(c&a)","Both(cross validated")
+levels(combine.unit.df$foundUNIT) <- c("Unknown","SSU","SSU","SSU",
+                                       "LSU","Both","Both","Both",
+                                       "LSU","Both","Both","Both","LSU",
+                                       "Both","Both","Both")
+ggplot(combine.unit.df,aes(x=BLen)) +geom_histogram(aes(fill=foundUNIT),position="stack",binwidth=100) +
+  geom_density(aes(x=BLen,y=..density..*(-6e6),color=SID),size=1) +
+  scale_fill_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,3,5,7,9,11,1,3,5,7,9,11,1)])) +
+  scale_color_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,3,5,7,9,11,1,3,5,7,9,11,1)])) + theme_bw() +
+  #theme(legend.position = c(0.99,.9),legend.justification = c(1,1)) +
+  scale_x_continuous(breaks=seq(0,10000,1000),limits=c(0,5000))
+
+
+```
+
+```{r}
+combine.unit.df$foundSSU <- as.factor(combine.unit.df$foundSSU)
+levels(combine.unit.df$foundSSU) <- c("Unknown","predicted by barrnap","predicted by ITSx","cross validated","aligned to reference","cross validated","cross validated","cross validated")
+source.SSU <- ddply(combine.unit.df%>%filter(foundSSU!="Unknown"),"foundSSU",summarise,count=length(BID))
+source.SSU$pct <- source.SSU$count/sum(source.SSU$count)
+source.SSU$lab <- sprintf("%.2f%%",100*source.SSU$pct)
+
+combine.unit.df$foundLSU <- as.factor(combine.unit.df$foundLSU)
+levels(combine.unit.df$foundLSU) <- c("Unknown","predicted by barrnap","predicted by ITSx","cross validated","aligned to reference","cross validated","cross validated","cross validated")
+source.LSU <- ddply(combine.unit.df%>%filter(foundLSU!="Unknown"),"foundLSU",summarise,count=length(BID))
+source.LSU$pct <- source.LSU$count/sum(source.LSU$count)
+source.LSU$lab <- sprintf("%.2f%%",100*source.LSU$pct)
+
+ggplot(source.SSU,aes(x="X",y=pct,fill=foundSSU)) +geom_bar(stat="identity") + coord_polar(theta = 'y')+ 
+  geom_text(aes(y=cumsum(rev(pct)) - rev(pct)/2, x = sum(pct)*1.55, label = rev(lab))) +
+  scale_fill_manual(values=c(brewer.pal(11,"Spectral")[c(1,2,3,5,7,9,11)])) +
+  labs(x = '', y = '', title = '') +
+  theme_classic() + theme(axis.text = element_blank())
+
+ggplot(source.LSU,aes(x="X",y=pct,fill=foundLSU)) +geom_bar(stat="identity") + coord_polar(theta = 'y')+ 
+  geom_text(aes(y=cumsum(rev(pct)) - rev(pct)/2, x = sum(pct)*1.55, label = rev(lab))) +
+  scale_fill_manual(values=c(brewer.pal(11,"Spectral")[c(1,2,3,5,7,9,11)])) +
+  labs(x = '', y = '', title = '') +
+  theme_classic() + theme(axis.text = element_blank())
+```
+```{r}
+
+source.UNIT <- ddply(combine.unit.df,"foundUNIT",summarise,count=length(BID))
+source.UNIT$pct <- source.UNIT$count/sum(source.UNIT$count)
+source.UNIT$lab <- sprintf("%.2f%%",100*source.UNIT$pct)
+
+ggplot(source.UNIT,aes(x="X",y=pct,fill=foundUNIT)) +geom_bar(stat="identity") + coord_polar(theta = 'y')+ 
+  geom_text(aes(y=cumsum(rev(pct)) - rev(pct)/2, x = sum(pct)*1.55, label = rev(lab))) +
+  scale_fill_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,5,9)])) +
+  labs(x = '', y = '', title = '') +
+  theme_classic() + theme(axis.text = element_blank())
+
+
+```
+
+# Assess TopAnno
+```{r}
+tmp.bead.df <- SBR.slv.bead.df%>%filter(!is.na(TopAnno))
+tmp.bead.df <- ddply(tmp.bead.df,c("SID","TopAnno"),transform,ATCt=length(BID))
+tmp.bead.df <- ddply(tmp.bead.df,c("SID"),transform,ATWeigth=ATCt/length(BID))
+ggplot(SBR.slv.bead.df,aes(x=qlen,fill=TopAnno)) + geom_histogram(position="stack") + xlim(c(0,4000))
+ggplot(SBR.slv.bead.df,aes(x=qlen,fill=TopAnno)) + geom_histogram(position="fill") + xlim(c(0,4000))
+
+ggplot(tmp.bead.df,aes(x=BLen,color=TopAnno)) + geom_density(aes(y=..density..)) + xlim(c(0,4000))
+
+ggplot(SBR.slv.bead.df,aes(x=qlen,y=ident)) + 
+  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
+  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
+  ggtitle("Polygon between qlen and ident") +
+  facet_grid(TALv~TopAnno,scale="free")
+```
+
+
+
+#FIN.

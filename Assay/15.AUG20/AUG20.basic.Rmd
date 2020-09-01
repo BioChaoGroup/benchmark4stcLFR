@@ -1,5 +1,5 @@
 ---
-title: "JAN20 DATA ASSESSMENT"
+title: "AUG20 DATA ASSESSMENT"
 author: "Chao"
 date: "1/21/2020"
 output: 
@@ -64,17 +64,17 @@ done > STAT/BI.msh.tsv
 **For the first time, grab data from HPC**
 ```{bash,eval=FALSE}
 #get BB.stat
-res=../../Results/JAN20/ORI
-rsync -atvP --files-from=$res/tmp.file.lst ngb8:$remote/Results/JAN20/ORI/ $res/
+res=../../Results/AUG20/ORI
+rsync -atvP --files-from=$res/tmp.file.lst ngb8:$remote/Results/AUG20/ORI/ $res/
 ```
 
 ```{bash}
-res=../../Results/JAN20/ORI
+res=../../Results/AUG20/ORI
 ls $res/|grep FF
 ```
 
 ```{bash}
-res=../../Results/JAN20/ORI
+res=../../Results/AUG20/ORI
 for i in `ls $res|grep FF`;do 
   awk -v i=$i '{print i"\t"$0}' $res/$i/clean/BB.stat;
 done > $res/SUM.BB.stat
@@ -92,37 +92,18 @@ metadata <- read.csv("../../Results/JAN20/metadata.csv")
 metadata.df <- (read.table("../../Results/JAN20/dataInfo.tsv",
                           col.names=c("SID","barcode","lane","tag","path")))[,1:4]
 
-basic.ORI.tsv <- read.table("../../Results/JAN20/STAT/ORI.basic.log",header = T)
-basic.SAM.S.tsv <- read.table("../../Results/JAN20/STAT/SAM.basic.single.log",header = T)
-basic.SAM.R.tsv <- read.table("../../Results/JAN20/STAT/SAM.basic.RCA.log",header = T)
-basic.SAM.N.tsv <- read.table("../../Results/JAN20/STAT/SAM.basic.NOR.log",header = T)
+basic.ORI.tsv <- read.table("../../Results/AUG20/STAT/ORI.basic.log",header = T)
+basic.SAM.S.tsv <- read.table("../../Results/AUG20/STAT/SAM.basic.single.log",header = T)
+basic.SAM.R.tsv <- read.table("../../Results/AUG20/STAT/SAM.basic.RCA.log",header = T)
+basic.SAM.N.tsv <- read.table("../../Results/AUG20/STAT/SAM.basic.NOR.log",header = T)
 
-ORI.BB.stat <- read.table("../../Results/JAN20/STAT/ORI.BB.stat",
+ORI.BB.stat <- read.table("../../Results/AUG20/STAT/ORI.BB.stat",
                          col.names = c("tag","count","rpb","cumsum"))
 BB.stat <- ORI.BB.stat
-SAM.BB.stat <- read.table("../../Results/JAN20/STAT/SAM.BB.stat",
+SAM.BB.stat <- read.table("../../Results/AUG20/STAT/SAM.BB.stat",
                          col.names = c("tag","count","rpb","cumsum"))
-BI.msh.tsv <- read.table("../../Results/JAN20/STAT/BI.msh.tsv",
+BI.msh.tsv <- read.table("../../Results/AUG20/STAT/BI.msh.tsv",
                          col.names = c("SID","count","rpb","kmers"))
-```
-```{r}
-contig.tsv <- read.table("../../Results/RCAs/RCA197FIN/A42/summary.BI.megahit.contig.tsv",
-                         col.names = c("BI","id","flag","cov","len"))
-B.kmer <- read.table("../../Results/RCAs/RCA197FIN/A02/mash/bMin2.msh.2.tsv",
-                     col.names = c("BB","rpb","kmers"))
-#clip.num <- read.table("../../Results/RCAs/RCA197FIN/A42/summary.BI.megahit.clip.num",                       col.names = c("BI","len"))
-
-clip2zymo <- read.table("../../Results/RCAs/RCA197FIN/A42/clip2zymo.stat",
-                       col.names = c("BI","id","flag","cov","len0","clip","len","ref","cigar","match","fLen","NM"))
-clip2zymo.region <- read.table("../../Results/RCAs/RCA197FIN/A42/summary.BI.megahit.clip.zymo.region",
-                       col.names = c("BI","id","flag","cov","len0","clip","len","ref","region","match","fLen","regionLen","regionPos","PosPct"))
-rnahead.stat <- read.table("../../Results/RCAs/RCA197FIN/A42/summary.BI.megahit.rRNA.stat",
-                       col.names = c("BI","id","len","start","end","unit"))
-BI.lst <- read.table("../../Results/RCAs/RCA197FIN/A42/Assemble_BI/ID.lst",
-                     col.names = c("BI0","BB","kmers","rpb"))
-
-BI.freq.tsv <- read.table("../../Results/RCAs/RCA197FIN/A42/mash/BI.msh.freq.tsv", sep="\t",
-                           col.names = c("BB","rpb","kmers","bins","hash","hash1","hash2"))
 ```
 
 
@@ -144,7 +125,7 @@ SAM.BB.reads <- ddply(SAM.BB.stat,"tag",summarise,BB.reads=sum(count*rpb))
 ```{r}
 basic.ori.df2 <- merge(metadata.df,basic.ORI.tsv,by.x="tag",by.y=".ID")
 rn <- colnames(basic.SAM.R.tsv)
-basic.SAM.N.tsv$ASM.clips <- NA
+basic.SAM.N.tsv$ASM.beads <- NA
 basic.sam.df2 <- merge(unique(metadata.df[,c(1,3,5:7)]),
   rbind(basic.SAM.S.tsv[,rn],basic.SAM.R.tsv,basic.SAM.N.tsv),
   by.x="SID",by.y=".ID")
@@ -161,12 +142,15 @@ p1.1 <- ggplot(basic.ori.df2,aes(x=SID)) +
   ggtitle("Beofre/after filter reads number")
 p1.1
 
+ggplot(basic.ori.df2,aes(x=SID)) +
+  geom_bar(aes(y=fastp.before_filtering.total_reads),position="stack",stat="identity",fill=NA,color="black") +
+  geom_bar(aes(y=fastp.after_filtering.total_reads),position="stack",stat="identity",fill="grey50",alpha=.5) +
+  ggtitle("Beofre/after filter reads number") + facet_grid(.~kingdom,scale="free")
+
 rm.name <- c("fastp.before_filtering.read1_mean_length","fastp.before_filtering.read2_mean_length")
 basic.ori.df3 <- melt(basic.ori.df2[,-which(colnames(basic.ori.df2)%in%rm.name)],
                       id.vars = colnames(basic.ori.df2)[1:7],
                       variable.name = "var",value.name = "val")
-ggplot(basic.ori.df3,aes(x=lane,y=val)) + geom_boxplot() + coord_flip() +
-  facet_wrap(~var,ncol=5,scale="free")
 ggplot(basic.ori.df3,aes(x=kingdom,y=val)) + geom_boxplot() + coord_flip() +
   facet_wrap(~var,ncol=5,scale="free")
 ```
@@ -220,13 +204,13 @@ ggplot(zymo.RCA.df,aes(x="Zymo")) +
 
 ```{r}
 ggplot(basic.sam.df2,aes(x=SID)) +
-  geom_bar(aes(y=ASM.beads),stat="identity",fill=NA,color="black") +
-  geom_bar(aes(y=ASM.clips),stat="identity",fill="grey50",color=NA)
+  geom_bar(aes(y=ASM.beads),stat="identity",fill=NA,color="black")
+  #geom_bar(aes(y=ASM.clips),stat="identity",fill="grey50",color=NA)
 
 ggplot(basic.sam.df2%>%filter(lane%in%seq(1,6)),aes(x=SID)) +
   geom_bar(aes(y=BB.beads),stat="identity",fill=NA,color="black") +
-  geom_bar(aes(y=ASM.beads),stat="identity",fill="grey50",color=NA) +
-  geom_bar(aes(y=ASM.clips),stat="identity",fill="brown1",color=NA)
+  geom_bar(aes(y=ASM.beads),stat="identity",fill="grey50",color=NA)
+  #geom_bar(aes(y=ASM.clips),stat="identity",fill="brown1",color=NA)
 
 ggplot(ddply(basic.sam.df2%>%filter(lane%in%seq(1,6)),c("kingdom","SID"),summarise,pct=ASM.beads/BB.beads),
        aes(x=kingdom,y=pct)) +geom_boxplot()
@@ -624,7 +608,7 @@ ggplot(mdat3,aes(x=rpb,y=kmers)) + geom_density_2d()
 ```
 #Beads counts
 ```{r}
-BB.info <- read.csv("../../Results/JAN20/STAT/statinfo.csv")
+BB.info <- read.csv("../../Results/AUG20/STAT/statinfo.csv")
 ggplot(BB.info,aes(x=ID,y=isoBeads)) + geom_bar(stat="identity")
 ```
 
@@ -635,7 +619,7 @@ metabbq stat RSU -l SAM/S1/VSEARCH/barrnap.LSU.fasta -s SAM/S1/VSEARCH/barrnap.S
 # batch beta
 metabbq smk -j -npk SAM/{{U,O,S,M,Z}{1,2,3},{S,O,M,Y}{4,5,6}}/stat/barrnap.RSU.stat
 
-mkln ../../Results/JAN20/STAT
+mkln ../../Results/AUG20/STAT
 
 for i in {{U,O,S,M,Z}{1,2,3},{S,O,M,Y}{4,5,6}};do 
   awk -v n=$i '{print n"\t"$0}' SAM/$i/stat/barrnap.RSU.stat;
@@ -648,13 +632,13 @@ done > STAT/barrnap.bac.RSU.stat
 
 **curate**
 ```{r}
-t.stat <- read.table("../../Results/JAN20/STAT/barrnap.RSU.stat",
+t.stat <- read.table("../../Results/AUG20/STAT/barrnap.RSU.stat",
    col.names=c("SID","BI","No","unit","kmer","flag","multi","aLen","cType","Ad","cLen","sPos","ePos","dir"))
-t.abn.stat <- read.table("../../Results/JAN20/STAT/barrnap.bac.RSU.stat",
+t.abn.stat <- read.table("../../Results/AUG20/STAT/barrnap.bac.RSU.stat",
    col.names=c("SID","BI","No","unit","kmer","flag","multi","aLen","cType","Ad","cLen","sPos","ePos","dir"))
 
-if(exists("../../Results/JAN20/STAT/BU.RData")){
-  load("../../Results/JAN20/STAT/BU.RData")
+if(exists("../../Results/AUG20/STAT/BU.RData")){
+  load("../../Results/AUG20/STAT/BU.RData")
 }{
   library(doSNOW)
   sFun <- function(d){
@@ -668,7 +652,7 @@ if(exists("../../Results/JAN20/STAT/BU.RData")){
   BU.stat <- ddply(t.stat,c("SID"),sFun,.parallel=T)
   BU.abn <- ddply(t.abn.stat,c("SID"),sFun,.parallel=T)
   stopCluster(cl)
-  save(BU.stat,BU.abn,file="./../Results/JAN20/STAT/BU.RData")
+  save(BU.stat,BU.abn,file="./../Results/AUG20/STAT/BU.RData")
 }
 
 ```
@@ -761,18 +745,18 @@ metabbq smk -j -npk SAM/{{U,O,S,M,Z}{1,2,3},{S,O,M,Y}{4,5,6}}/stat/summary.BI.me
 
 for i in {{U,O,S,M,Z}{1,2,3},{S,O,M,Y}{4,5,6}};do 
   awk -v n=$i '{print n"\t"$0}' SAM/$i/stat/summary.BI.megahit.clip.slv.stat.clips;
-done > ../../Results/JAN20/STAT/megahit.clip.slv.stat.clips
+done > ../../Results/AUG20/STAT/megahit.clip.slv.stat.clips
 
 #
 for i in {{U,O,S,M,Z}{1,2,3},{S,O,M,Y}{4,5,6}};do 
   awk -v n=$i '{print n"\t"$0}' SAM/$i/stat/summary.BI.megahit.clip.slv.stat.beads;
-done > ../../Results/JAN20/STAT/megahit.clip.slv.stat.beads
+done > ../../Results/AUG20/STAT/megahit.clip.slv.stat.beads
 
 ```
 
 
 ```{r}
-RDFile <- "../../Results/JAN20/STAT/clipSLV.RData"
+RDFile <- "../../Results/AUG20/STAT/clipSLV.RData"
 if(file.exists(RDFile)){
   if(md5sum(RDFile)=="c0733f17cbc0fa33947d76f96c185dec"){ 
     load(RDFile)
@@ -782,12 +766,12 @@ if(file.exists(RDFile)){
 }else{
   comm.names <- c("saccver", "pident", "length", "mismatch", "gapopen", "qstart", 
           "qend", "sstart", "send", "evalue", "bitscore", "qlen", "name", "taxid", "rank", "path")
-  clip.slv.stat.clip <- read.table("../../Results/JAN20/STAT/megahit.clip.slv.stat.clips",
+  clip.slv.stat.clip <- read.table("../../Results/AUG20/STAT/megahit.clip.slv.stat.clips",
     sep="\t",as.is = T,quote = "",comment.char="",
     col.names=c("SID","BNo","unit", "maxIdent", "delta", "range", "cLv","cName", "qaccver",
     paste0(rep(c("SSU","LSU"),each=length(comm.names)),".",rep(comm.names,2))))
   
-  clip.slv.stat.bead <-read.table("../../Results/JAN20/STAT/megahit.clip.slv.stat.beads",
+  clip.slv.stat.bead <-read.table("../../Results/AUG20/STAT/megahit.clip.slv.stat.beads",
     sep="\t",as.is = T,quote = "",comment.char="",
     col.names = c("SID","BB", "clips", "clv", "cName","path"))
   

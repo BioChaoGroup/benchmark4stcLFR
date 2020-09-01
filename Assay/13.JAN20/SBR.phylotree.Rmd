@@ -1,0 +1,127 @@
+---
+title: "JAN20 DATA ASSESSMENT: phylotree building"
+author: "Chao"
+date: "6/18/2020"
+output: 
+  html_notebook:
+    code_fold: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reshape2)
+library(ggplot2)
+library(plyr)
+library(dplyr)
+library(RColorBrewer)
+library(configr)
+library(tools)
+library(stringi)
+
+md5 <- function(f,m){
+  if(tools::md5sum(f)==m){
+    warning("MD5 check passed.\n")
+    return(f)
+  }else{
+    stop("MD5 check failed. Please check the version and content!\n")
+  }
+}
+
+```
+
+# Background
+
+Samples involved:
+
+| ID | lane | barcode | Kindom | RCA | Location    |
+| -- | ---- | ------- | -------| --- | ----------- |
+| U1 | FF1  | 1,17    | Bac    | RCA | Urine       |
+| S1 | FF1  | 3,4     | Bac    | RCA | Soil spot A |
+| O1 | FF1  | 5,22    | Bac    | RCA | Soil spot B |
+| M1 | FF1  | 7       | Bac    | RCA | Mock        |
+| Z1 | FF1  | 8       | Bac    | RCA | ZYMO 8      |
+
+Zymo mock strains:
+
+| Species                  | Genomic DNA | 16S Only1 | 16S & 18S1 | Genome Copy2 | Cell Number3 | Gram | 16/18 Copy Num |
+| ------------------------ | ----------- | --------- | ---------- | ------------ | ------------ | ---- | -------------- |
+| Pseudomonas aeruginosa   | 12          | 4.2       | 3.6        | 6.1          | 6.1          | -    | 4              |
+| Escherichia coli         | 12          | 10.1      | 8.9        | 8.5          | 8.5          | -    | 7              |
+| Salmonella enterica      | 12          | 10.4      | 9.1        | 8.7          | 8.8          | -    | 7              |
+| Lactobacillus fermentum  | 12          | 18.4      | 16.1       | 21.6         | 21.9         | +    | 5              |
+| Enterococcus faecalis    | 12          | 9.9       | 8.7        | 14.6         | 14.6         | +    | 4              |
+| Staphylococcus aureus    | 12          | 15.5      | 13.6       | 15.2         | 15.3         | +    | 6              |
+| Listeria monocytogenes   | 12          | 14.1      | 12.4       | 13.9         | 13.9         | +    | 6              |
+| Bacillus subtilis        | 12          | 17.4      | 15.3       | 10.3         | 10.3         | +    | 10             |
+| Saccharomyces cerevisiae | 2           | NA        | 9.3        | 0.57         | 0.29         | Y    | 109            |
+| Cryptococcus neoformans  | 2           | NA        | 3.3        | 0.37         | 0.18         | Y    | 60             |
+
+
+# Prepare
+
+cluster same samples' clips to get LOTU:
+```{bash}
+mkdir -p SAM/SBR/ANNO
+for i in {S,O}{1,2,3};do 
+  awk -v n=$i '/>BI/{gsub(">",">"n)}{print}' SAM/$i/summary.BI.megahit.clip.all.fasta;
+done > SAM/SBR/summary.BI.megahit.clip.all.fasta
+for i in {S,O}{1,2,3};do 
+  awk -v n=$i '{print n$0}' SAM/$i/ANNO/CLIP.map.merge.bead.anno;
+done > SAM/SBR/ANNO/CLIP.map.merge.bead.anno
+for i in {S,O}{1,2,3};do 
+  awk -v n=$i '{print n$0}' SAM/$i/ANNO/CLIP.map.merge.clip.anno;
+done > SAM/SBR/ANNO/CLIP.map.merge.clip.anno
+
+#get SSU/LSU sequences
+mkdir -p SAM/SBR/CLIP
+for i in {S,O}{1,2,3};do 
+  awk -v n=$i 'FNR%2==1{if(/>16S_rRNA/){gsub("16S_rRNA::",n);p=1}else{p=0}} (p==1){print}' SAM/$i/CLIP/all.barrnap.fa;
+done > SAM/SBR/CLIP/all.SSU.fa
+for i in {S,O}{1,2,3};do 
+  awk -v n=$i 'FNR%2==1{if(/>23S_rRNA/){gsub("23S_rRNA::",n);p=1}else{p=0}} (p==1){print}' SAM/$i/CLIP/all.barrnap.fa;
+done > SAM/SBR/CLIP/all.LSU.fa
+
+vsearch --threads 48 --cluster_fast  SAM/SBR/CLIP/all.SSU.fa -strand both --fasta_width 0 --relabel SSU_ --centroids  SAM/SBR/CLIP/vsearch.SSU.fa --uc SAM/SBR/CLIP/vsearch.SSU.uc --id .95
+
+vsearch --threads 48 --cluster_fast  SAM/SBR/CLIP/all.LSU.fa -strand both --fasta_width 0 --relabel LSU_ --centroids  SAM/SBR/CLIP/vsearch.LSU.fa --uc SAM/SBR/CLIP/vsearch.LSU.uc --id .95
+
+#metabbq IO uc2fa -i SAM/SBR/CLIP/all.SSU.fa -u SAM/SBR/CLIP/vsearch.SSU.uc -a SAM/SBR/ANNO/CLIP.map.merge.clip.anno -m 1000 -t SSU_ -o SAM/SBR/CLIP/above1k.SSU.fa -v
+metabbq IO uc2fa -i SAM/SBR/CLIP/all.SSU.fa -u SAM/SBR/CLIP/vsearch.SSU.uc \
+-m 1000 -t SSU_ -o SAM/SBR/CLIP/above1k.SSU.fa -v
+mafft --thread 48 --phylipout --reorder SAM/SBR/CLIP/above1k.SSU.fa > SAM/SBR/CLIP/above1k.SSU.mafft.fa
+raxmlHPC-HYBRID-AVX  -p 12345 -s SAM/SBR/CLIP/above1k.SSU.mafft.fa -T 20 -m GTRCAT \
+ -w $PWD/SAM/SBR/CLIP -n above1k.SSU.raxml
+metabbq IO uc2fa -i SAM/SBR/CLIP/all.LSU.fa -u SAM/SBR/CLIP/vsearch.LSU.uc -m 2000 -t LSU_ -o SAM/SBR/CLIP/above2k.LSU.fa -v
+mafft --thread 48 --phylipout --reorder SAM/SBR/CLIP/above2k.LSU.fa > SAM/SBR/CLIP/above2k.LSU.mafft.fa
+
+#
+for i in {S,O}{1,2,3};do 
+  ln -s ../../SBR/KRAKEN/db SAM/$i/KRAKEN/SBR;
+done
+metabbq smk --config kk2_db="SBR" -j -npk SAM/{S,O}{1,2,3}/KRAKEN/reads2SBR.sp.prf
+for i in {S,O}{1,2,3};do 
+  awk -v n=$i '{print n"\t"$0}' SAM/$i/KRAKEN/reads2SBR.sp.prf;
+done > STAT/KRAKEN/SBR.reads2SBR.sp.prf
+
+
+for i in {S,O}{1,2,3};do for j in {phylum,genus};do
+  metabbq IO sumprf -r $j -i SAM/$i/KRAKEN/reads2SBR.prof -o SAM/$i/KRAKEN/reads2SBR.$j.prf;
+done;done
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#FIN.

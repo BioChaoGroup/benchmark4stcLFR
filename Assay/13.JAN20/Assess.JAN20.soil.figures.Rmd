@@ -1,0 +1,614 @@
+---
+title: "JAN20 DATA ASSESSMENT: annotation part"
+author: "Chao"
+date: "3/22/2020"
+output: 
+  html_notebook:
+    code_fold: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reshape2)
+library(ggplot2)
+library(plyr)
+library(dplyr)
+library(RColorBrewer)
+library(configr)
+library(tools)
+library(stringi)
+md5 <- function(f,m){
+  if(tools::md5sum(f)==m){
+    warning("MD5 check passed.\n")
+    return(f)
+  }else{
+    stop("MD5 check failed. Please check the version and content!\n")
+  }
+}
+```
+
+#functions
+```{r}
+#https://www.biostars.org/p/9335/
+matcher <- function(pattern, x) {
+
+  ind = gregexpr(pattern, x)[[1]]
+  start = as.numeric(ind)
+  if(length(start)==1 && start <1){
+    return(NA)
+  }else{
+    end = start + attr(ind, "match.length") - 2
+    res <- as.numeric(apply(cbind(start,end), 1, function(y) substr(x, start=y[1], stop=y[2])))
+    res[which(is.na(res))] <- 1
+    return(res)
+  }
+}
+
+doone <- function(c, cigar) {
+  pat <- paste("\\d*", c , sep="")
+  sum(as.numeric(matcher(pat, cigar)), na.rm=T)
+}
+
+
+## takes a cigar string and parses it, not very fast but...
+cigarsuSFR <- function(cigar, chars=c("M","N","D","I","S","H", "P", "X", "=")) {
+   sapply (chars, doone, cigar)
+}
+
+n50 <- function(x){
+  x1 <- rev(sort(x))
+  cumsum.x1 <- cumsum(x1)
+  find.n50 <- which(cumsum.x1 >= sum(x1)/2)
+  return(x1[find.n50[1]])
+}
+```
+
+
+# Background
+
+Samples involved:
+
+| ID | lane | barcode | Kindom | RCA | Location    |
+| -- | ---- | ------- | -------| --- | ----------- |
+| U1 | FF1  | 1,17    | Bac    | RCA | Urine       |
+| S1 | FF1  | 3,4     | Bac    | RCA | Soil spot A |
+| O1 | FF1  | 5,22    | Bac    | RCA | Soil spot B |
+| M1 | FF1  | 7       | Bac    | RCA | Mock        |
+| Z1 | FF1  | 8       | Bac    | RCA | ZYMO 8      |
+
+Zymo mock strains:
+
+| Species                  | Genomic DNA | 16S Only1 | 16S & 18S1 | Genome Copy2 | Cell Number3 | Gram | 16/18 Copy Num |
+| ------------------------ | ----------- | --------- | ---------- | ------------ | ------------ | ---- | -------------- |
+| Pseudomonas aeruginosa   | 12          | 4.2       | 3.6        | 6.1          | 6.1          | -    | 4              |
+| Escherichia coli         | 12          | 10.1      | 8.9        | 8.5          | 8.5          | -    | 7              |
+| Salmonella enterica      | 12          | 10.4      | 9.1        | 8.7          | 8.8          | -    | 7              |
+| Lactobacillus fermentum  | 12          | 18.4      | 16.1       | 21.6         | 21.9         | +    | 5              |
+| Enterococcus faecalis    | 12          | 9.9       | 8.7        | 14.6         | 14.6         | +    | 4              |
+| Staphylococcus aureus    | 12          | 15.5      | 13.6       | 15.2         | 15.3         | +    | 6              |
+| Listeria monocytogenes   | 12          | 14.1      | 12.4       | 13.9         | 13.9         | +    | 6              |
+| Bacillus subtilis        | 12          | 17.4      | 15.3       | 10.3         | 10.3         | +    | 10             |
+| Saccharomyces cerevisiae | 2           | NA        | 9.3        | 0.57         | 0.29         | Y    | 109            |
+| Cryptococcus neoformans  | 2           | NA        | 3.3        | 0.37         | 0.18         | Y    | 60             |
+
+# map clips and OTUs to silva
+```{bash,eval=FALSE}
+
+for i in {S,O}{1,2,3,4,5,6};do 
+awk -F "\t" -v n=$i '{print n"\t"$0}' SAM/$i/summary.BI.megahit.clip.metadata.tsv;
+done > STAT/CLIP/SXR.summary.BI.megahit.clip.metadata.tsv
+
+metabbq smk -j -npk SAM/{S,O}{1,2,3}/CLIP/all.LOTU.map.merge.anno
+for i in {S,O}{1,2,3};do sed 's/\S\+=//g' SAM/$i/CLIP/all.clust.log|awk -v n=$i '{print n" "$0}' ;done > STAT/CLIP/SBR.clust.log
+for i in {S,O}{1,2,3};do sed 's/\S\+=//g' SAM/$i/CLIP/all.LOTU.map.merge.anno|awk -v n=$i '{print n"\t"$0}' ;done > STAT/CLIP/SBR.LOTU.map.merge.anno
+
+
+#quantification
+
+
+# write to tmp/mock.LOTU.quantification.sh
+SAM=$1
+j=$2
+mkdir -p $SAM/CLIP/RAND
+bwa mem -t 8 -h 10000 $SAM/CLIP/all.LOTU.fa $SAM/clean/fastp.sort.{1,2}_$j.fq.gz \
+| samtools view -b |tee $SAM/CLIP/RAND/all.LOTU.bwa.map_$j.bam \
+| samtools view | metabbq beadStat sam -i - -o $SAM/CLIP/RAND/all.LOTU.bwa.stat_$j -v
+metabbq beadStat sam2b -i $SAM/CLIP/RAND/all.LOTU.bwa.stat_$j -o $SAM/CLIP/RAND/all.LOTU.bwa.sbb1_$j -v
+#
+
+
+for i in {1,2,3} ;do SAM=SAM/Z$i; for j in {00..02};do echo sh tmp/mock.LOTU.quantification.sh $SAM $j \& ;done;done > tmp/mock.batch.quantification.sh
+for i in {1,2,3} ;do SAM=Z$i; for j in {00..02};do 
+awk -v s=$SAM -v r=$j '{print s"\t"r"\t"$1"\t"$2"\t"$3}' SAM/$SAM/CLIP/RAND/all.LOTU.bwa.sbb1_$j.p;
+done;done > STAT/CLIP/rand3.LOTU.bwa.sbb1.p
+
+```
+
+
+
+
+Load data:
+```{r}
+metadata <- read.csv("../../Results/JAN20/metadata.csv")
+
+SXR.clip.metadata.tsv <- read.table(md5("../../Results/JAN20/STAT/CLIP/SXR.summary.BI.megahit.clip.metadata.tsv","d9cee9f13632c1cfae31558b381b76e2"),
+                                    col.names = c("SID","BID","k","Cno","flag","multi","olen","cType","Ad","len","note"),sep = "\t")
+
+SBR.LOTU.info <- read.table("../../Results/JAN20/STAT/CLIP/SBR.clust.log",sep=" ", 
+                           col.names = c("SID","LOTU","size","S75","CL","MAXLEN","MEANLEN"))
+
+
+tools::md5sum("../../Results/JAN20/STAT/CLIP/SBR.LOTU.map.merge.anno")
+SBR.silva.anno <- read.table(
+  md5("../../Results/JAN20/STAT/CLIP/SBR.LOTU.map.merge.anno","9be60789b7ce4af072f881cb25238452"), sep="\t", comment.char = "",
+   col.names = c("SID","LOTU","tax","idents","lens","mis","gap","bit","qlen","qcov","scov","scov.ITS","scov.SSU","scov.LSU","taxID","rank","taxPath")
+)
+
+
+ZS.prop <- read.table("../../Results/JAN20/STAT/CLIP/rand3.LOTU.bwa.sbb1.p",sep="\t",
+                      col.names = c("SID","rand","count0","count","LOTU"))
+#
+
+```
+
+
+#Curation
+```{r}
+SBR.badf <- merge(metadata,SBR.silva.anno,by="SID")
+#badf$delta.clips <- badf$clips-badf$tax.clips
+SBR.badf$unit <- as.factor(ifelse(SBR.badf$scov.SSU>50,1,0) + ifelse(SBR.badf$scov.LSU>50,2,0)) 
+SBR.badf$unit80 <- as.factor(ifelse(SBR.badf$scov.SSU>80,1,0) + ifelse(SBR.badf$scov.LSU>80,2,0)) 
+levels(SBR.badf$unit) <- c("partial(<25%)","SSU","LSU","Both")
+SBR.badfm <- merge(SBR.LOTU.info%>%filter(S75>0),SBR.badf,by=c("SID","LOTU"),all.x=T)
+
+SXR.clip.mdf <- merge(metadata,SXR.clip.metadata.tsv,by="SID")
+```
+
+basic:
+```{r}
+n50(SBR.badfm$CL)
+mean(table(SBR.badfm$SID[which(SBR.badfm$CL>499)]))
+mean((ddply(SBR.badfm%>%filter(idents>99&CL>499),"SID",summarise,count=length(LOTU)))$count)
+unit80.stat <- ddply(ddply(SBR.badfm%>%filter(CL>499),c("SID","unit80"),summarise,count=length(LOTU)),"unit80",summarise,count=mean(count))
+ggplot(SBR.badf,aes(x=qlen,fill=SID)) +geom_histogram(position="dodge") + scale_x_log10()
+ggplot(badf,aes(x=idents,color=SID)) +geom_density(position="dodge") + scale_x_log10()
+
+badfm$S75.2 <- 2^round(log2(badfm$S75),0)
+
+ggplot(badfm,aes(x=S75,fill=SID)) +geom_histogram(position="dodge") +
+  scale_x_log10() + annotation_logticks(side="b")
+ggplot(badfm,aes(y=idents,x=factor(S75.2),fill=SID)) +geom_boxplot(aes(fill=SID)) +
+  scale_y_continuous(breaks=seq(94,102,1),limits=c(94,100))
+
+ggplot(badfm,aes(x=CL,fill=unit)) +geom_histogram(position="stack",binwidth=50)  + facet_grid(.~SID)
+ggplot(badfm,aes(x=CL,fill=unit)) +geom_histogram(position="stack",binwidth=100) +
+  theme(legend.position = c(0.99,.9),legend.justification = c(1,1))
+```
+
+contigs:
+```{r}
+ggplot(SXR.clip.metadata.tsv%>%filter(SID%in%c("S1","S4")),aes(x=len,color=SID)) + geom_density() + facet_grid(.~SID)
+
+ggplot(SXR.clip.metadata.tsv%>%filter(SID%in%c("S1","S4")),aes(x=len,color=SID)) + geom_density() + facet_grid(.~SID)
+
+```
+
+
+```{r}
+badfm$ident5 <- round(badfm$idents+0.49,)-0.5
+badfm$ident5 <- ifelse(badfm$ident5<95,94.5,badfm$ident5)
+
+ggplot(badfm,aes(x=ident5)) + geom_bar(aes(fill=unit),stat="count",position="stack") + 
+  scale_x_continuous(breaks=seq(94,102,1),limits=c(94,100)) +
+  coord_flip() + facet_grid(.~SID)
+
+badf.stat2 <- ddply(
+  ddply(badfm%>%filter(CL>499),c("SID","ident5"),summarise,count=length(SID)),
+  c("ident5"),summarise,mean.count=mean(count),sd=sd(count))
+badf.stat3 <- ddply(
+  ddply(badfm%>%filter(CL>499),c("SID","ident5","unit"),summarise,count=length(SID)),
+  c("ident5","unit"),summarise,mean.count=mean(count))
+
+ggplot(badf.stat3,aes(x=ident5,y=mean.count)) + geom_bar(aes(fill=unit),stat="identity",position="stack") + 
+  geom_errorbar(data=badf.stat2,aes(ymax=mean.count+sd,ymin=mean.count-sd),width=.1) + 
+  scale_x_continuous(breaks=seq(94,102,1),limits=c(94,100)) +
+  coord_flip()
+```
+
+
+
+compare annotation : mock ref vs. silva
+```{r}
+levels(badfm$tax) <- sub("_"," ",levels(badfm$tax))
+ZS.compare.anno <- merge(badfm,ZS.silva.anno,by=c("SID","LOTU"),all.x=T)
+checkTaxConsitRank <- function(d){
+  tax.x <- unlist(strsplit(as.character(d$tax.x)," "))
+  tax.y <- unlist(strsplit(as.character(d$tax.y)," "))
+  checkLv <- ifelse(tax.x[1]==tax.y[1],1,0) + ifelse(tax.x[2]==tax.y[2],2,0)
+  return(checkLv)
+}
+ZS.compare.anno$consitLv <- as.factor((ddply(ZS.compare.anno[,c("SID","LOTU","tax.x","tax.y")],c("SID","LOTU"),checkTaxConsitRank))$V1)
+levels(ZS.compare.anno$consitLv) <- c("different","genus","species")
+```
+
+```{r}
+ZS.compare.anno$hitDB <- as.factor(ifelse(ZS.compare.anno$scov.SSU==0,0,1) + ifelse(ZS.compare.anno$scov.LSU==0,0,2))
+levels(ZS.compare.anno$hitDB) <- c("SILVA.SSU","SILVA.LSU","SILVA.LSU+SSU")
+
+ZS.compare.anno$reachLimit <- as.factor(ifelse(ZS.compare.anno$scov.ITS>99,T,ifelse(ZS.compare.anno$scov.SSU>99,T,ifelse(ZS.compare.anno$scov.LSU>99,T,0))))
+
+ggplot(ZS.compare.anno,aes(x=ident,y=idents,color=consitLv)) + geom_point()
+ggplot(ZS.compare.anno,aes(x=idents-ident,color=consitLv)) + geom_density()
+
+ggplot(ZS.compare.anno,aes(x=qMapLen,y=lens,color=consitLv)) + geom_point()
+ggplot(ZS.compare.anno,aes(x=bitScore,y=bit,color=consitLv)) + geom_point(alpha=.5)
+ggplot(ZS.compare.anno,aes(x=bitScore,y=bit,color=hitDB,shape=reachLimit)) +
+  geom_abline(slope = 1,intercept = 0, linetype=2,alpha=.5,size=2,color="grey50") +
+  geom_point(alpha=.5) + scale_shape_manual(values=c(16,4))
+  
+ggplot(ZS.compare.anno%>%filter(!is.na(consitLv)),aes(x=idents,color=consitLv)) + geom_density(size=1,alpha=.5) +
+  theme(legend.position = c(0.1,.99),legend.justification = c(0,1)) + facet_grid(hitDB~.)
+#ggplot(ZS.compare.anno,aes(x=qlen,fill=hitDB)) + geom_bar() +facet_grid(.~consitLv) #+ theme(axis.text.x = element_text(angle=90))
+ggplot(ZS.compare.anno,aes(x=bitScore,y=bit,color=mainUnit)) + geom_point(alpha=.5) +facet_grid(.~consitLv)
+
+```
+
+completness of subunits
+```{r}
+ZS.stat.comp <- melt(ZS.compare.anno%>%filter(!is.na(consitLv)),measure.vars = c("ALL","ITS1","SSU","LSU"),variable.name = "subunits", value.name = "completness")
+ZS.stat.comp$qlen.seg <- round(ZS.stat.comp$qlen/500,0)*500
+ggplot(ZS.stat.comp%>%filter(qlen.seg>400&qlen.seg<3500),aes(x=completness,fill=subunits)) + geom_histogram(position="dodge") +
+  facet_grid(qlen.seg~.,scale="free")
+
+```
+
+comapre with mock ref annotation
+```{r}
+zymo.copy.num <- data.frame(species=c("Pseudomonas aeruginosa","Escherichia coli","Salmonella enterica","Lactobacillus fermentum",
+  "Enterococcus faecalis","Staphylococcus aureus","Listeria monocytogenes","Bacillus subtilis","Saccharomyces cerevisiae","Cryptococcus neoformans"),
+  TC16S=c(4.2,10.1,10.4,18.4,9.9,15.5,14.1,17.4,NA,NA),
+  TC16S18S=c(3.6,8.9,9.1,16.1,8.7,13.6,12.4,15.3,9.3,3.3),copyNum=c(4,7,7,5,4,6,6,10,109,60))
+zymo.copy.num$genus <- sapply(strsplit(as.character(zymo.copy.num$species)," "),"[",1)
+selectTax <- c("Pseudomonas aeruginosa","Escherichia coli","Salmonella enterica","Lactobacillus fermentum",
+  "Enterococcus faecalis","Staphylococcus aureus","Listeria monocytogenes","Bacillus subtilis","Saccharomyces cerevisiae","Cryptococcus neoformans")
+
+ZS.qdf <- merge(ZS.prop,ZS.compare.anno,by=c("SID","LOTU"),all.x=T)
+ZS.qdf$species <- sapply(strsplit(as.character(ZS.qdf$taxPath),";"),"[",7)
+ZS.qdf$genus <- sapply(strsplit(as.character(ZS.qdf$taxPath),";"),"[",6)
+
+ZS.qdf$subunit <- as.factor(ifelse(ZS.qdf$scov.ITS>25,1,0)+ifelse(ZS.qdf$scov.SSU>25,2,0)+ifelse(ZS.qdf$scov.LSU>25,4,0))
+ZS.stat <- ddply(ZS.qdf%>%filter(LOTU!='*'),c("SID","rand","tax.x"),summarise,count=sum(count))
+ZS.stat <- ddply(ZS.stat,c("SID","rand"),transform,pct=count/sum(count)*100)
+ZS.stat1 <- merge(ZS.stat,zymo.copy.num[,c("species","TC16S")],by.x="tax.x",by.y="species",all.x=T)
+ggplot(ZS.stat1%>%filter(SID!="Z3"),aes(x=tax.x,y=pct,fill=factor(rand))) + 
+  geom_bar(aes(y=TC16S),fill=NA,color="grey50",stat="identity",position="dodge") +
+  geom_bar(alpha=.5,stat = 'identity', position = 'dodge') +
+  facet_grid(SID~.) + coord_flip()
+
+ZS.stat2 <- ddply(ZS.qdf%>%filter(ident>99.5),c("SID","rand","tax.x"),summarise,count=sum(count))
+ZS.stat2 <- ddply(ZS.stat2,c("SID","rand"),transform,pct=count/sum(count)*100)
+ZS.stat2 <- merge(ZS.stat2,zymo.copy.num[,c("species","TC16S")],by.x="tax.x",by.y="species",all.x=T)
+ggplot(ZS.stat2%>%filter(SID!="Z3"),aes(x=tax.x,y=pct,fill=factor(rand))) + 
+  geom_bar(aes(y=TC16S),fill=NA,color="grey50",stat="identity",position="dodge") +
+  geom_bar(alpha=.5,stat = 'identity', position = 'dodge') +
+  facet_grid(SID~.) + coord_flip()
+
+
+```
+
+```{r}
+ZS.qdf$selectTax <- ifelse(ZS.qdf$species%in%selectTax,as.character(ZS.qdf$species),ifelse(ZS.qdf$genus%in%selectGenus,"Others.in.Genus","Others.above.Genus"))
+
+ZS.stat3 <- ddply(ZS.qdf%>%filter(idents>99.5),c("SID","rand","selectTax"),summarise,count=sum(count))
+ZS.stat3 <- merge(ddply(ZS.stat3,c("SID","rand"),transform, pct=count/sum(count)*100),
+                  zymo.copy.num[,c("species","TC16S")],by.x="selectTax",by.y="species",all.x=T)
+ZS.stat3$TC16S[which(is.na(ZS.stat3$TC16S))] <- 0
+ZS.stat3$pct.delta <- ZS.stat3$pct-ZS.stat3$TC16S
+ggplot(ZS.stat3,aes(x=SID,y=pct,fill=factor(rand))) +geom_bar(stat="identity",position="dodge") +facet_grid(.~selectTax)
+ggplot(ZS.stat3,aes(x=SID,y=pct,fill=factor(rand))) + geom_bar(aes(y=TC16S),fill=NA,color="grey50",stat="identity",position="dodge") +
+  geom_bar(stat="identity",position="dodge",alpha=.5) +facet_grid(.~selectTax)
+
+ZS.mean.df <- ddply(ZS.stat3,c("selectTax"),summarise,sd=sd(pct.delta),pct=mean(pct.delta))
+ZS.mean.df <- ZS.mean.df%>%filter(selectTax%in%selectTax)
+colnames(ZS.mean.df)[1] <- "selectTax"
+
+
+ZS.mean.df$selectTax <- as.factor(as.character(ZS.mean.df$selectTax))
+
+ZS.mean.df <- ZS.mean.df[order(ZS.mean.df$pct),]
+ZS.mean.df$selectTax <- reorder(ZS.mean.df$selectTax,ZS.mean.df$pct,mean)
+ggplot(ZS.mean.df,aes(x=selectTax,y=pct,fill=selectTax)) + geom_hline(yintercept = 0,linetype=2,color="grey50",size=2) +
+  geom_bar(stat = 'identity', position = 'dodge') + geom_errorbar(aes(ymax=pct+sd,ymin=pct-sd),width=.4) + coord_flip() +
+  ylab("delta of quantificatin \nover theoretical value (%)") + guides(fill=F)
+
+selectTax.list <- selectTax
+ggplot(ZS.filter.df.ref%>%filter(selectTax%in%selectTax.list),aes(x=rand,y=pct,fill=selectTax)) + geom_bar(stat = 'identity', position = 'fill')
+
+
+```
+
+```{r}
+ZS.qdf$selectTax <- ifelse(ZS.qdf$genus%in%selectGenus,as.character(ZS.qdf$genus),"Others.above.Genus")
+ZS.qdf$checkLv <- ifelse(ZS.qdf$species%in%selectTax,"Same Sp.",ifelse(ZS.qdf$genus%in%selectGenus,"Same Genus","Others.above.Genus"))
+
+ZS.stat3 <- ddply(ZS.qdf%>%filter(idents>99.5),c("SID","rand","checkLv","selectTax"),summarise,count=sum(count))
+ZS.stat3 <- merge(ddply(ZS.stat3,c("SID","rand"),transform, pct=count/sum(count)*100),
+                  zymo.copy.num[,c("genus","TC16S")],by.x="selectTax",by.y="genus",all.x=T)
+ZS.stat3$TC16S[which(is.na(ZS.stat3$TC16S))] <- 0
+ZS.stat3$pct.delta <- ZS.stat3$pct-ZS.stat3$TC16S
+ggplot(ZS.stat3,aes(x=SID,y=pct,fill=factor(rand))) +geom_bar(stat="identity",position="dodge") +facet_grid(.~selectTax)
+ggplot(ZS.stat3,aes(x=SID,y=pct,fill=factor(rand))) + geom_bar(aes(y=TC16S),fill=NA,color="grey50",stat="identity",position="dodge") +
+  geom_bar(stat="identity",position="dodge",alpha=.5) +facet_grid(.~selectTax)
+
+ZS.mean.df <- ddply(ZS.stat3,c("selectTax"),summarise,sd=sd(pct.delta),pct=mean(pct.delta))
+
+ZS.mean.df1 <- ddply(ddply(ddply(ZS.qdf%>%filter(idents>99.5),c("SID","rand","checkLv","selectTax"),summarise,count=sum(count)),
+                          c("SID","rand","checkLv"),transform, pct=count/sum(count)*100),
+                    c("selectTax","checkLv"),summarise,pct=mean(pct))
+ZS.mean.df1 <- merge(ZS.mean.df1,zymo.copy.num[,c("genus","TC16S")],by.x="selectTax",by.y="genus",all.x=T)
+ZS.mean.df1$pct.delta <- ZS.mean.df1$pct-ZS.mean.df1$TC16S
+
+#ZS.mean.df <- ZS.mean.df%>%filter(selectTax%in%selectTax)
+
+ZS.mean.df$selectTax <- as.factor(as.character(ZS.mean.df$selectTax))
+
+ZS.mean.df <- ZS.mean.df[order(ZS.mean.df$pct),]
+ZS.mean.df$selectTax <- reorder(ZS.mean.df$selectTax,ZS.mean.df$pct,mean)
+ggplot(ZS.mean.df,aes(x=selectTax,y=pct,fill=selectTax)) + geom_hline(yintercept = 0,linetype=2,color="grey50",size=2) +
+  geom_bar(data=ZS.mean.df1,stat = 'identity', position = 'stack') + geom_errorbar(aes(ymax=pct+sd,ymin=pct-sd),width=.4) + coord_flip() +
+  ylab("delta of quantification over theoretical value (%)")
+
+selectTax.list <- selectTax
+ggplot(ZS.filter.df.ref%>%filter(selectTax%in%selectTax.list),aes(x=rand,y=pct,fill=selectTax)) + geom_bar(stat = 'identity', position = 'fill')
+
+```
+
+```{r}
+zymo.copy.num <- data.frame(species=c("Pseudomonas aeruginosa","Escherichia coli","Salmonella enterica","Lactobacillus fermentum",
+  "Enterococcus faecalis","Staphylococcus aureus","Listeria monocytogenes","Bacillus subtilis","Saccharomyces cerevisiae","Cryptococcus neoformans"),
+  TC16S=c(4.2,10.1,10.4,18.4,9.9,15.5,14.1,17.4,NA,NA),
+  TC16S18S=c(3.6,8.9,9.1,16.1,8.7,13.6,12.4,15.3,9.3,3.3),copyNum=c(4,7,7,5,4,6,6,10,109,60))
+
+ZS.qdf$selectTax <- ifelse(ZS.qdf$species%in%selectTax,as.character(ZS.qdf$species),ifelse(ZS.qdf$genus%in%selectGenus,as.character(ZS.qdf$genus),"Others"))
+ZS.stat3 <- ddply(ZS.qdf%>%filter(idents>99.5),c("SID","rand","selectTax"),summarise,count=sum(count))
+ZS.stat3 <- merge(ddply(ZS.stat3,c("SID","rand"),transform, pct=count/sum(count)*100),
+                  zymo.copy.num[,c("species","TC16S")],by.x="selectTax",by.y="species",all.x=T)
+ZS.stat3$pct.delta <- ZS.stat3$pct-ZS.stat3$TC16S
+ggplot(ZS.stat3,aes(x=SID,y=pct,fill=factor(rand))) +geom_bar(stat="identity",position="dodge") +facet_grid(.~selectTax)
+ggplot(ZS.stat3,aes(x=SID,y=pct,fill=factor(rand))) + geom_bar(aes(y=TC16S),fill=NA,color="grey50",stat="identity",position="dodge") +
+  geom_bar(stat="identity",position="dodge",alpha=.5) +facet_grid(.~selectTax)
+
+ZS.mean.df <- ddply(ZS.stat3,c("selectTax"),summarise,sd=sd(pct.delta),pct=mean(pct.delta))
+ZS.mean.df <- ZS.mean.df%>%filter(selectTax%in%selectTax)
+colnames(ZS.mean.df)[1] <- "selectTax"
+
+
+ZS.mean.df$selectTax <- as.factor(as.character(ZS.mean.df$selectTax))
+
+ZS.mean.df <- ZS.mean.df[order(ZS.mean.df$pct),]
+ZS.mean.df$selectTax <- reorder(ZS.mean.df$selectTax,ZS.mean.df$pct,mean)
+ggplot(ZS.mean.df,aes(x=selectTax,y=pct,fill=selectTax)) + geom_hline(yintercept = 0,linetype=2,color="grey50",size=2) +
+  geom_bar(stat = 'identity', position = 'dodge') + geom_errorbar(aes(ymax=pct+sd,ymin=pct-sd),width=.4) + coord_flip() +
+  ylab("delta of quantification over theoretical value (%)")
+
+selectTax.list <- selectTax
+ggplot(ZS.filter.df.ref%>%filter(selectTax%in%selectTax.list),aes(x=rand,y=pct,fill=selectTax)) + geom_bar(stat = 'identity', position = 'fill')
+
+
+```
+
+
+```{r}
+selectGenus <- sapply(strsplit(selectTax," "),"[",1)
+ZS.qdf$selectTax <- ifelse(ZS.qdf$species%in%selectTax,as.character(ZS.qdf$species),ifelse(ZS.qdf$genus%in%selectGenus,as.character(ZS.qdf$genus),"Others"))
+ZS.stat4 <- ddply(ZS.qdf%>%filter(idents>99.5&!is.na(consitLv)),c("SID","rand","consitLv","selectTax"),summarise,count=sum(count))
+ZS.stat4 <- merge(ddply(ZS.stat4,c("SID","rand","consitLv"),transform, pct=count/sum(count)*100),
+                  zymo.copy.num[,c("species","TC16S")],by.x="selectTax",by.y="species",all.x=T)
+ZS.stat4$pct.delta <- ZS.stat4$pct-ZS.stat4$TC16S
+
+ggplot(ZS.stat4,aes(x=selectTax,y=pct,fill=interaction(rand,SID))) +geom_bar(stat="identity",position="dodge") +facet_grid(consitLv~.,scale="free") +
+  coord_flip()
+
+ZS.mean.df.4 <- ddply(ZS.stat4,c("selectTax","consitLv"),summarise,sd=sd(pct.delta),pct=mean(pct.delta))
+ZS.mean.df.4 <- ZS.mean.df.4%>%filter(selectTax%in%selectTax)
+
+ZS.mean.df.4$selectTax <- as.factor(as.character(ZS.mean.df.4$selectTax))
+
+ZS.mean.df.4 <- ZS.mean.df.4[order(ZS.mean.df.4$pct),]
+ZS.mean.df.4$selectTax <- reorder(ZS.mean.df.4$selectTax,ZS.mean.df.4$pct,mean)
+ggplot(ZS.mean.df.4,aes(x=selectTax,y=pct,fill=selectTax)) + geom_hline(yintercept = 0,linetype=2,color="grey50",size=2) +
+  geom_bar(stat = 'identity', position = 'dodge') + geom_errorbar(aes(ymax=pct+sd,ymin=pct-sd),width=.4) + coord_flip() +
+  facet_grid(.~consitLv) + ylab("delta of quantification over theoretical value (%)")
+
+```
+
+
+```{r}
+ZS.filter.df.ref2 <- merge(zymo.copy.num.pair[which(!is.na(zymo.copy.num.pair$count)),c("selectTax","count")],
+                          ZS.stat[which(ZS.stat$subunit!="*"),select.col],by=c("selectTax"))
+#ZS.filter.df.ref2$pct.STANDARD <- ZS.filter.df.ref2$count.x
+ZS.filter.df.ref2 <- ddply(ZS.filter.df.ref2,c("SID","rand","subunit"),transform,pct=count.y/sum(count.y)*100)
+ZS.filter.df.ref2$pct.delta <- ZS.filter.df.ref2$pct - ZS.filter.df.ref2$count.x
+ggplot(ZS.filter.df.ref2,aes(x=SID,y=pct.delta,fill=selectTax,group=selectTax)) + 
+  geom_boxplot()+facet_grid(.~selectTax)
+
+ZS.filter.df.ref2$method <- ifelse(ZS.filter.df.ref2$SID%in%c("Z1","Z2","Z3"),"RCA","LFR")
+ZS.filter.df.ref2.sum <- ddply(ZS.filter.df.ref2,c("selectTax","method","subunit"),summarise,delta.mean=mean(pct.delta),pct.se=sd(pct.delta))
+ggplot(ZS.filter.df.ref2.sum,aes(x=subunit,y=delta.mean,fill=method)) +geom_bar(stat="identity",position="dodge") + 
+  geom_errorbar(aes(ymax=delta.mean+pct.se,ymin=delta.mean-pct.se),width=.2) + 
+  theme(axis.text.x = element_text(angle = -45,hjust=0)) + ylab("Delta of percentage (%)") +
+  facet_grid(.~selectTax)
+```
+
+
+```{r}
+#Z2.anno2 <- merge(Z2.faID,Z2.anno,by="LOTU",all.x=T)
+Z2.prop2 <- merge(Z,Z2.anno2,by="LOTU")
+Z2.stat2 <- ddply(Z2.prop2,"rTax",summarise,count=sum(count))
+top20 <- as.character(Z2.stat2$rTax[rev(order(Z2.stat2$count))[1:13]])
+Z2.stat2$tax20 <- as.character(Z2.stat2$rTax)
+Z2.stat2$tax20 <- ifelse(Z2.stat2$tax20%in%top20,Z2.stat2$tax20,"Others")
+ggplot(Z2.stat2,aes(x="1",y=count,fill=tax20)) + geom_bar(stat = 'identity', position = 'stack')
+
+Z2.filter.df.ref2 <- merge(Z2.stat2,zymo.copy.num,by.x="rTax",by.y="species")
+Z2.filter.df.ref2$prop <- Z2.filter.df.ref2$count/sum(Z2.filter.df.ref2$count)*100
+Z2.filter.df.ref3 <- melt(Z2.filter.df.ref2,measure.vars = c("prop","TC16S"),variable.name = "group",value.name = "pct")
+ggplot(Z2.filter.df.ref3,aes(x=group,y=pct,fill=tax20)) + geom_bar(stat = 'identity', position = 'stack')
+
+```
+
+
+# FUNGI
+
+#close ref
+## map clips and OTUs to zymo ref
+```{bash,eval=FALSE}
+
+
+
+metabbq smk --configfile config.F.yaml -j -npk SAM/{O,S}{4,5,6}/CLIP/all.LOTU.map.merge.anno
+for i in {O,S}{4,5,6};do sed 's/\S\+=//g' SAM/$i/CLIP/all.clust.log|awk -v n=$i '{print n" "$0}' ;done > STAT/CLIP/SFR.clust.log
+
+for i in {O,S}{4,5,6};do sed 's/\S\+=//g' SAM/$i/CLIP/all.LOTU.map.merge.anno|awk -v n=$i '{print n"\t"$0}' ;done > STAT/CLIP/SFR.LOTU.map.merge.anno
+
+
+for i in {4,5,6} ;do SAM=SAM/M$i; for j in {00..02};do echo sh tmp/mock.LOTU.quantification.sh $SAM $j \&;done;done >> tmp/mock.batch.quantification.sh
+
+for i in {4,5,6} ;do SAM=M$i; for j in {00..02};do 
+awk -v s=$SAM -v r=$j '{print s"\t"r"\t"$1"\t"$2"\t"$3}' SAM/$SAM/CLIP/RAND/all.LOTU.bwa.sbb1_$j.p;
+done;done > STAT/CLIP/SFR.rand3.LOTU.bwa.sbb1.p
+
+```
+
+
+
+
+Load data:
+```{r}
+metadata <- read.csv("../../Results/JAN20/metadata.csv")
+
+SFR.LOTU.info <- read.table("../../Results/JAN20/STAT/CLIP/SFR.clust.log",sep=" ", 
+                           col.names = c("SID","LOTU","size","S75","CL","MAXLEN","MEANLEN"))
+
+tools::md5sum("../../Results/JAN20/STAT/CLIP/SFR.LOTU.map.merge.anno")
+SFR.silva.anno <- read.table(
+  md5("../../Results/JAN20/STAT/CLIP/SFR.LOTU.map.merge.anno","688a6dc719dda3dda146c500de137082"), sep="\t",
+   col.names = c("SID","LOTU","tax","idents","lens","mis","gap","bit","qlen","qcov","scov","scov.ITS","scov.SSU","scov.LSU","taxID","rank","taxPath")
+)
+
+
+SFR.prop <- read.table("../../Results/JAN20/STAT/",sep="\t",
+                      col.names = c("SID","rand","count0","count","SOTU"))
+#
+ZS.prop <- read.table("../../Results/JAN20/STAT/OTU/pred.RSUs.bwa.prop.rand",sep="\t",
+                      col.names = c("SID","rand","count","SOTU"))
+
+ZS.test.prop <- read.table("../../Results/JAN20/STAT/CLIP/SFR.rand3.LOTU.bwa.sbb1.p",
+                           col.names = c("SID","rand","count0","count","tax"))
+
+```
+
+#Curation
+```{r}
+SFR.badf <- merge(metadata,SFR.silva.anno,by="SID")
+
+SFR.badf$unit <- as.factor(ifelse(SFR.badf$scov.SSU>25,1,0) + ifelse(SFR.badf$scov.LSU>25,2,0) + ifelse(SFR.badf$scov.ITS>50,4,0))
+SFR.badf$re <- as.factor(ifelse(SFR.badf$scov.SSU>50,1,0) + ifelse(SFR.badf$scov.LSU>50,2,0) + ifelse(SFR.badf$scov.ITS>80,4,0))
+levels(SFR.badf$unit) <- c("partial(<25%)","SSU","LSU","ITS","SSU+ITS","LSU+ITS")
+SFR.badfm <- merge(SFR.LOTU.info%>%filter(S75>0),SFR.badf,by=c("SID","LOTU"),all.x=T)
+```
+
+basic:
+```{r}
+n50(SFR.badfm$CL)
+mean(table(SFR.badfm$SID[which(SFR.badfm$CL>499)]))
+mean((ddply(SFR.badfm%>%filter(idents>99&CL>499),"SID",summarise,count=length(LOTU)))$count)
+unit80.stat <- ddply(ddply(SFR.badfm%>%filter(CL>499),c("SID","unit80"),summarise,count=length(LOTU)),"unit80",summarise,count=mean(count))
+
+ggplot(SFR.badf,aes(x=qlen,fill=SID)) +geom_histogram(position="dodge") + scale_x_log10()
+ggplot(SFR.badf,aes(x=ident,fill=SID)) +geom_histogram(position="dodge") + scale_x_log10()
+
+SFR.badfm$S75.2 <- 2^round(log2(SFR.badfm$S75),0)
+
+ggplot(SFR.badfm,aes(x=S75,fill=SID)) +geom_histogram(position="dodge") +
+  scale_x_log10() + annotation_logticks(side="b")
+ggplot(SFR.badfm,aes(y=ident,x=factor(S75.2),fill=SID)) +geom_boxplot(aes(fill=SID)) +
+  scale_y_continuous(breaks=seq(94,102,1),limits=c(94,100))
+
+ggplot(SFR.badfm,aes(x=CL,fill=unit)) +geom_histogram(position="stack",binwidth=50)  + facet_grid(.~SID)
+ggplot(SFR.badfm%>%filter(CL>499),aes(x=CL,fill=unit)) +geom_histogram(position="stack",binwidth=100) +
+  theme(legend.position = c(0.99,.9),legend.justification = c(1,1))
+```
+
+
+```{r}
+SFR.badfm$ident5 <- round(SFR.badfm$ident+0.49,)-0.5
+SFR.badfm$ident5 <- ifelse(SFR.badfm$ident5<95,94.5,SFR.badfm$ident5)
+
+ggplot(SFR.badfm,aes(x=ident5)) + geom_bar(aes(fill=unit),stat="count",position="stack") + 
+  scale_x_continuous(breaks=seq(94,102,1),limits=c(94,100)) +
+  coord_flip() + facet_grid(.~SID)
+
+SFR.badf.stat2 <- ddply(
+  ddply(SFR.badfm%>%filter(CL>499),c("SID","ident5"),summarise,count=length(SID)),
+  c("ident5"),summarise,mean.count=mean(count),sd=sd(count))
+SFR.badf.stat3 <- ddply(
+  ddply(SFR.badfm%>%filter(CL>499),c("SID","ident5","unit"),summarise,count=length(SID)),
+  c("ident5","unit"),summarise,mean.count=mean(count))
+
+ggplot(SFR.badf.stat3,aes(x=ident5,y=mean.count)) + geom_bar(aes(fill=unit),stat="identity",position="stack") + 
+  geom_errorbar(data=SFR.badf.stat2,aes(ymax=mean.count+sd,ymin=mean.count-sd),width=.1) + 
+  scale_x_continuous(breaks=seq(94,102,1),limits=c(94,100)) +
+  coord_flip()
+```
+
+
+
+compare annotation : mock ref vs. silva
+```{r}
+levels(SFR.badfm$tax) <- gsub("_"," ",levels(SFR.badfm$tax))
+levels(SFR.silva.anno$tax) <- gsub("_"," ",levels(SFR.silva.anno$tax))
+
+SFR.compare.anno <- SFR.badfm #merge(SFR.badfm,SFR.silva.anno,by=c("SID","LOTU"),all.x=T)
+
+SFR.compare.anno$consitLv <- as.factor((ddply(SFR.compare.anno[,c("SID","LOTU","tax.x","tax.y")],c("SID","LOTU"),checkTaxConsitRank))$V1)
+levels(SFR.compare.anno$consitLv) <- c("different","genus","species")
+```
+
+```{r}
+SFR.compare.anno$hitDB <- as.factor(ifelse(SFR.compare.anno$scov.ITS==0,0,1)  + ifelse(SFR.compare.anno$scov.SSU==0,0,2) + 
+  ifelse(SFR.compare.anno$scov.LSU==0,0,4))
+levels(SFR.compare.anno$hitDB) <- c("UNITE.ITS","SILVA.SSU","SILVA.LSU","SILVA.LSU+UNITE.ITS")
+
+SFR.compare.anno$reachLimit <- as.factor(ifelse(SFR.compare.anno$scov.ITS>99,1,0)+ifelse(SFR.compare.anno$scov.SSU>99,2,0)+ifelse(SFR.compare.anno$scov.LSU>99,4,0))
+
+
+ggplot(SFR.compare.anno,aes(x=ident,y=idents,color=consitLv)) + geom_point()
+ggplot(SFR.compare.anno,aes(x=idents-ident,color=consitLv)) + geom_density()
+
+ggplot(SFR.compare.anno,aes(x=qMapLen,y=lens,color=consitLv)) + geom_point()
+ggplot(SFR.compare.anno,aes(x=bitScore,y=bit,color=factor(reachLimit))) + geom_point(alpha=.5)
+ggplot(SFR.compare.anno,aes(x=bitScore,y=bit,color=factor(hitDB))) + geom_point(alpha=.5)
+ggplot(SFR.compare.anno,aes(x=bitScore,y=bit,color=hitDB,shape=reachLimit)) +
+  geom_abline(slope = 1,intercept = 0, linetype=2,alpha=.5,size=2,color="grey50") +
+  geom_point(alpha=.5) + scale_shape_manual(values=c(16,4))
+
+ggplot(SFR.compare.anno%>%filter(!is.na(consitLv)),aes(x=idents,color=consitLv)) + geom_density(size=1,alpha=.5) +
+  theme(legend.position = c(0.9,.98),legend.justification = c(1,1)) + facet_grid(hitDB~.)
+ggplot(SFR.compare.anno,aes(x=mainUnit,fill=mainUnit)) + geom_bar() +facet_grid(.~consitLv) 
+ggplot(SFR.compare.anno,aes(x=bitScore,y=bit,color=mainUnit,linetype=reachLimit)) + geom_point(alpha=.5) +facet_grid(.~consitLv)
+
+```
+
+completness of subunits
+```{r}
+ZS.stat.comp <- melt(ZS.compare.anno%>%filter(!is.na(consitLv)),measure.vars = c("ALL","ITS1","SSU","LSU"),variable.name = "subunits", value.name = "completness")
+ZS.stat.comp$qlen.seg <- round(ZS.stat.comp$qlen/500,0)*500
+ggplot(ZS.stat.comp%>%filter(qlen.seg>400&qlen.seg<3500),aes(x=completness,fill=subunits)) + geom_histogram(position="dodge") +
+  facet_grid(qlen.seg~.,scale="free")
+
+```
+
+
+
+#FIN.

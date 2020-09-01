@@ -1,5 +1,5 @@
 ---
-title: "JAN20 DATA ASSESSMENT: annotation part"
+title: "AUG20 DATA ASSESSMENT: annotation part"
 author: "Chao"
 date: "3/22/2020"
 output: 
@@ -108,12 +108,12 @@ md5sum STAT/CLIP/SFR.bead.metadata.tsv
 
 # map clips and OTUs to zymo ref
 ```{bash,eval=FALSE}
-#mkdir -p ../../Results/JAN20/STAT/ANNO
+#mkdir -p ../../Results/AUG20/STAT/ANNO
 
 # Subunits detection
 metabbq smk --configfile config.F.yaml -j -npk SAM/{S,O}{4,5,6}/CLIP/all.barrnap.sum.tsv
 for i in {S,O}{4,5,6};do awk -v n=$i '{print n"\t"$0}' SAM/$i/CLIP/all.barrnap.sum.tsv;done > STAT/CLIP/SFR.all.barrnap.sum.tsv
-metabbq smk -j --configfile config.F.yaml -pk SAM/{S,O}{4,5,6}/CLIP/all.ITS.positions.sum.tsv
+metabbq smk -j --configfile config.F.yaml -npk SAM/{S,O}{4,5,6}/CLIP/all.ITS.positions.sum.tsv
 for i in {S,O}{4,5,6};do awk -v n=$i '{print n"\t"$0}' SAM/$i/CLIP/all.ITS.positions.sum.tsv;done > STAT/CLIP/SFR.all.ITS.positions.sum.tsv
 
 
@@ -121,38 +121,9 @@ for i in {S,O}{4,5,6};do awk -v n=$i '{print n"\t"$0}' SAM/$i/CLIP/all.ITS.posit
 metabbq smk --configfile config.F.yaml -j -npk SAM/{S,O}{4,5,6}/ANNO/CLIP.map.merge.bead.anno
 for i in {S,O}{4,5,6};do awk -v n=$i '{print n"\t"$0}' SAM/$i/ANNO/CLIP.map.merge.bead.anno;done > STAT/ANNO/SFR.CLIP.map.merge.bead.anno
 
-metabbq smk --configfile config.F.yaml -j -npk SAM/{S,O}{4,5,6}/ANNO/LOTU.map.merge.anno
-for i in {S,O}{4,5,6};do sed 's/\S\+=//g' SAM/$i/ANNO/LOTU.map.merge.anno|awk -v n=$i '{print n"\t"$0}' ;done > STAT/ANNO/SFR.LOTU.map.merge.anno
-
-
 #SNV
-metabbq smk --force -j -pk SAM/{S,O}{4,5,6}/CLIP/clips2REF.bcf.tsv
+metabbq smk -j -npk SAM/{S,O}{4,5,6}/CLIP/clips2REF.bcf.tsv
 for i in {S,O}{4,5,6};do awk -v n=$i '{print n"\t"$0}' SAM/$i/CLIP/clips2REF.bcf.tsv;done > STAT/CLIP/SFR.clips2REF.bcf.tsv
-
-
-#quantification
-metabbq smk -j -npk SAM/Z{2,3}/PROFILE/LOTU.bwa.prop
-
-# write to tmp/mock.LOTU.quantification.sh
-SAM=$1
-j=$2
-mkdir -p $SAM/PROFILE/RAND
-bwa mem -t 8 -h 10000 $SAM/CLIP/all.LOTU.fa $SAM/clean/fastp.sort.{1,2}_$j.fq.gz \
-| samtools view -b |tee $SAM/PROFILE/RAND/all.LOTU.bwa.map_$j.bam \
-| samtools view | metabbq beadStat sam -i - -o $SAM/PROFILE/RAND/LOTU.bwa.stat_$j -v
-metabbq beadStat sam2b -i $SAM/PROFILE/RAND/LOTU.bwa.stat_$j -o $SAM/PROFILE/RAND/LOTU.bwa.sbb1_$j -v
-#
-
-for i in {1,2,3} ;do SAM=SAM/Z$i; for j in {00..02};do echo sh tmp/mock.LOTU.quantification.sh $SAM $j \&;done;done > tmp/mock.batch.quantification.sh
-
-mkdir -p STAT/PROFILE
-for i in {1,2,3} ;do SAM=Z$i; for j in {00..02};do 
-awk -v s=$SAM -v r=$j '{print s"\t"r"\t"$1"\t"$2"\t"$3}' SAM/$SAM/PROFILE/RAND/LOTU.bwa.sbb1_$j.p;
-done;done > STAT/PROFILE/SFR.LOTU.bwa.sbb1_rand3
-
-for i in {S,O}{4,5,6};do metabbq diversityEst -e 0 -s $i -t 100 -d SAM/$i -m SAM/SFR -o SAM/$i/CLIP/divEst.tsv & done
-for i in {S,O}{4,5,6};do awk -v n=$i '{print n"\t"$0}' SAM/$i/CLIP/divEst.tsv;done > STAT/CLIP/SFR.divEst.tsv
-
 
 ```
 
@@ -163,36 +134,29 @@ Load data:
 ```{r}
 metadata <- read.csv("../../Results/JAN20/metadata.csv")
 SFR.bead.metadata.df <- read.table(
-  md5("../../Results/JAN20/STAT/CLIP/SFR.bead.metadata.tsv","a9a3fe759d99eed99ff2b1f650a57b6f"),
+  md5("../../Results/AUG20/STAT/CLIP/SFR.bead.metadata.tsv","b2c8be0f40e7041052566e8a761be87c"),
   sep="\t",col.names = c("SID","BID","BLen","contigs","clips")
 )
 
 SFR.barrnap.gff3.tsv <- read.table(
-  md5("../../Results/JAN20/STAT/CLIP/SFR.all.barrnap.sum.tsv","a70ff3081d2807ed39a4e65cee3b9da0"),
-  col.names = c("SID","BID","len16S","pct16S","len18S","pct18S","len5.8S","pct5.8S","len23S","pct23S","len28S","pct28S","unit")
+  md5("../../Results/AUG20/STAT/CLIP/SFR.all.barrnap.sum.tsv","73b061a4db0d4c0272bf9d02e28fe7a7"),
+  col.names = c("SID","BID","len18S","pct18S","len5.8S","pct5.8S","len28S","pct28S","unit")
 )
 
 SFR.itsx.pos.tsv <- read.table(
-  md5("../../Results/JAN20/STAT/CLIP/SFR.all.ITS.positions.sum.tsv","baa34b6e503c33694a66d7af75c7c30e"),
+  md5("../../Results/AUG20/STAT/CLIP/SFR.all.ITS.positions.sum.tsv","6a706c499884bc5f2dc0c6bfb121a5d6"),
   col.names = c("SID","BID","SSU","ITS1","S5.8","ITS2","LSU","scoreA","scoreB")
 )
 
 SFR.silva.bead.anno <- read.table(
-  md5("../../Results/JAN20/STAT/ANNO/SFR.CLIP.map.merge.bead.anno","453324bd2239d0794ef2fce82fe422e3"),comment.char = "",sep="\t", quote = "", 
-  fill = NA,col.names = c("SID","BINFO","tax","ident","mapLen","mismatch","gap","qs","qe","ss","se","eval","bitscore","qlen","slen","strands","qDesc","sDesc","covs","TopAnno","TANum","TALv","score1st","score2nd","ident1st","ident2nd","TANames","hybCt","hybLen","hybPct")
+  md5("../../Results/AUG20/STAT/ANNO/SFR.CLIP.map.merge.bead.anno","3ed4e2810b59a9fdddd3c815e05ba5ef"),comment.char = "",sep="\t", quote = "", 
+  fill = NA,col.names = c("SID","BINFO","tax","ident","mapLen","mismatch","gap","qs","qe","ss","se","eval","bitscore","qlen","slen","strands","qDesc","sDesc","covs","taxID","TopAnno","TANum","TALv","score1st","score2nd","ident1st","ident2nd","TANames","hybCt","hybLen","hybPct")
 )
 
-# SFR.silva.LOTU.anno <- read.table(md5("../../Results/JAN20/STAT/ANNO/SFR.LOTU.map.merge.anno",
-#       "5d079afbd752d1f2de3ee7fb2d2c1e52"), sep="\t",comment.char = "",
-#    col.names = c("SID","LOTU","tax","idents","lens","mis","gap","bit","qlen","qcov","scov","scov.ITS","scov.SSU","scov.LSU","taxID","rank","taxPath")
-# )
+SFR.clip2REF.bcf <- read.table(md5("../../Results/AUG20/STAT/CLIP/SFR.clips2REF.bcf.tsv",
+  "6a8c0db4ddc0bf6fc2a895624798dc9f"), sep="\t",col.names = c("SID","CHR","POS","REF","ALT","QUAL","TYPE","IDV","DP","DR","DA","BQR","BQA","MQR","MQA","MDR","MDA","BQB","MQSB"))
 # 
-SFR.clip2REF.bcf <- read.table(md5("../../Results/JAN20/STAT/CLIP/SFR.clips2REF.bcf.tsv",
-  "844ff306eaa5985685ef6885d32fb5fa"), sep="\t",col.names = c("SID","CHR","POS","REF","ALT","QUAL","TYPE","IDV","DP","DR","DA","BQR","BQA","MQR","MQA","MDR","MDA","BQB","MQSB"))
-# 
-# SFR.prop <- read.table(md5("../../Results/JAN20/STAT/PROFILE/SFR.LOTU.bwa.sbb1_rand3","12564411f41155ab37b0a07f92d0c57c"),sep="\t",
-#                       col.names = c("SID","rand","count0","count","LOTU"))
-# #
+
 ```
 
 
@@ -240,7 +204,7 @@ ggplot(SFR.itsx.df,aes(x=BLen)) +geom_histogram(aes(fill=unitB),position="stack"
 
 # subunits detection (barrnap)
 ```{r}
-SFR.F.subunit.df <- SFR.barrnap.gff3.tsv[,c(1,2,5:8,11,12,13)]
+SFR.F.subunit.df <- SFR.barrnap.gff3.tsv
 SFR.F.subunit.df$unit <- factor(SFR.F.subunit.df$unit,levels = seq(0,7))
 SFR.subunits.df <- merge(SFR.bdmeta.df,SFR.F.subunit.df,by=c("SID","BID"),all.x=T)
 SFR.subunits.df$unit[which(is.na(SFR.subunits.df$unit))] <- 0
@@ -284,12 +248,11 @@ SFR.slv.bead.df <- cbind(sbinfodf[,1,F],SFR.silva.bead.anno[,-c(2,16:19)],covdf[
 
 SFR.slv.bead.all.df <- merge(SFR.bdmeta.df,SFR.slv.bead.df,by=c("SID","BID"),all.x=T)
 
-SFR.slv.bead.all.df$unit <- factor(
-  ifelse(SFR.slv.bead.all.df$LSU>5,1,0) + ifelse(SFR.slv.bead.all.df$ITS>25,2,0) + ifelse(SFR.slv.bead.all.df$SSU>5,4,0),
-  levels=seq(0,7)
-)
-
-levels(SFR.slv.bead.all.df$unit) <- c("partial(<50%)","LSU","ITS","LSU+ITS","SSU","LSU+SSU","SSU+ITS","ALL")
+SFR.slv.bead.all.df$unit <- ifelse(SFR.slv.bead.all.df$LSU>5,1,0) + 
+  ifelse(SFR.slv.bead.all.df$ITS>25,2,0) + ifelse(SFR.slv.bead.all.df$SSU>5,4,0)
+SFR.slv.bead.all.df$unit[which(is.na(SFR.slv.bead.all.df$unit))] <- -1
+SFR.slv.bead.all.df$unit <- as.factor(SFR.slv.bead.all.df$unit)
+levels(SFR.slv.bead.all.df$unit) <- c("Missing","partial(<50%)","LSU","ITS","LSU+ITS","SSU","LSU+SSU","SSU+ITS","ALL")
 
 SFR.slv.bead.all.df$hitDB <- factor(
   ifelse(SFR.slv.bead.all.df$SSU>0,1,0) + ifelse(SFR.slv.bead.all.df$ITS>0,2,0) + ifelse(SFR.slv.bead.all.df$LSU>0,4,0),
@@ -301,16 +264,20 @@ levels(SFR.slv.bead.all.df$hitDB) <- c("None","SILVA.SSU","UNITE","SILVA.SSU&UNI
 ```
 
 ```{r}
-SFR.slv.bead.all.df$identG <- ifelse(SFR.slv.bead.all.df$ident == 100,100,ifelse(SFR.slv.bead.all.df$ident >=99.5,99.5,
-       ifelse(SFR.slv.bead.all.df$ident <97,96,round(SFR.slv.bead.all.df$ident-0.5,0))))
+SFR.slv.bead.all.df$identG <- ifelse(
+  is.na(SFR.slv.bead.all.df$ident),0,
+  ifelse(SFR.slv.bead.all.df$ident == 100,100,
+         ifelse(SFR.slv.bead.all.df$ident >=99.5,99.5,
+       ifelse(SFR.slv.bead.all.df$ident <97,96,round(SFR.slv.bead.all.df$ident-0.5,0)))))
 pct.identG <- ddply(SFR.slv.bead.all.df,"identG",summarise,count=length(BID))
 pct.identG$pct <- pct.identG$count/sum(pct.identG$count)
 pct.identG$lab <- sprintf("%.2f%%",100*pct.identG$pct)
-pct.identG$identG <- factor(pct.identG$identG,levels=c(96,97,98,99,99.5,100))
-ggplot(pct.identG,aes(x="X",y=pct,fill=identG)) +geom_bar(stat="identity") + coord_polar(theta = 'y')+ 
+pct.identG$identG <- factor(pct.identG$identG,levels=c(0,96,97,98,99,99.5,100))
+levels(pct.identG$identG) <- c("Missing",96,97,98,99,99.5,100)
+ggplot(pct.identG,aes(x="X",y=pct,fill=identG)) + geom_bar(stat="identity") +
   geom_text(aes(y=cumsum(rev(pct)) - rev(pct)/2, x = sum(pct)*1.55, label = rev(lab))) +
   scale_fill_brewer(palette="Blues") +labs(x = '', y = '', title = '') +
-  theme_classic() + theme(axis.text = element_blank())
+  coord_polar(theta = 'y') + theme_classic() + theme(axis.text = element_blank())
 
 ggplot(SFR.slv.bead.all.df,aes(x=BLen)) +geom_histogram(aes(fill=hitDB),position="stack",binwidth=100) +
   geom_density(aes(x=BLen,y=..density..*(-2e7),color=hitDB,linetype=SID),size=1,alpha=.7) +
@@ -319,8 +286,8 @@ ggplot(SFR.slv.bead.all.df,aes(x=BLen)) +geom_histogram(aes(fill=hitDB),position
   #theme(legend.position = c(0.99,.9),legend.justification = c(1,1)) +
   scale_x_continuous(breaks=seq(0,10000,1000),limits=c(0,6000))
 
-
 pct.unit <- ddply(SFR.slv.bead.all.df,c("SID","unit"),summarise,count=length(BID))
+pct.unit$unit <- factor(pct.unit$unit,levels=)
 pct.unit <- ddply(pct.unit,c("SID"),transform,pct=count/sum(count))
 pct.unit$lab <- sprintf("%.2f%%",100*pct.unit$pct)
 ggplot(pct.unit,aes(x="X",y=pct,fill=unit)) +geom_bar(stat="identity") + coord_polar(theta = 'y')+ 
@@ -334,7 +301,7 @@ ggplot(pct.unit,aes(x="X",y=pct,fill=unit)) +geom_bar(stat="identity") + coord_p
 
 
 ```{r}
-combine.unit.df <- merge(merge(SFR.itsx.df,SFR.F.subunit.df,by=c("SID","BID"),all.x=T),SFR.slv.bead.df[,c(1,2,27:29)],by=c("SID","BID"),all.x=T)
+combine.unit.df <- merge(merge(SFR.itsx.df,SFR.F.subunit.df,by=c("SID","BID"),all.x=T),SFR.slv.bead.df[,c(1,2,28:30)],by=c("SID","BID"),all.x=T)
 
 #barrnap
 combine.unit.df$len18S[which(is.na(combine.unit.df$len18S))] <- 0
@@ -651,14 +618,14 @@ done|uniq -c > STAT/KRAKEN/SFR.reads2SFR.bead.stat
 
 ** load**
 ```{r}
-ranks.map <- read.table("../../Results/JAN20/SAM/SFR/KRAKEN/db/data/ranks.tsv",comment.char = "",
+ranks.map <- read.table("../../Results/AUG20/SAM/SFR/KRAKEN/db/data/ranks.tsv",comment.char = "",
                         sep="\t",col.names=c("domain","taxID"))
 ```
 
 ```{r}
 #species
 SFR.r2SFR.species.bracken <- read.table(
-  md5("../../Results/JAN20/STAT/KRAKEN/SFR.reads2SFR.bracken","5268517b9cc700e739bd85a35c5350aa"),
+  md5("../../Results/AUG20/STAT/KRAKEN/SFR.reads2SFR.bracken","5268517b9cc700e739bd85a35c5350aa"),
   as.is = T,quote = "",comment.char = "", sep="\t",
   col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
 SFR.r2SFR.species.bracken$SAM <- substr(SFR.r2SFR.species.bracken$SID,1,1)
