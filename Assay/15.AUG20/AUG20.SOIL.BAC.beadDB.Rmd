@@ -18,7 +18,7 @@ library(configr)
 library(tools)
 library(stringi)
 library(pheatmap)
-library(doSNOW)
+#library(doSNOW)
 
 source("../13.JAN20/lib.R")
 ```
@@ -41,21 +41,31 @@ for i in {S,O}{1,2,3};do
 done > SAM/SBR/ANNO/CLIP.map.merge.bead.anno
 
 #remove singleton clips
-metabbq smk -j -npk SAM/SBR/CLIP/id90def4.clust.fa
+#metabbq smk -j -npk SAM/SBR/CLIP/id90def4.clust.fa
+# pick no-hybridized & domain detected seqs
+metabbq smk -j -npk SAM/{S,O}{1,2,3}/CLIP/validSeqs.clust.fa
+for i in {S,O}{1,2,3};do 
+  awk -v n=$i '/>BI/{gsub(">",">"n)}{print}' SAM/$i/CLIP/validSeqs.clust.fa;
+done|pigz -p 8 > SAM/SBR/CLIP/validSeqs.clust.fa.gz
 
-metabbq IO makeclade -i SAM/SBR/CLIP/id90def4.clust.fa -o SAM/SBR/CLIP/id90def4.clade.uc -t 48 -v
+metabbq IO makeclade -i SAM/SBR/CLIP/validSeqs.clust.fa -o SAM/SBR/CLIP/validSeqs.clade.uc -t 40 -v
 
 # with anno
-metabbq IO clade2tree -i SAM/SBR/CLIP/id90def4.clust.fa -a SAM/SBR/ANNO/CLIP.map.merge.clip.anno \
- -d $LFR/Source/REF/KRAKEN2/SUS -s SAM/SBR/CLIP/id90def4.clade.uc -o SAM/SBR/KRAKEN/BEAD -v
+metabbq IO clade2tree -i SAM/SBR/CLIP/validSeqs.clust.fa -a SAM/SBR/ANNO/CLIP.map.merge.clip.anno \
+ -d $LFR/Source/REF/KRAKEN2/SUS -s SAM/SBR/CLIP/validSeqs.clade.uc -o SAM/SBR/KRAKEN/BEAD -p tax -v
+
+mv SAM/SBR/KRAKEN/BEAD/data/added.txt SAM/SBR/KRAKEN/BEAD/data/bead.txt 
+cat $LFR/Source/REF/KRAKEN2/SUS/data/added.txt SAM/SBR/KRAKEN/BEAD/data/bead.txt|sort \
+>  SAM/SBR/KRAKEN/BEAD/data/added.txt
+
 
 # rm SAM/SBR/KRAKEN/BEAD/{database*,*.k2d} 
 metabbq buildKraken2db.sh SAM/SBR/KRAKEN/BEAD 4
 
-perl -e 'while(<>){chomp;@s=split /\t/; @t=split /;/,$s[0]; 
-if($s[4]=~/(\S+)__(\S+) (\S+)/){$sp="$2 $3"}else{$sp=$s[4]};
-print "$t[0]\t$s[1]\t$s[2]\t$s[3]\t$s[4]\t$sp\n"}' SAM/SBR/KRAKEN/BEAD/taxonomy/paths.txt > SAM/SBR/KRAKEN/BEAD/data/topRank.map
-####
+perl -e 'while(<>){chomp;@s=split /\t/; @t=split /;/,$s[0];
+for(@t){$_=~/^(\w+)__(.+)$/;$H{$1}=$2}; print "$s[1]\t$s[2]\t$s[3]\t$s[4]\t$s[5]\t$s[6]\t";
+print "$H{domain}\t$H{phylum}\t$H{genus}\t$H{species}\n"}' SAM/SBR/KRAKEN/BEAD/taxonomy/paths.txt > SAM/SBR/KRAKEN/BEAD/data/topRank.map &
+
 # mapping to merged db
 for i in {S,O}{1,2,3,7,8,9};do
 mkdir -p SAM/$i/KRAKEN
@@ -67,7 +77,7 @@ metabbq smk --config kk2_db="BEAD" -j -npk SAM/{S,O}{1,2,3,7,8,9}/KRAKEN/reads2B
 
 for i in {S,O}{1,2,3,7,8,9};do 
   awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2BEAD.bead.bracken;
-done > STAT/KRAKEN/SBR.reads2BEAD.bead.bracken
+done > SAM/SBR/KRAKEN/reads2BEAD.bead.bracken
 
 #no-barcode
 for i in {S,O}{1,2,3,7,8,9};do
@@ -77,7 +87,7 @@ done
 
 for i in {S,O}{1,2,3,7,8,9};do 
   awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2BEAD.read.bracken;
-done > STAT/KRAKEN/SBR.reads2BEAD.read.bracken
+done > SAM/SBR/KRAKEN/reads2BEAD.read.bracken
 
 # other ranks
 for i in {S,O}{1,2,3,7,8,9};do for j in {P,F,G};do for b in {read,bead};do
@@ -90,76 +100,372 @@ done > STAT/KRAKEN/SBR.reads2BEAD.$b.$j.bracken & done;done
 
 ```
 
-### Read Bracken
+## print taxname tree for merging to open-refs
+```{bash,eval=FALSE}
+####
+# print taxname tree for merging to open-refs
+cp SAM/SBR/KRAKEN/BEAD/data/added.txt SAM/SBR/KRAKEN/BEAD+/data/added.txt
+
+cat $LFR/Source/REF/KRAKEN2/SUS/library/added.fna SAM/SBR/KRAKEN/BEAD/library/added.fna \
+> SAM/SBR/KRAKEN/BEAD+/library/added.fna
+#
+
+cat $LFR/Source/REF/KRAKEN2/SUS/data/added.acc_taxid SAM/SBR/KRAKEN/BEAD/data/added.acc_taxid \
+|sort > SAM/SBR/KRAKEN/BEAD+/data/added.acc_taxid
+
+# rm SAM/SBR/KRAKEN/BEAD+/{database*,*.k2d} 
+metabbq buildKraken2db.sh SAM/SBR/KRAKEN/BEAD+ 4
+
+perl -e 'while(<>){chomp;@s=split /\t/; @t=split /;/,$s[0]; $s[4] =~ s/\S+__//;
+print "$t[0]\t$s[1]\t$s[2]\t$s[3]\t$s[4]\t$sp\n"}' SAM/SBR/KRAKEN/BEAD+/taxonomy/paths.txt \
+> SAM/SBR/KRAKEN/BEAD+/data/topRank.map &
+
+for i in {S,O}{1,2,3,7,8,9};do
+ln -s ../../SBR/KRAKEN/BEAD+ SAM/$i/KRAKEN/BEAD+;
+done
+
+metabbq smk --config kk2_db="BEAD+" -j -npk SAM/{S,O}{1,2,3,7,8,9}/KRAKEN/reads2BEAD+.bead.bracken
+
+####
+for i in {S,O}{1,2,3,7,8,9};do 
+  awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2BEAD+.bead.bracken;
+done > SAM/SBR/KRAKEN/reads2BEAD+.bead.bracken
+
+#no-barcode
+for i in {S,O}{1,2,3,7,8,9};do
+  bracken -d SAM/$i/KRAKEN/BEAD+ -i SAM/$i/KRAKEN/reads2BEAD+.kreport2 \
+  -o SAM/$i/KRAKEN/reads2BEAD+.read.bracken > SAM/$i/KRAKEN/reads2BEAD+.read.breport2 &
+done
+
+for i in {S,O}{1,2,3,7,8,9};do 
+  awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2BEAD+.read.bracken;
+done > SAM/SBR/KRAKEN/reads2BEAD+.read.bracken
+
+```
+
+## print taxname tree for competitable to open-refs (BEAD-)
+```{bash,eval=FALSE}
+####
+mkdir -p SAM/SBR/KRAKEN/BEAD-/{data,library}
+
+metabbq IO clade2tree -i SAM/SBR/CLIP/validSeqs.clust.fa -a SAM/SBR/ANNO/CLIP.map.merge.clip.anno \
+ -d $LFR/Source/REF/KRAKEN2/SUS -s SAM/SBR/CLIP/validSeqs.clade.uc -o SAM/SBR/KRAKEN/BEAD- -p tax -v
+
+# rm SAM/SBR/KRAKEN/BEAD+/{database*,*.k2d} 
+metabbq buildKraken2db.sh SAM/SBR/KRAKEN/BEAD- 4
+
+perl -e 'while(<>){chomp;@s=split /\t/; @t=split /;/,$s[0]; $s[4] =~ s/\S+__//;
+print "$t[0]\t$s[1]\t$s[2]\t$s[3]\t$s[4]\t$sp\n"}' SAM/SBR/KRAKEN/BEAD-/taxonomy/paths.txt \
+> SAM/SBR/KRAKEN/BEAD-/data/topRank.map &
+
+for i in {S,O}{1,2,3,7,8,9};do
+ln -s ../../SBR/KRAKEN/BEAD- SAM/$i/KRAKEN/BEAD-;
+done
+
+metabbq smk --config kk2_db="BEAD-" -j -npk SAM/{S,O}{1,2,3,7,8,9}/KRAKEN/reads2BEAD-.bead.bracken
+
+####
+for i in {S,O}{1,2,3,7,8,9};do 
+  awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2BEAD-.bead.bracken;
+done > SAM/SBR/KRAKEN/reads2BEAD-.bead.bracken
+```
+
+## test cutoff for bead level of kraken2 table
+```{bash,eval=FALSE}
+for i in {S,O}{1,2,3,4,5,6};do
+awk '($5>0.9&&$8<10){print}' SAM/$i/KRAKEN/reads2BEAD.k2.bead \
+| metabbq kraken-report --d=SAM/SBR/KRAKEN/BEAD - > SAM/$i/KRAKEN/reads2BEAD.p90.breport &
+done
+for i in {S,O}{1,2,3,4,5,6};do
+bracken -d SAM/SBR/KRAKEN/BEAD -i SAM/$i/KRAKEN/reads2BEAD.p90.breport \
+-o SAM/$i/KRAKEN/reads2BEAD.p90.bracken -l S > SAM/$i/KRAKEN/reads2BEAD.p90.breport2 &
+done
+# summary
+for i in {S,O}{1,2,3,4,5,6};do
+  awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2BEAD.p90.bracken;
+done > ../../Results/AUG20/STAT/KRAKEN/SXR.reads2BEAD.p90.bracken
 
 
+```
+
+### stat pub database sequences info
+```{bash,eval=FALSE}
+perl -e 'while(<>){chomp;@s=split;$H{$s[1]}{$s[2]}++};foreach $i (sort {$a<=>$b} keys %H){
+  $c=0;$m="";foreach $u (sort keys %{$H{$i}}){$c+=$H{$i}{$u};$m=($H{$i}{$u}>$H{$i}{$m})?$u:$m};
+  print "$i\t$m\t$H{$i}{$m}\t$c\n";
+}' < ../../Results/AUG20/etc/supp.acc_taxid > ../../Results/AUG20/etc/supp.acc_taxid.stat
+
+# sum SUS results
+for i in {S,O}{1,2,3,7,8,9};do 
+  awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2SUS.bead.bracken;
+done > SAM/SBR/KRAKEN/reads2SUS.bead.bracken
+
+for i in {S,O}{4,5,6,A,B,C};do 
+  awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2SUS.bead.bracken;
+done > SAM/SFR/KRAKEN/reads2SUS.bead.bracken
+```
+
+### observed OTUs estimation
+1. link dbs
+```{bash,eval=FALSE}
+# mapping to above dbs
+for db in {SILVA138.1SSU,SILVA138.1LSU,UNITE8.2,SUS};do
+ for s in {S,O}{1,2,3,4,5,6,BR,7,8,9,A,B,C,FR};do
+ ln -sf $LFR/Source/REF/KRAKEN2/$db SAM/$s/KRAKEN/
+ done;
+done
+
+```
+2. run bracken ( with fungi together )
+```{bash,eval=FALSE}
+for db in {SILVA138.1SSU,SILVA138.1LSU,UNITE8.2,SUS,BEAD+SUS};do
+for s in {S,O}{1,2,3,4,5,6,7,8,9,A,B,C}; do
+ echo metabbq smk --config kk2_db=$db -j -npk SAM/$s/KRAKEN/reads2$db.bead.bracken
+done;done > Soil.bracken.batch.sh
+
+
+# Sum the profile
+for i in {S,O}{1,2,3,7,8,9};do 
+  awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2SUS.bead.bracken;
+done > STAT/KRAKEN/SBR.reads2SUS.bead.bracken
+for i in {S,O}{4,5,6,A,B,C};do 
+  awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2SUS.bead.bracken;
+done > STAT/KRAKEN/SFR.reads2SUS.bead.bracken
+
+# SBR and SFR
+for db in {SILVA138.1SSU,SILVA138.1LSU,UNITE8.2,SUS,BEAD+SUS};do
+for s in {SBR,SFR}; do
+ echo metabbq smk --config kk2_db=$db -j -npk SAM/$s/KRAKEN/reads2$db.bead.bracken
+done;done > Soil.SX.bracken.batch.sh
+
+```
+
+```{bash,eval=FALSE}
+for db in {SILVA138.1SSU,SILVA138.1LSU,UNITE8.2,SUS,BEAD,,BEAD+SUS};do
+for i in {S,O}{1..6};do 
+  line=`wc -l SAM/$i/KRAKEN/reads2BEAD.kraken2|cut -d " " -f1` && \
+  mkdir -p SAM/$i/KRAKEN/rand && \
+  for db in {SILVA138.1SSU,SILVA138.1LSU,UNITE8.2,SUS,BEAD};do
+    file="SAM/$i/KRAKEN/reads2$db.kraken2";
+    if [ -e $file ];then
+      time=`expr $line / 10000000`;
+      t=1; while(( $t <= $time ));do
+        num=`expr $t \* 10000000`;
+        
+        for r in {0..9};do
+          seed=`expr $line + $t + $r`;
+          echo metabbq randomlyPickLines.pl -s $seed -n $num -m $line -v -i $file \| metabbq IO kk2prf -d SAM/$i/KRAKEN/$db -i - \| metabbq kraken-report --d=SAM/$i/KRAKEN/$db - -v \> SAM/$i/KRAKEN/rand/$db\_$num.$r.bead.kreport2
+          echo bracken -d SAM/$i/KRAKEN/$db -i SAM/$i/KRAKEN/rand/$db\_$num.$r.bead.kreport2  -o SAM/$i/KRAKEN/rand/$db\_$num.$r.bead.bracken -l S
+        done
+        let "t++";
+      done;
+    fi
+  done > tmp/$i.step2randBracken.sh &
+done 
+
+```
+After run. Stat:
+```{bash,eval=FALSE}
+for s in {S,O}{1,2,3,4,5,6,7,8,9,A,B,C};do for i in SAM/$s/KRAKEN/rand/*.bead.kreport2;do 
+perl -e 'exit unless $ARGV[0]=~/SAM\/(\S+)\/KRAKEN\/rand\/(\S+)_(\d+)\.(\d+)\.bead\.kreport2$/;
+($s,$d,$t,$r)=($1,$2,$3,$4); open I,"<$ARGV[0]"; $c=0; while(<I>){ @s=split;next if $s[1] < 10;
+if($s[3] eq "S"){;$c++; $sum += $s[1]}elsif($s[3] eq "U"){$u=$s[0]};
+};close I; print join("\t",$s,$d,$t,$r,$c,$sum,$u)."\n" ' $i;
+done  > SAM/$s/KRAKEN/rand.tax.count & done
+
+#patch if any failed
+for i in {S,O}{1,2,3,4,5,6,7,8,9,A,B,C};do 
+ awk -v i=$i '$5==0{print $1".*"$2"_"$3"."$4" tmp/"i".step2randBracken.sh"}' SAM/$i/KRAKEN/rand.tax.count | xargs -n2 grep;
+done > patch.step2randBracken.sh
+
+# or
+for db in {SILVA138.1SSU,SILVA138.1LSU,UNITE8.2,SUS,BEAD};do
+  for sam in {S,O}{1,2,3,7,8,9};do
+    metabbq IO observedOTUs -i SAM -d $db -o SAM/$sam/KRAKEN/$db.bead.sp.otu.count $sam &
+  done;
+done
+
+# accumulated stat
+mkdir -p SAM/SBR/KRAKEN/rand
+for db in {SILVA138.1SSU,SILVA138.1LSU,UNITE8.2,SUS,BEAD};do
+  for rep in {0..9};do
+    metabbq IO observedOTUs -i SAM -d $db -r $rep -o SAM/SBR/KRAKEN/rand/$db\_$rep.SR.otu.count S{1,2,3} &
+    metabbq IO observedOTUs -i SAM -d $db -r $rep -o SAM/SBR/KRAKEN/rand/$db\_$rep.SL.otu.count S{7,8,9} &
+    metabbq IO observedOTUs -i SAM -d $db -r $rep -o SAM/SBR/KRAKEN/rand/$db\_$rep.OR.otu.count O{1,2,3} &
+    metabbq IO observedOTUs -i SAM -d $db -r $rep -o SAM/SBR/KRAKEN/rand/$db\_$rep.OL.otu.count O{7,8,9} &
+  done;
+done
+
+# accumulated with specific size combined
+mkdir -p SAM/SBR/KRAKEN/rand
+for db in {SILVA138.1SSU,SILVA138.1LSU,UNITE8.2,SUS,BEAD};do
+  for size in {1..10}0000000;do
+    metabbq IO observedOTUs -i SAM -d $db -s $size -o SAM/SBR/KRAKEN/rand/SRS.$db\_$size.otu.count S{1,2,3} &
+    metabbq IO observedOTUs -i SAM -d $db -s $size -o SAM/SBR/KRAKEN/rand/SLS.$db\_$size.otu.count S{7,8,9} &
+    metabbq IO observedOTUs -i SAM -d $db -s $size -o SAM/SBR/KRAKEN/rand/ORS.$db\_$size.otu.count O{1,2,3} &
+    metabbq IO observedOTUs -i SAM -d $db -s $size -o SAM/SBR/KRAKEN/rand/OLS.$db\_$size.otu.count O{7,8,9} &
+  done;
+done
+
+#sum to 1 file
+cat SAM/{S,O}{1,2,3,7,8,9}/KRAKEN/*.bead.sp.otu.count > STAT/KRAKEN/SBR.idvd.rand.observedOTUs.count
+md5sum STAT/KRAKEN/SBR.idvd.rand.observedOTUs.count
+cat SAM/SBR/KRAKEN/rand/*.{S,O}{R,L}.otu.count > STAT/KRAKEN/SBR.cum.rand.observedOTUs.count
+md5sum STAT/KRAKEN/SBR.cum.rand.observedOTUs.count
+cat SAM/SBR/KRAKEN/rand/{S,O}{R,L}S.*.otu.count > STAT/KRAKEN/SBR.cumSize.rand.observedOTUs.count
+md5sum STAT/KRAKEN/SBR.cumSize.rand.observedOTUs.count
+
+```
+md5: `1fbd728359c21761bdb4f50fdbce2b10`
+md5: `6cd485af30cde3804a9cbe5e9591cdff`
+md5: `3c79ebaed0517886fadf7085d415e6b8`
+
+# load and curation
 ```{r}
-BEAD.B.topRank.map <- read.table("../../Results/AUG20/SAM/SBR/KRAKEN/BEAD/data/topRank.map",
-  comment.char = "",quote="",sep="\t",col.names=c("domain","taxID","RANK","clade","anno","spName"))
-BEAD.F.topRank.map <- read.table("../../Results/AUG20/SAM/SFR/KRAKEN/BEAD/data/topRank.map",
-  comment.char = "",quote="",sep="\t",col.names=c("domain","taxID","RANK","clade","anno","spName"))
+if(file.exists("../../Results/AUG20/STAT/SXR.r2BEAD.multi.sp.load.RData")){
+  load(md5("../../Results/AUG20/STAT/SXR.r2BEAD.multi.sp.load.RData",
+           "19fb96bf08163847130757d0a7bef233"))
+}else{
+  BEAD.B.topRank.map <- read.table("../../Results/AUG20/SAM/SBR/KRAKEN/BEAD/data/topRank.map",
+    comment.char = "",quote="",sep="\t",fill=NA,
+    col.names=c("taxID","RANK","clade","members","name","PBA","domain","phylum","genus","species"))
+  BEAD.F.topRank.map <- read.table("../../Results/AUG20/SAM/SFR/KRAKEN/BEAD/data/topRank.map",
+    comment.char = "",quote="",sep="\t",
+    col.names=c("taxID","RANK","clade","members","name","PBA","domain","phylum","genus","species"))
+  acc.group.info <- read.table("../../Results/AUG20/etc/supp.acc_taxid.stat",col.names = c("taxID","db","hit","all"))
+  ref.topRank.map <- rbind(
+    cbind(CREF="BAC",BEAD.B.topRank.map),
+    cbind(CREF="FNG",BEAD.F.topRank.map)
+  )
+  ref.topRank.map <- merge(ref.topRank.map,acc.group.info[,1:2],by="taxID",all.x=T)
+  ref.topRank.map$name[which(ref.topRank.map$name=="")] <- "Unknown"
+  
+  #rank level: S
+  SBR.r2BEAD.species.read.bracken <- read.table(
+    md5("../../Results/AUG20/SAM/SBR/KRAKEN/reads2BEAD.read.bracken","9181aa6329ad7d4f92807425a11179dd"),
+    as.is = T,quote = "",comment.char = "", sep="\t",
+    col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
+  
+  SBR.r2BEAD.species.bead.bracken <- read.table(
+    md5("../../Results/AUG20/SAM/SBR/KRAKEN/reads2BEAD.bead.bracken","95764fe91f7ded3d64fd212caacd32d6"),
+    as.is = T,quote = "",comment.char = "", sep="\t",
+    col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
+  
+  SFR.r2BEAD.species.read.bracken <- read.table(
+    md5("../../Results/AUG20/SAM/SFR/KRAKEN/reads2BEAD.read.bracken","da815b4165fd470a9128b94b1daaf1c8"),
+    as.is = T,quote = "",comment.char = "", sep="\t",
+    col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
+  
+  SFR.r2BEAD.species.bead.bracken <- read.table(
+    md5("../../Results/AUG20/SAM/SFR/KRAKEN/reads2BEAD.bead.bracken","d51bef47db7f31a6edf2788b49a243b6"),
+    as.is = T,quote = "",comment.char = "", sep="\t",
+    col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
+  
+  #open-ref
+  SBR.r2SUS.species.bead.bracken <- read.table(
+    md5("../../Results/AUG20/SAM/SBR/KRAKEN/reads2SUS.bead.bracken","95764fe91f7ded3d64fd212caacd32d6"),
+    as.is = T,quote = "",comment.char = "", sep="\t",
+    col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
+  
+  SFR.r2SUS.species.bead.bracken <- read.table(
+    md5("../../Results/AUG20/SAM/SFR/KRAKEN/reads2SUS.bead.bracken","d51bef47db7f31a6edf2788b49a243b6"),
+    as.is = T,quote = "",comment.char = "", sep="\t",
+    col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
+  
+  SBR.r2SUSP.species.bead.bracken <- read.table(
+    md5("../../Results/AUG20/SAM/SBR/KRAKEN/reads2BEAD+.bead.bracken","9ccaad116caa45f45a01fd9c09701823"),
+    as.is = T,quote = "",comment.char = "", sep="\t",
+    col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
+  
+  SFR.r2SUSP.species.bead.bracken <- read.table(
+    md5("../../Results/AUG20/SAM/SFR/KRAKEN/reads2BEAD+.bead.bracken","cabdd2a7abd531a79990bf4deb70ab30"),
+    as.is = T,quote = "",comment.char = "", sep="\t",
+    col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
+  
+  SBR.r2BEAD.species.bracken <- rbind(
+    cbind(CREF="BAC",tech="READ",SBR.r2BEAD.species.read.bracken),
+    cbind(CREF="BAC",tech="BEAD",SBR.r2BEAD.species.bead.bracken),
+    cbind(CREF="BAC",tech="D+S",SBR.r2SUSP.species.bead.bracken),
+    cbind(CREF="BAC",tech="SUS",SBR.r2SUS.species.bead.bracken),
+    
+    cbind(CREF="FNG",tech="READ",SFR.r2BEAD.species.read.bracken),
+    cbind(CREF="FNG",tech="BEAD",SFR.r2BEAD.species.bead.bracken),
+    cbind(CREF="FNG",tech="D+S",SFR.r2SUSP.species.bead.bracken),
+    cbind(CREF="FNG",tech="SUS",SFR.r2SUS.species.bead.bracken)
+  )
+  
+  SBR.r2BEAD.species.bracken$UID <- paste0(
+    substr(SBR.r2BEAD.species.bracken$CREF,1,1),
+    substr(SBR.r2BEAD.species.bracken$tech,1,1),
+    SBR.r2BEAD.species.bracken$SID)
+  
+  SBR.r2BEAD.species.bracken$SAM <- substr(SBR.r2BEAD.species.bracken$SID,1,1)
+  SBR.r2BEAD.species.bracken$REP <- substr(SBR.r2BEAD.species.bracken$SID,2,2)
+  SBR.r2BEAD.species.bracken$LIB <- ifelse(SBR.r2BEAD.species.bracken$REP%in%c(1,2,3,4,5,6),"RCA","NORCA")
+  SBR.r2BEAD.species.bracken$REP <- as.factor(SBR.r2BEAD.species.bracken$REP)
+  levels(SBR.r2BEAD.species.bracken$REP) <- c("A","B","C","A","B","C","A","B","C","A","B","C")
+  
+  SBR.r2BEAD.species.bracken <- ddply(
+    SBR.r2BEAD.species.bracken,c("UID"),transform,
+    pct.k=kraken_assigned_reads/sum(kraken_assigned_reads),
+    pct.a=added_reads/sum(added_reads),
+    pct=new_est_reads/sum(new_est_reads))
+  
+  SBR.r2BEAD.b.sp.more <- merge(SBR.r2BEAD.species.bracken,ref.topRank.map,by=c("taxID","CREF"),all.x=T)
 
-ref.topRank.map <- rbind(
-  cbind(CREF="BAC",BEAD.B.topRank.map),
-  cbind(CREF="FNG",BEAD.F.topRank.map)
-)
-levels(ref.topRank.map$anno)[which(levels(ref.topRank.map$anno)=="")] <- "Unknown"
-#ref.topRank.map$anno[which(ref.topRank.map$anno=="")] <- "Unknown"
+  sFun <- function(d){
+    res <- ddply(
+      d,c("CREF","tech","SID","rank","UID","SAM","REP","LIB","RANK","domain","phylum","genus","species"),
+      summarise, kraken_assigned_reads=sum(kraken_assigned_reads),new_est_reads=sum(new_est_reads),
+      pct=sum(pct),pct.k=sum(pct.k))
+    return(res)
+  }
+  cl <- makeCluster(6, type = "SOCK")
+  registerDoSNOW(cl)
+  SBR.r2BEAD.b.sp.tax <- ddply(SBR.r2BEAD.b.sp.more,c("UID"),sFun,.parallel=T)
+  stopCluster(cl)
+  save(SBR.r2BEAD.species.bracken,SBR.r2BEAD.b.sp.more,SBR.r2BEAD.b.sp.tax,
+       file="../../Results/AUG20/STAT/SXR.r2BEAD.multi.sp.load.RData")
+}
 
-#rank level: S
-SBR.r2BEAD.species.read.bracken <- read.table(
-  md5("../../Results/AUG20/STAT/KRAKEN/SBR.reads2BEAD.read.bracken","16af327dc3af4b9614a9f51d230304f9"),
-  as.is = T,quote = "",comment.char = "", sep="\t",
-  col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
+# supp.
+SXR.reads2BEAD.p90.bracken <- read.table(
+    md5("../../Results/AUG20/STAT/KRAKEN/SXR.reads2BEAD.p90.bracken","6a97c743c1f64399898e7bb1d1fd5cbe"),
+    as.is = T,quote = "",comment.char = "", sep="\t",
+    col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
+SXR.reads2BEAD.p90.bracken$CREF <- ifelse(grepl("[123]",SXR.reads2BEAD.p90.bracken$SID),"BAC","FNG")
+SXR.reads2BEAD.p90.bracken$tech <- "90Pct"
+SXR.reads2BEAD.p90.bracken$UID <- paste0(
+  substr(SXR.reads2BEAD.p90.bracken$CREF,1,1),
+  substr(SXR.reads2BEAD.p90.bracken$tech,1,1),
+  SXR.reads2BEAD.p90.bracken$SID)
 
-SBR.r2BEAD.species.bead.bracken <- read.table(
-  md5("../../Results/AUG20/STAT/KRAKEN/SBR.reads2BEAD.bead.bracken","a88bb67cdb704018d3740178e3bb7609"),
-  as.is = T,quote = "",comment.char = "", sep="\t",
-  col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
+SXR.reads2BEAD.p90.bracken$SAM <- substr(SXR.reads2BEAD.p90.bracken$SID,1,1)
+SXR.reads2BEAD.p90.bracken$REP <- substr(SXR.reads2BEAD.p90.bracken$SID,2,2)
+SXR.reads2BEAD.p90.bracken$LIB <- ifelse(SXR.reads2BEAD.p90.bracken$REP%in%c(1,2,3,4,5,6),"RCA","NORCA")
+SXR.reads2BEAD.p90.bracken$REP <- as.factor(SXR.reads2BEAD.p90.bracken$REP)
+levels(SXR.reads2BEAD.p90.bracken$REP) <- c("A","B","C","A","B","C","A","B","C","A","B","C")
 
-SFR.r2BEAD.species.read.bracken <- read.table(
-  md5("../../Results/AUG20/STAT/KRAKEN/SFR.reads2BEAD.read.bracken","49beb3ef1b0183132496fe69ccfbea63"),
-  as.is = T,quote = "",comment.char = "", sep="\t",
-  col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
-
-SFR.r2BEAD.species.bead.bracken <- read.table(
-  md5("../../Results/AUG20/STAT/KRAKEN/SFR.reads2BEAD.bead.bracken","cf19c790a2275dbc47b1866d7b4492ff"),
-  as.is = T,quote = "",comment.char = "", sep="\t",
-  col.names = c("SID","name","taxID","rank","kraken_assigned_reads","added_reads","new_est_reads","fraction_total_reads"))
-
-
-SBR.r2BEAD.species.bracken <- rbind(
-  cbind(CREF="BAC",tech="READ",SBR.r2BEAD.species.read.bracken),
-  cbind(CREF="BAC",tech="BEAD",SBR.r2BEAD.species.bead.bracken),
-  cbind(CREF="FNG",tech="READ",SFR.r2BEAD.species.read.bracken),
-  cbind(CREF="FNG",tech="BEAD",SFR.r2BEAD.species.bead.bracken)
-)
-SBR.r2BEAD.species.bracken$UID <- paste0(
-  substr(SBR.r2BEAD.species.bracken$CREF,1,1),
-  substr(SBR.r2BEAD.species.bracken$tech,1,1),
-  SBR.r2BEAD.species.bracken$SID)
-
-SBR.r2BEAD.species.bracken$SAM <- substr(SBR.r2BEAD.species.bracken$SID,1,1)
-SBR.r2BEAD.species.bracken$REP <- substr(SBR.r2BEAD.species.bracken$SID,2,2)
-SBR.r2BEAD.species.bracken$LIB <- ifelse(SBR.r2BEAD.species.bracken$REP%in%c(1,2,3,4,5,6),"RCA","NORCA")
-SBR.r2BEAD.species.bracken$REP <- as.factor(SBR.r2BEAD.species.bracken$REP)
-levels(SBR.r2BEAD.species.bracken$REP) <- c("A","B","C","A","B","C","A","B","C","A","B","C")
-SBR.r2BEAD.species.bracken$tax <- sapply(strsplit(as.character(SBR.r2BEAD.species.bracken$name),"__"),"[",2)
-SBR.r2BEAD.species.bracken$tax <- reorder(SBR.r2BEAD.species.bracken$tax,SBR.r2BEAD.species.bracken$fraction_total_reads,sum)
-
-SBR.r2BEAD.species.bracken <- ddply(
-  SBR.r2BEAD.species.bracken,c("UID"),transform,
+SXR.reads2BEAD.p90.bracken <- ddply(
+  SXR.reads2BEAD.p90.bracken,c("UID"),transform,
   pct.k=kraken_assigned_reads/sum(kraken_assigned_reads),
   pct.a=added_reads/sum(added_reads),
   pct=new_est_reads/sum(new_est_reads))
 
-SBR.r2BEAD.b.sp.more <- merge(SBR.r2BEAD.species.bracken,ref.topRank.map,by=c("taxID","CREF"),all.x=T)
-SBR.r2BEAD.b.sp.tax <- ddply(SBR.r2BEAD.b.sp.more,
-  c("CREF","domain","tech","SID","rank","UID","SAM","REP","LIB","RANK","spName"),summarise,
-  kraken_assigned_reads=sum(kraken_assigned_reads),new_est_reads=sum(new_est_reads),
-  pct=sum(pct),pct.k=sum(pct.k))
+```
 
-SBR.r2BEAD.b.sp.tax$spName <- droplevels(SBR.r2BEAD.b.sp.tax$spName)
+# basic stat
+```{r}
+count.stat <- SBR.r2BEAD.b.sp.tax%>%group_by(UID,CREF,SAM,tech,REP,LIB)%>%
+  summarise(observe=length(species),beads=sum(kraken_assigned_reads))
+ggplot(count.stat%>%filter(tech=="BEAD"),aes(x=SAM,y=beads)) + 
+  geom_boxplot() + geom_jitter() +
+  facet_grid(.~CREF+tech+LIB)
+```
+
+View content:
+```{r}
+SBR.r2BEAD.b.sp.tax$spName <- factor(SBR.r2BEAD.b.sp.tax$species)
 top20tax <- rev(levels(reorder(SBR.r2BEAD.b.sp.tax$spName,SBR.r2BEAD.b.sp.tax$pct,min)))[1:20]
 
 SBR.r2BEAD.species.b.count <- ddply(SBR.r2BEAD.b.sp.tax,c("UID"),summarise,observed=length(which(new_est_reads>10)))
@@ -171,68 +477,250 @@ SBR.r2BEAD.b.sp.tax$tax20[which(SBR.r2BEAD.b.sp.tax$name=="UNCLASSIFIED")] <- "U
 SBR.r2BEAD.species.b.stat <- ddply(SBR.r2BEAD.b.sp.tax,c("CREF","SAM","tech","LIB","SID","UID","tax20"),summarise,pct=sum(pct))
 SBR.r2BEAD.species.b.stat$taxOrder <- reorder(SBR.r2BEAD.species.b.stat$tax20,SBR.r2BEAD.species.b.stat$pct,min)
 
-```
-
-
-```{r}
 ggplot(SBR.r2BEAD.species.b.stat,aes(x=taxOrder,y=pct,fill=tech,color=LIB)) + geom_point() + 
   facet_grid(.~tech+CREF) + scale_y_log10()
 ggplot(SBR.r2BEAD.species.b.stat,aes(x=taxOrder,y=pct,fill=UID)) + geom_bar(stat="identity",position="dodge") + coord_flip() + facet_grid(.~SAM) + scale_y_log10()
-ggplot(SBR.r2BEAD.species.b.stat,aes(x=UID,y=pct,fill=taxOrder)) + geom_bar(stat="identity",position="fill")
+ggplot(SBR.r2BEAD.species.b.stat,aes(x=UID,y=pct,fill=taxOrder)) +
+  geom_bar(color="grey50",size=.1,stat="identity",position="fill") +
+  facet_grid(.~CREF+tech,scale="free") + 
+  theme(axis.text.x = element_text(angle=-45,vjust=0))
 ggplot(SBR.r2BEAD.species.b.stat%>%filter(!tax20%in%c("Others","bacterium")),aes(x=SID,y=pct,fill=taxOrder)) + 
-  geom_bar(stat="identity",position="stack") +facet_grid(.~CREF+tech,scale="free")
+  geom_bar(color="grey50",size=.1,stat="identity",position="stack") +facet_grid(.~CREF+tech,scale="free")
 
 ```
+## reads variation
+```{r}
+SBR.r2BEAD.b.sp.more$PBA_support <- ifelse(SBR.r2BEAD.b.sp.more$members>0,T,F)
+SBR.r2BEAD.b.sp.more$findAnno <- ifelse(grepl("CLADE",SBR.r2BEAD.b.sp.more$name.x),"miss","found")
+repduciableNames <- ddply(SBR.r2BEAD.b.sp.more%>%filter(tech=="D+S"&LIB=="RCA"),c("CREF","SAM","taxID"),
+                          transform,max=max(new_est_reads))
+repduciableNames <- repduciableNames%>%filter(max>10)
+SXR.sp.rep.count.df <- dcast(SBR.r2BEAD.b.sp.more%>%filter(LIB=="RCA"&tech!="READ"),
+  CREF+tech+LIB+SAM+taxID+name.x+domain+phylum+findAnno+PBA_support~REP,
+  value.var=c("kraken_assigned_reads"),fill=0,fun.aggregate = sum)
+
+tAB <- SXR.sp.rep.count.df[,-13]; colnames(tAB)[11:12] <- c("RepX","RepY")
+tAC <- SXR.sp.rep.count.df[,-12]; colnames(tAC)[11:12] <- c("RepX","RepY")
+tBC <- SXR.sp.rep.count.df[,-11]; colnames(tBC)[11:12] <- c("RepX","RepY")
+SXR.sp.rep.count.dfs <- rbind(
+  cbind(rep="AB",tAB),cbind(rep="AC",tAC),cbind(rep="BC",tBC))
+
+ggplot(SXR.sp.rep.count.dfs,aes(x=RepX,y=RepY,color=findAnno)) + geom_point(alpha=.1) + 
+  facet_grid(LIB+SAM~CREF+tech) + scale_x_log10() + scale_y_log10() 
+```
+```{r}
+SXR.sp.rep.count.NR.df <- dcast(SBR.r2BEAD.b.sp.more%>%filter(LIB=="NORCA"&tech!="READ"),
+  CREF+tech+LIB+SAM+taxID+name.x+domain+phylum+findAnno+PBA_support~REP,
+  value.var=c("kraken_assigned_reads"),fill=0,fun.aggregate = sum)
+
+tAB <- SXR.sp.rep.count.NR.df[,-13]; colnames(tAB)[11:12] <- c("RepX","RepY")
+tAC <- SXR.sp.rep.count.NR.df[,-12]; colnames(tAC)[11:12] <- c("RepX","RepY")
+tBC <- SXR.sp.rep.count.NR.df[,-11]; colnames(tBC)[11:12] <- c("RepX","RepY")
+SXR.sp.rep.count.NR.dfs <- rbind(
+  cbind(rep="AB",tAB),cbind(rep="AC",tAC),cbind(rep="BC",tBC))
+
+ggplot(SXR.sp.rep.count.NR.dfs,aes(x=RepX,y=RepY,color=findAnno)) + geom_point(alpha=.1) + 
+  facet_grid(LIB+SAM~CREF+tech) + scale_x_log10() + scale_y_log10() 
+```
+
+### compare pct & pct.k
+```{r}
+SXR.sp.rep.abun.df <- SBR.r2BEAD.b.sp.more%>%filter(LIB=="RCA"&tech!="READ")
+SXR.sp.rep.abun.dfm <- melt(SXR.sp.rep.abun.df,measure.vars = c("pct","pct.k","pct.a"),
+                            variable.name = "kk2Method",value.name = "pct")
+SXR.sp.rep.abun.dfd <- dcast(SXR.sp.rep.abun.dfm,
+  CREF+tech+kk2Method+SAM+taxID+name.x+domain+phylum+findAnno+PBA_support~REP,
+  value.var=c("pct"),fill=0,fun.aggregate = sum)
+
+tAB <- SXR.sp.rep.abun.dfd[,-13]; colnames(tAB)[11:12] <- c("RepX","RepY")
+tAC <- SXR.sp.rep.abun.dfd[,-12]; colnames(tAC)[11:12] <- c("RepX","RepY")
+tBC <- SXR.sp.rep.abun.dfd[,-11]; colnames(tBC)[11:12] <- c("RepX","RepY")
+SXR.sp.rep.abun.dfs <- rbind(
+  cbind(rep="AB",tAB),cbind(rep="AC",tAC),cbind(rep="BC",tBC))
+
+ggplot(SXR.sp.rep.abun.dfs%>%filter(LIB=="RCA"),aes(x=RepX,y=RepY,color=findAnno)) + geom_point(alpha=.1) + 
+  facet_grid(SAM+tech~CREF+kk2Method) + scale_x_log10() + scale_y_log10() 
+```
+# species with PBA support (counts)
+```{r}
+name.x.PBAspt <- unique((SBR.r2BEAD.b.sp.more%>%filter(tech!="BEAD"&LIB=="RCA"&PBA_support==T))$name.x)
+SXR.SUS.sp.rep.df <- SXR.sp.rep.count.dfs%>%filter(tech!="READ"&LIB=="RCA")
+SXR.SUS.sp.rep.df$PBA_support[which(SXR.SUS.sp.rep.df$tech=="SUS"&SXR.SUS.sp.rep.df$name.x%in%name.x.PBAspt)] <- T
+SXR.SUS.sp.rep.df$PBA_support[which(is.na(SXR.SUS.sp.rep.df$PBA_support))] <- F
+SXR.SUS.sp.rep.df$set <- factor(paste0(SXR.SUS.sp.rep.df$findAnno,SXR.SUS.sp.rep.df$PBA_support),
+                                levels=c("foundFALSE","missTRUE","foundTRUE"))
+levels(SXR.SUS.sp.rep.df$set)<-c("SILVA sp. ref seqs","PBAs without sp. info","SILVA sp. + PBAs")
+SXR.SUS.sp.rep.stat <- ddply(SXR.SUS.sp.rep.df,c("CREF","tech","set"),summarise,cor=cor(RepX,RepY,method="s"))
+
+ggplot(SXR.SUS.sp.rep.df,aes(x=RepX,y=RepY)) + geom_point(aes(color=set),alpha=.1) + 
+  geom_text(data=SXR.SUS.sp.rep.stat,aes(x=1e1,y=1e5,label=paste0("r=",round(cor,2)))) +
+  facet_grid(CREF~tech+set) + scale_x_log10() + scale_y_log10() 
+```
+# species with PBA support (pct.k)
+```{r}
+SXR.PBA.sp.rep.df <- SXR.sp.rep.abun.dfs%>%filter(tech%in%c("BEAD","SUS"))
+SXR.PBA.sp.rep.df$PBA_support[which(SXR.PBA.sp.rep.df$name.x%in%name.x.PBAspt)] <- T
+SXR.PBA.sp.rep.df$PBA_support[which(is.na(SXR.PBA.sp.rep.df$PBA_support))] <- F
+SXR.PBA.sp.rep.use.df <- SXR.PBA.sp.rep.df%>%filter(!(tech=="SUS"&PBA_support==T))
+SXR.PBA.sp.rep.use.df$set <- factor(paste0(SXR.PBA.sp.rep.use.df$findAnno,SXR.PBA.sp.rep.use.df$PBA_support),
+                                levels=c("foundTRUE","missTRUE", "foundFALSE"))
+levels(SXR.PBA.sp.rep.use.df$set)<-c("PBAs found taxon.","PBAs without taxon. info","SILVA taxon that PBA not covered")
+
+SXR.PBA.sp.rep.stat <- ddply(
+  SXR.PBA.sp.rep.use.df%>%filter(kk2Method=="pct.k"),c("CREF","tech","set"),summarise,
+  cor=cor(RepX,RepY,method="s"),sp=length(unique(name.x)))
+
+ggplot(SXR.PBA.sp.rep.use.df%>%filter(kk2Method=="pct.k"),aes(x=RepX,y=RepY)) + geom_point(aes(color=set),alpha=.1) + 
+  geom_text(data=SXR.PBA.sp.rep.stat,aes(x=1e-4,y=1e-1,label=paste0(sp," nodes at sp. level\nr=",round(cor,2)))) +
+  facet_grid(CREF~tech+set) + scale_x_log10() + scale_y_log10() + theme_bw()
+```
+```{r}
+SXR.PBA.sp.rep.df <- SXR.sp.rep.abun.dfs%>%filter(tech=="D+S")
+SXR.PBA.sp.rep.df$PBA_support[which(SXR.PBA.sp.rep.df$name.x%in%name.x.PBAspt)] <- T
+SXR.PBA.sp.rep.df$PBA_support[which(is.na(SXR.PBA.sp.rep.df$PBA_support))] <- F
+SXR.PBA.sp.rep.use.df <- SXR.PBA.sp.rep.df%>%filter(!(tech=="SUS"&PBA_support==T))
+SXR.PBA.sp.rep.use.df$set <- factor(paste0(SXR.PBA.sp.rep.use.df$findAnno,SXR.PBA.sp.rep.use.df$PBA_support),
+                                levels=c("foundTRUE","missTRUE", "foundFALSE"))
+levels(SXR.PBA.sp.rep.use.df$set)<-c("PBAs found taxon.","PBAs without taxon. info","SILVA taxon that PBA not covered")
+
+SXR.PBA.sp.rep.stat <- ddply(
+  SXR.PBA.sp.rep.use.df%>%filter(kk2Method=="pct.k"),c("CREF","tech","set"),summarise,
+  cor=cor(RepX,RepY,method="s"),sp=length(unique(name.x)))
+
+ggplot(SXR.PBA.sp.rep.use.df%>%filter(kk2Method=="pct.k"),aes(x=RepX,y=RepY)) + geom_point(aes(color=set),alpha=.1) + 
+  geom_text(data=SXR.PBA.sp.rep.stat,aes(x=1e-4,y=1e-1,label=paste0(sp," nodes at sp. level\nr=",round(cor,2)))) +
+  facet_grid(CREF~tech+set) + scale_x_log10() + scale_y_log10() + theme_bw()
+```
+### remove uncultured
+```{r}
+SXR.PBA.sp.rep.cul.df <- SXR.sp.rep.abun.dfs%>%filter(tech=="D+S"&!grepl("uncuture",name.x))
+SXR.PBA.sp.rep.cul.df$PBA_support[which(SXR.PBA.sp.rep.cul.df$name.x%in%name.x.PBAspt)] <- T
+SXR.PBA.sp.rep.cul.df$PBA_support[which(is.na(SXR.PBA.sp.rep.cul.df$PBA_support))] <- F
+SXR.PBA.sp.rep.cul.use.df <- SXR.PBA.sp.rep.cul.df%>%filter(!(tech=="SUS"&PBA_support==T))
+SXR.PBA.sp.rep.cul.use.df$set <- factor(paste0(SXR.PBA.sp.rep.cul.use.df$findAnno,SXR.PBA.sp.rep.cul.use.df$PBA_support),
+                                levels=c("foundTRUE","missTRUE", "foundFALSE"))
+levels(SXR.PBA.sp.rep.cul.use.df$set)<-c("PBAs found taxon.","PBAs without taxon. info","SILVA taxon that PBA not covered")
+
+SXR.PBA.sp.rep.cul.stat <- ddply(
+  SXR.PBA.sp.rep.cul.use.df%>%filter(kk2Method=="pct.k"),c("CREF","tech","set"),summarise,
+  cor=cor(RepX,RepY,method="s"),sp=length(unique(name.x)))
+
+ggplot(SXR.PBA.sp.rep.cul.use.df%>%filter(kk2Method=="pct.k"),aes(x=RepX,y=RepY)) + geom_point(aes(color=set),alpha=.1) + 
+  geom_text(data=SXR.PBA.sp.rep.cul.stat,aes(x=1e-4,y=1e-1,label=paste0(sp," nodes at sp. level\nr=",round(cor,2)))) +
+  facet_grid(CREF~tech+set) + scale_x_log10() + scale_y_log10() + theme_bw()
+```
+
+# species with PBA support (pct.k) （add source)
+```{r}
+SXR.sp.rep.NR.abun.df <- SBR.r2BEAD.b.sp.more%>%filter(LIB=="RCA"&tech=="D+S")
+
+SXR.sp.rep.NR.abun.dfd <- dcast(SXR.sp.rep.NR.abun.df,
+  CREF+db.x+SAM+taxID+name.x+domain+phylum+findAnno+PBA_support~REP,
+  value.var=c("pct.k"),fill=0,fun.aggregate = sum)
+
+tAB <- SXR.sp.rep.NR.abun.dfd[,-13]; colnames(tAB)[11:12] <- c("RepX","RepY")
+tAC <- SXR.sp.rep.NR.abun.dfd[,-12]; colnames(tAC)[11:12] <- c("RepX","RepY")
+tBC <- SXR.sp.rep.NR.abun.dfd[,-11]; colnames(tBC)[11:12] <- c("RepX","RepY")
+SXR.sp.rep.NR.abun.dfs <- rbind(
+  cbind(rep="AB",tAB),cbind(rep="AC",tAC),cbind(rep="BC",tBC))
+
+SXR.PBA.sp.rep.NR.df <- SXR.sp.rep.NR.abun.dfs%>%filter(tech%in%c("BEAD","SUS"))
+SXR.PBA.sp.rep.NR.df$PBA_support[which(SXR.PBA.sp.rep.NR.df$name.x%in%name.x.PBAspt)] <- T
+SXR.PBA.sp.rep.NR.df$PBA_support[which(is.na(SXR.PBA.sp.rep.NR.df$PBA_support))] <- F
+SXR.PBA.sp.rep.NR.use.df <- SXR.PBA.sp.rep.NR.df%>%filter(!(tech=="SUS"&PBA_support==T))
+SXR.PBA.sp.rep.NR.use.df$set <- factor(paste0(SXR.PBA.sp.rep.NR.use.df$findAnno,SXR.PBA.sp.rep.NR.use.df$PBA_support),
+                                levels=c("foundTRUE","missTRUE", "foundFALSE"))
+levels(SXR.PBA.sp.rep.NR.use.df$set)<-c("PBAs found taxon.","PBAs without taxon. info","SILVA taxon that PBA not covered")
+
+SXR.PBA.sp.rep.NR.stat <- ddply(
+  SXR.PBA.sp.rep.NR.use.df%>%filter(kk2Method=="pct.k"),c("CREF","tech","set"),summarise,
+  cor=cor(RepX,RepY,method="s"),sp=length(unique(name.x)))
+
+ggplot(SXR.PBA.sp.rep.NR.use.df%>%filter(kk2Method=="pct.k"),aes(x=RepX,y=RepY)) + geom_point(aes(color=set),alpha=.1) + 
+  geom_text(data=SXR.PBA.sp.rep.NR.stat,aes(x=1e-4,y=1e-1,label=paste0(sp," nodes at sp. level\nr=",round(cor,2)))) +
+  facet_grid(CREF~tech+set) + scale_x_log10() + scale_y_log10() + theme_bw()
+```
+### check biased taxon
+```{r}
+bias.abun.rep.df <- SXR.PBA.sp.rep.use.df%>%filter(kk2Method=="pct.k"&RepX>0&RepY>0&(RepY/RepX>100 | RepX/RepY>100))
+
+bias.abun.rep.stat <- ddply(bias.abun.rep.df,c("CREF","tech","SAM","domain","phylum"),
+                            summarise,count=length(unique(name.x)))
+ggplot(bias.abun.rep.df,aes(x=phylum,color=SAM)) + geom_bar(stat="count") + facet_grid(CREF~tech) + coord_flip()
+```
+
+stat
+```{r}
+SXR.PBA.sp.rep.stat2 <- ddply(SXR.PBA.sp.rep.df,c("CREF","tech","set","kk2Method","rep"),summarise,cor=cor(RepX,RepY,method="s"))
+
+ggplot(SXR.PBA.sp.rep.stat2%>%filter(kk2Method=="pct.k"),aes(x=tech,y=cor,fill=CREF)) + geom_boxplot() + facet_grid(.~set)
+```
+
+## correlation
+```{r}
+stat.cor.df <- ddply(SXR.sp.rep.abun.dfs,c("CREF","tech","LIB","SAM","findAnno"),
+                     summarise,cor=cor(RepX,RepY,method="s"))
+ggplot(stat.cor.df,aes(x=tech,y=cor,fill=findAnno)) + geom_boxplot() + facet_grid(CREF~LIB)
+```
+
+
 
 
 ### PCA
 
 ```{r}
+SXR.otu.count.mtx <- dcast(SBR.r2BEAD.b.sp.more,domain+taxID+CREF~UID,
+                           value.var = "kraken_assigned_reads",fill = 0,fun.aggregate = sum)
+SXR.otu.norm.mtx <- dcast(SBR.r2BEAD.b.sp.more,domain+taxID+CREF~UID,value.var = "pct",fill = 0,fun.aggregate = sum)
 
-SXR.otu.count.mtx <- dcast(SBR.r2BEAD.b.sp.more,domain+taxID+CREF~UID,value.var = "kraken_assigned_reads",fill = 0,fun.aggregate = sum)
-SBR.otu.count.mtx <- SXR.otu.count.mtx[,4:27]
-SFR.otu.count.mtx <- SXR.otu.count.mtx[,28:51]
-x.row.kept <- which(apply(SXR.otu.count.mtx[,c(4:6,28:30)],1,sum)>10)
-x.tax.kept <- SXR.otu.count.mtx$taxID[x.row.kept]
-SXR.otu.prf.mtx <- dcast(SBR.r2BEAD.b.sp.more,domain+taxID+CREF~UID,value.var = "pct",fill = 0,fun.aggregate = sum)
-taxName <- SXR.otu.prf.mtx$spName
-#rownames(SXR.otu.prf.mtx) <- SXR.otu.prf.mtx$taxID
-SXR.otu.cut.mtx <- SXR.otu.prf.mtx[x.row.kept,]
-SXR.otu.cut.mtx.pca <- prcomp(t(as.matrix(SXR.otu.cut.mtx[,-c(1:3)])),center = T,scale. = T)
-summary(SXR.otu.cut.mtx.pca)
+ind4bac <- 4:39
+ind4fungi <- 40:75
 
-B.row.kept <- which(apply(SBR.otu.count.mtx,1,sum)>10)
-SBR.otu.cut.mtx <- SXR.otu.prf.mtx[B.row.kept,1:27]
-SBR.otu.cut.mtx.pca <- prcomp(t(as.matrix(SBR.otu.cut.mtx[,-c(1:3)])),center = T,scale. = T)
-summary(SBR.otu.cut.mtx.pca)
+# x.row.kept <- which(apply(SXR.otu.count.mtx[,which(grepl("BB[SO][123]",colnames(SXR.otu.count.mtx)))],1,sum)>10)
+# x.tax.kept <- SXR.otu.count.mtx$taxID[x.row.kept]
+# 
+# taxName <- SXR.otu.prf.mtx$spName
+# #rownames(SXR.otu.prf.mtx) <- SXR.otu.prf.mtx$taxID
+# SXR.otu.cut.mtx <- SXR.otu.prf.mtx[x.row.kept,]
+# SXR.otu.cut.mtx.pca <- prcomp(t(as.matrix(SXR.otu.cut.mtx[,-c(1:3)])),center = T,scale. = T)
+# #summary(SXR.otu.cut.mtx.pca)
 
-F.row.kept <- which(apply(SFR.otu.count.mtx,1,sum)>10)
-SFR.otu.cut.mtx <- SXR.otu.prf.mtx[F.row.kept,c(1:3,28:51)]
-F.taxName <- taxName[F.row.kept]
-SFR.otu.cut.mtx.pca <- prcomp(t(as.matrix(SFR.otu.cut.mtx[,-c(1:3)])),center = T,scale. = T)
-summary(SFR.otu.cut.mtx.pca)
+#bac
+B.row.kept <- which(apply(
+  SXR.otu.count.mtx[,which(grepl("BB[SO][123]",colnames(SXR.otu.count.mtx)))],1,sum)>10)
+SBR.otu.cut.mtx <- SXR.otu.norm.mtx[B.row.kept,ind4bac]
+SBR.otu.cut.mtx.pca <- prcomp(t(as.matrix(SBR.otu.cut.mtx)),center = T,scale. = T)
+
+#fungi
+F.row.kept <- which(apply(
+  SXR.otu.count.mtx[,which(grepl("FB[SO][456]",colnames(SXR.otu.count.mtx)))],1,sum)>10)
+SFR.otu.cut.mtx <- SXR.otu.norm.mtx[F.row.kept,ind4fungi]
+SFR.otu.cut.mtx.pca <- prcomp(t(as.matrix(SFR.otu.cut.mtx)),center = T,scale. = T)
 
 group.df <- unique(SBR.r2BEAD.b.sp.more[,c("UID","CREF","SAM","SID","LIB","tech")])
+
 SXR.otu.multi.pca.df <- merge(group.df,rbind(
-  data.frame(type="ALL",SXR.otu.cut.mtx.pca$x[,1:5]),
   data.frame(type="BAC",SBR.otu.cut.mtx.pca$x[,1:5]),
   data.frame(type="FNG",SFR.otu.cut.mtx.pca$x[,1:5])
 ),by.y="row.names",by.x="UID")
 
-ggplot(SXR.otu.multi.pca.df,aes(x=PC1,y=PC2,color=CREF,shape=interaction(tech,LIB))) +geom_point(size=3) + 
-  #scale_shape_manual(values = c(21,22)) +
-  geom_text(aes(label=SID),nudge_x = 1,nudge_y = 1)
-pheatmap(cor(SBR.otu.cut.mtx[,-c(1:3)],method = "s"),display_numbers = T,cluster_rows = F,cluster_cols = F)
-pheatmap(cor(SFR.otu.cut.mtx[,-c(1:3)],method = "s"),display_numbers = T,cluster_rows = F,cluster_cols = F)
+ggplot(SXR.otu.multi.pca.df%>%filter(CREF=="BAC"),aes(x=PC1,y=PC2,color=SAM,shape=LIB)) +
+  geom_point(size=3) + facet_grid(.~tech) + geom_text(aes(label=SID),nudge_x = 1,nudge_y = 1)
+
+ggplot(SXR.otu.multi.pca.df%>%filter(CREF=="FNG"),aes(x=PC1,y=PC2,color=SAM,shape=LIB)) +
+  geom_point(size=3) + facet_grid(.~tech) + geom_text(aes(label=SID),nudge_x = 1,nudge_y = 1)
+
+```
+```{r}
+pheatmap(cor(SBR.otu.cut.mtx,method = "s"),display_numbers = T,cluster_rows = F,cluster_cols = F)
+pheatmap(cor(SFR.otu.cut.mtx,method = "s"),display_numbers = T,cluster_rows = F,cluster_cols = F)
 
 ```
 
 ```{r}
-pheatmap(cor(SBR.otu.cut.mtx[,4:15],method = "s"),display_numbers = T,cluster_rows = F,cluster_cols = F)
+pheatmap(cor(SBR.otu.cut.mtx[,c(1:3,7:9)],method = "s"),display_numbers = T,cluster_rows = F,cluster_cols = F)
 
-pheatmap(cor(SFR.otu.cut.mtx[,4:15],method = "s"),display_numbers = T,cluster_rows = F,cluster_cols = F)
-pheatmap(cor(SFR.otu.cut.mtx[which(SFR.otu.cut.mtx$domain=="CLADE0.4__1"),4:15],method = "s"),display_numbers = T,cluster_rows = F,cluster_cols = F)
-pheatmap(cor(SFR.otu.cut.mtx[which(SFR.otu.cut.mtx$domain=="CLADE0.4__2"),4:15],method = "s"),display_numbers = T,cluster_rows = F,cluster_cols = F)
+pheatmap(cor(SFR.otu.cut.mtx[,c(1:3,7:9)],method = "s"),display_numbers = T,cluster_rows = F,cluster_cols = F)
 
 ```
 
@@ -427,79 +915,107 @@ ggplot(SBR.stat.sp.df3SF.k%>%filter(tech=="BEAD"),aes(x=rep1,y=rep2,color=set)) 
   scale_x_log10() + scale_y_log10()
 ```
 
-** cutoff of ranks **
-```{r}
-SBR.r2BEAD.b.sp.more$cutoff <- as.numeric(substr(sapply(strsplit(as.character(SBR.r2BEAD.b.sp.more$clade),"__"),"[",1),6,10))
 
-ggplot(SBR.r2BEAD.b.sp.more%>%filter(findAnno=="Known"),aes(x=factor(cutoff),fill=CREF)) + geom_bar(position="dodge")
+# observed taxonomies
+```{r}
+SBCR.idvd.rand.tax.count <- read.table(
+  md5("../../Results/AUG20/STAT/KRAKEN/SBR.idvd.rand.observedOTUs.count","1fbd728359c21761bdb4f50fdbce2b10"),
+  sep="\t",col.names = c("db","rep","SID","sSize","cSize","OTUs","tBeads","rBeads","uBeads","taxSize"))
+SBCR.cum.rand.tax.count <- read.table(
+  md5("../../Results/AUG20/STAT/KRAKEN/SBR.cum.rand.observedOTUs.count","6cd485af30cde3804a9cbe5e9591cdff"),
+  sep="\t",col.names = c("db","rep","SID","sSize","cSize","OTUs","tBeads","rBeads","uBeads","taxSize"))
+SBCR.cumSize.rand.tax.count <- read.table(
+  md5("../../Results/AUG20/STAT/KRAKEN/SBR.cumSize.rand.observedOTUs.count","3c79ebaed0517886fadf7085d415e6b8"),
+  sep="\t",col.names = c("db","rep","SID","sSize","cSize","OTUs","tBeads","rBeads","uBeads","taxSize"))
 
 ```
-
-** calculate GC content of each clade **
-```{bash,eval=False}
-metabbq beadsAnno.pl -m gc -o SAM/SBR/KRAKEN/BEAD/data/rank.GC.txt -v \
--i SAM/SBR/KRAKEN/BEAD/library/added.fna,SAM/SBR/KRAKEN/BEAD/taxonomy/paths.txt,SAM/SBR/KRAKEN/BEAD/seqid2taxid.map
-```
-
 ```{r}
-SBR.rank.GC <- read.table("../../../Results/AUG20/SAM/SBR/KRAKEN/BEAD/data/rank.GC.txt",comment.char = "",
-                         sep="\t",col.names=c("taxID","clade","count","GC"))
-SFR.rank.GC <- read.table("../../../Results/AUG20/SAM/SFR/KRAKEN/BEAD/data/rank.GC.txt",comment.char = "",
-                         sep="\t",col.names=c("taxID","clade","count","GC"))
-
-GC.Rank.map <- rbind(
-  cbind(CREF="BAC",SBR.rank.GC),
-  cbind(CREF="FNG",SFR.rank.GC)
-)
-```
-
-```{r}
-SBR.r2BEAD.b.sp.GC <- merge(SBR.r2BEAD.b.sp.more,GC.Rank.map,by=c("CREF","taxID"))
-SBR.r2BEAD.b.sp.GC$GCG <- as.factor(round(SBR.r2BEAD.b.sp.GC$GC*20,0)*5)
-SBR.stat.sp.GC.df <- dcast(SBR.r2BEAD.b.sp.GC,CREF+SAM+tech+LIB+anno2+findAnno+count+GCG~REP,
-                          value.var = "pct",fill = 0,fun.aggregate = sum)
-
-SBR.stat.sp.GC.df2 <- NULL
-for(i in 9:11){
-  tmp <- SBR.stat.sp.GC.df[,-i]
-  colnames(tmp)[9:10] <- c("rep1","rep2")
-  SBR.stat.sp.GC.df2 <- rbind(SBR.stat.sp.GC.df2,data.frame(set=colnames(SBR.stat.sp.GC.df)[i],tmp))
+cumFun <- function(d){
+  d1 <- d[which(grepl("O",d$SID)),]
+  d1$cSize <- cumsum(as.numeric(d1$sSize))
+  d2 <- d[which(grepl("S",d$SID)),]
+  d2$cSize <- cumsum(as.numeric(d2$sSize))
+  return(rbind(d1,d2))
 }
-SBR.stat.sp.GC.cor <- ddply(SBR.stat.sp.GC.df2%>%filter(tech=="BEAD"),c("CREF","SAM","LIB"),summarise,cor=cor(rep1,rep2,method="s"))
-SBR.stat.sp.GC.cor$corLabel <- paste0("r=",round(SBR.stat.sp.GC.cor$cor,2))
-ggplot(SBR.stat.sp.GC.df2%>%filter(tech=="BEAD"),aes(x=rep1,y=rep2,color=GCG),alpha=.3) +geom_point() +
-  geom_abline(intercept = 0,slope=c(0.85,1,1.15),linetype=2) + facet_grid(LIB~CREF+SAM) + 
-  geom_text(data=SBR.stat.sp.GC.cor,aes(x=1e-3,y=0.1,label=corLabel),color="black") +
-  scale_x_log10() + scale_y_log10() + scale_color_hue()
+SBCR.cum.rand.tax.count <- ddply(SBCR.cum.rand.tax.count,c("db","rep"),cumFun)
 ```
 
 ```{r}
-SBR.stat.sp.GC.df2$foldChange <- SBR.stat.sp.GC.df2$rep2/SBR.stat.sp.GC.df2$rep1
+SBCR.cumSize.rep.tax.count <- SBCR.cumSize.rand.tax.count%>%filter(SID%in%c("S3","O3","S9","O9"))
+SBCR.rand.tax.count <- rbind(
+  cbind(type="individual",SBCR.idvd.rand.tax.count),
+  cbind(type="accumulate",SBCR.cum.rand.tax.count),
+  cbind(type="cumSize",SBCR.cumSize.rep.tax.count)
+)
+SBCR.rand.tax.count$SAM <- substr(SBCR.rand.tax.count$SID,1,1)
+SBCR.rand.tax.count$SREP <- substr(SBCR.rand.tax.count$SID,2,2)
+SBCR.rand.tax.count$KDM <- ifelse(grepl("1|2|3|7|8|9",SBCR.rand.tax.count$SID),"BAC","FUNGI")
+SBCR.rand.tax.count$LIB <- ifelse(grepl("[1-6]",SBCR.rand.tax.count$SID),"RCA","LFR")
 
-ggplot(SBR.stat.sp.GC.df2%>%filter(tech=="BEAD"),aes(x=GCG,y=foldChange,fill=SAM),alpha=.3) +geom_boxplot() +
-  facet_grid(LIB~CREF) + scale_y_log10()
+ggplot(SBCR.rand.tax.count%>%filter(type=="individual"&rep==0),aes(x=cSize,y=tBeads)) + 
+  geom_line(aes(color=SID,linetype=db),size=1) + geom_point(aes(color=SID)) + 
+  facet_grid(type~SAM,scale="free_y")
+
+ggplot(SBCR.rand.tax.count%>%filter(db=="BEAD"&rep==0),aes(x=cSize,y=tBeads)) + 
+  geom_point(aes(color=SID,shape=db)) + 
+  facet_grid(type~SAM,scale="free_y")
+
+ggplot(SBCR.rand.tax.count%>%filter(SID%in%c("O1","O2","O3")),aes(x=cSize,y=rBeads,color=SID,group=db)) + 
+  geom_line(size=1) + geom_point(aes(color=SID)) + facet_grid(.~SAM)
+
+ggplot(SBCR.rand.tax.count,aes(x=tBeads,y=rBeads,color=SID,group=db)) + 
+  geom_line(size=1) + geom_point(aes(color=SID)) + facet_grid(.~SAM)
+
+SBCR.rand.tax.count.mean <- SBCR.rand.tax.count %>% 
+  group_by(type,db,SAM,SID,LIB,sSize,cSize,tBeads) %>% 
+  summarise(sd=sd(OTUs),OTUs=mean(OTUs))
+
+ggplot(SBCR.rand.tax.count.mean,aes(x=cSize,y=OTUs,color=SID)) + 
+  geom_line(aes(linetype=db),size=1) + geom_point(aes(color=SID)) + facet_grid(type~SAM,scale="free")
+
+ggplot(SBCR.rand.tax.count.mean%>%filter(type=="cumSize"&cSize==3*sSize),aes(x=cSize,y=OTUs)) + 
+  geom_line(aes(group=interaction(db,LIB)),size=1) + geom_point(aes(color=SID)) + facet_grid(SAM~.,scale="free")
+
 ```
 
 ```{r}
-SBR.stat.sp.dfGC <- dcast(SBR.r2BEAD.b.sp.GC%>%filter(kraken_assigned_reads>10),CREF+SAM+tech+findAnno+REP+GCG+anno2~LIB,
-                          value.var = "pct",fun.aggregate = sum,fill = 0)
-SBR.stat.sp.dfGC.cor <- ddply(SBR.stat.sp.dfGC,c("CREF","tech","findAnno","REP"),summarise, cor=cor(NORCA,RCA,method = "s") )
-SBR.stat.sp.dfGC.cor$corLabel <- paste0("r=",round(SBR.stat.sp.dfGC.cor$cor,2))
+ggplot(SBCR.rand.tax.count%>%filter(type=="accumulate"&rep==1),aes(x=cSize,y=OTUs,color=db)) + 
+  geom_point(aes(shape=SREP)) + 
+  facet_grid(.~SAM,scale="free_y")
+```
 
-ggplot(SBR.stat.sp.dfGC%>%filter(tech=="BEAD"&REP=="A"),
-       aes(x=NORCA,y=RCA,color=GCG)) +geom_point(alpha=.5) +
-  geom_abline(intercept = 0,slope=c(0.8,1,1.2),linetype=2) + facet_grid(findAnno~CREF) +
-  geom_text(data=SBR.stat.sp.dfGC.cor%>%filter(tech=="BEAD"&REP=="A"),aes(x=1e-3,y=0.1,label=corLabel),color="black") +
-  scale_x_log10() + scale_y_log10()  + scale_color_hue()
+```{r}
+SBCR.rand.tax.count.mean.stat <- SBCR.rand.tax.count.mean %>% 
+  filter(LIB=="RCA"&type=="accumulate"&db%in%c("BEAD","SUS")) %>%
+  group_by(type,db,SAM) %>% summarise(max=max(OTUs))
+
+ggplot(SBCR.rand.tax.count.mean%>%filter(LIB=="RCA"&type!="individual"&db%in%c("BEAD","SUS")&LIB=="RCA"),
+       aes(x=cSize,y=OTUs)) + 
+  geom_hline(data=SBCR.rand.tax.count.mean.stat,aes(yintercept = max),linetype=2) +
+  geom_hline(data=SBCR.rand.tax.count.mean.stat,aes(yintercept = 0.9*max),linetype=2,color="grey50") +
+  geom_line(aes(group=interaction(db,type,SID)),color="grey50",size=1,alpha=.3) +
+  geom_point(aes(shape=type,color=SID)) + facet_grid(.~SAM,scale="free",space="free_x") +
+  scale_x_log10() +
+  #scale_x_continuous(breaks = seq(0,4)*1e8) +
+  xlab("# Sampling input reads") + ylab("Observed OTUs (clustered at 99%)")
 
 ```
 
 ```{r}
-
-SBR.stat.sp.dfGC$foldChange <- SBR.stat.sp.dfGC$RCA/SBR.stat.sp.dfGC$NORCA
-
-ggplot(SBR.stat.sp.dfGC%>%filter(tech=="BEAD"),aes(x=GCG,y=foldChange,fill=SAM),alpha=.3) +geom_point(alpha=.1) +
-  facet_grid(findAnno~CREF) + scale_y_log10()
+b.curve.p <- ggplot(SBCR.rand.tax.count.mean%>%filter(LIB=="RCA"&type=="cumSize"),
+       aes(x=cSize,y=OTUs,color=db)) + 
+  #geom_hline(data=SBCR.rand.tax.count.mean.stat,aes(yintercept = max),linetype=2) +
+  #geom_hline(data=SBCR.rand.tax.count.mean.stat,aes(yintercept = 0.9*max),linetype=2,color="grey50") +
+  geom_line(aes(group=interaction(db,type,SID)),size=1) +
+  geom_point(aes(shape=SAM)) + #facet_grid(.~SAM,scale="free",space="free_x") +
+  scale_x_continuous(breaks = seq(0,4)*1e8) + theme_bw() +
+  xlab("# Sampling input reads") + ylab("Observed OTUs (clustered at 99%)")
+b.curve.p
+```
+```{r}
+if(do.write){
+  ggsave(b.curve.p,width=4,height=4,filename = "../../Results/AUG20/FIG/sbr.rarefaction.boxplot.pdf")
+}
 ```
 
 #FIN.

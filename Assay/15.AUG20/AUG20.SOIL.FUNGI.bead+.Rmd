@@ -20,8 +20,15 @@ library(stringi)
 source("../13.JAN20/lib.R")
 ```
 
-# Quantification
-
+# Bash prep
+## stat assembly clips
+```{bash, eval=FALSE}
+for i in {S,O}{4,5,6};do 
+ awk -v n=$i '{print n"\t"$0}' SAM/$i/summary.BI.megahit.clip.metadata.tsv;
+done > SAM/SFR/summary.BI.megahit.clip.metadata.tsv
+awk '!/#skip/{if($2!=pB){if(FNR>1){print $1"\t"pB"\t"blen"\t"ctg"\t"clips};blen=$10;ctg=1;clips=1}else{blen=blen+$10;clips=clips+1;if($4!=pc){ctg=ctg+1}};pc=$4;pB=$2}END{print $1"\t"pB"\t"blen"\t"ctg"\t"clips}' SAM/SFR/summary.BI.megahit.clip.metadata.tsv > SAM/SFR/summary.BI.megahit.clip.metadata.cut.tsv
+```
+## Get valid sequences
 ```{bash, eval=FALSE}
 # merge clips
 mkdir -p SAM/SFR/ANNO
@@ -44,62 +51,52 @@ for i in {S,O}{4,5,6};do
   awk -v n=$i '/>BI/{gsub(">",">"n)}{print}' SAM/$i/CLIP/validSeqs.clust.fa;
 done|pigz -p 8 > SAM/SFR/CLIP/validSeqs.clust.fa.gz
 
-
+# get PBA metadata
+grep ">" SAM/SFR/CLIP/validSeqs.clust.fa|awk -F ">|_" '{
+sub("flag=","",$5);sub("multi=","",$6);sub("C","",$8);print $2"."$4"."$8"\t"$5"\t"$6"\t"$9"\t"$10}'  \
+>  SAM/SFR/CLIP/validSeqs.clust.metadat.tsv
+```
+## generate a cluster tree
+```{bash,eval=FALSE}
 metabbq IO makeclade -i SAM/SFR/CLIP/validSeqs.clust.fa -o SAM/SFR/CLIP/validSeqs.clade.uc -t 40 -v
-
-
-#metabbq IO makeclade -i SAM/SFR/CLIP/id90def4.clust.fa -o SAM/SFR/CLIP/id90def4.clade.uc -t 48 -v
 
 metabbq IO clade2tree -i SAM/SFR/CLIP/validSeqs.clust.fa -a SAM/SFR/ANNO/CLIP.map.merge.clip.anno \
  -d $LFR/Source/REF/KRAKEN2/SUS -s SAM/SFR/CLIP/validSeqs.clade.uc -o SAM/SFR/KRAKEN/BEAD -p tax -v
 
-# rm SAM/SFR/KRAKEN/BEAD/{database*,*.k2d} 
+rm SAM/SFR/KRAKEN/BEAD/{database*,*.k2d} 
 metabbq buildKraken2db.sh SAM/SFR/KRAKEN/BEAD 4
 
-perl -e 'while(<>){chomp;@s=split /\t/; @t=split /;/,$s[0];
-for(@t){$_=~/^(\w+)__(.+)$/;$H{$1}=$2}; print "$s[1]\t$s[2]\t$s[3]\t$s[4]\t$s[5]\t$s[6]\t";
-print "$H{domain}\t$H{phylum}\t$H{genus}\t$H{species}\n"}'  SAM/SFR/KRAKEN/BEAD/taxonomy/paths.txt > SAM/SFR/KRAKEN/BEAD/data/topRank.map &
+perl -e 'while(<>){chomp;@s=split /\t/; @t=split /;/,$s[0]; %H=();%B=("T",0,"C",0);
+for(@t){$_=~/^(\S+)__(.+)$/;($k,$v)=($1,$2);$H{$k}=$v;if($k=~/CLADE/){$B{C}++}else{$B{T}++}}; print "$s[1]\t$s[2]\t$s[3]\t$s[4]\t$s[5]\t$s[6]\t";
+print "$H{domain}\t$H{phylum}\t$H{genus}\t$H{species}\t$B{T}\t$B{C}\n"}' SAM/SFR/KRAKEN/BEAD/taxonomy/paths.txt > SAM/SFR/KRAKEN/BEAD/data/topRank.map &
+
 ####
 # mapping to merged db
-for i in {S,O}{4,5,6,A,B,C};do
+for i in {S,O}{4,5,6};do
 mkdir -p SAM/$i/KRAKEN
 ln -s ../../SFR/KRAKEN/BEAD SAM/$i/KRAKEN/BEAD;
 done
 
-#use bracken
-metabbq smk --config kk2_db="BEAD" -j -npk SAM/{S,O}{4,5,6,A,B,C}/KRAKEN/reads2BEAD.bead.bracken
+#generate bead/bin level bracken profile
+metabbq smk --config kk2_db="BEAD" -j -npk SAM/{S,O}{4,5,6}/KRAKEN/reads2BEAD.bead.bracken
 
-for i in {S,O}{4,5,6,A,B,C};do 
+for i in {S,O}{4,5,6};do 
   awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2BEAD.bead.bracken 
 done > SAM/SFR/KRAKEN/reads2BEAD.bead.bracken
 
-#no-barcode
-for i in {S,O}{4,5,6,A,B,C};do
-  bracken -d SAM/$i/KRAKEN/BEAD -i SAM/$i/KRAKEN/reads2BEAD.kreport2 \
-  -o SAM/$i/KRAKEN/reads2BEAD.read.bracken > SAM/$i/KRAKEN/reads2BEAD.read.breport2 &
+# modify (for both bac and fungi)
+for i in {S,O}{4,5,6};do 
+  metabbq IO modKKreport -r Bacteria -m D1:P -i SAM/$i/KRAKEN/reads2BEAD.bead.kreport2 -o SAM/$i/KRAKEN/reads2BEAD.bead.R.kreport2 &
 done
 
-for i in {S,O}{4,5,6,A,B,C};do 
-  awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2BEAD.read.bracken;
-done > SAM/SFR/KRAKEN/reads2BEAD.read.bracken
-
-# other ranks
-for i in {S,O}{4,5,6,A,B,C};do for j in {G,S1,S2,S3};do
-  bracken -d SAM/$i/KRAKEN/BEAD -i SAM/$i/KRAKEN/reads2BEAD.kreport2 -l $j -o SAM/$i/KRAKEN/reads2BEAD.$j.bracken > SAM/$i/KRAKEN/reads2BEAD.$j.breport2 ;
+# get profile of each rank
+for i in {S,O}{4,5,6};do for j in {P,F,G,S};do 
+  bracken -d SAM/$i/KRAKEN/BEAD -i SAM/$i/KRAKEN/reads2BEAD.bead.R.kreport2 -l $j -o SAM/$i/KRAKEN/reads2BEAD.bead.$j.bracken > SAM/$i/KRAKEN/reads2BEAD.bead.$j.breport2 ;
 done & done
 
-
-for j in {G,S1,S2,S3};do for i in {S,O}{4,5,6};do 
-  awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2BEAD.$j.1.bracken
-done > STAT/KRAKEN/SFR.reads2BEAD.$j.1.bracken & done
-
-for i in {S,O}{4,5,6,A,B,C};do for j in {P,F,G};do for b in {read,bead};do
-  bracken -d SAM/$i/KRAKEN/BEAD -i SAM/$i/KRAKEN/reads2BEAD.$b.kreport2 -l $j -o SAM/$i/KRAKEN/reads2BEAD.$b.$j.bracken > SAM/$i/KRAKEN/reads2BEAD.$b.$j.breport2 ;
-done; done & done
-
-for j in {P,G,F};do for b in {read,bead};do for i in {S,O}{4,5,6,A,B,C};do 
-  awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2BEAD.$b.$j.bracken
-done > STAT/KRAKEN/SFR.reads2BEAD.$b.$j.bracken & done;done
+for j in {P,G,F,S};do for i in {S,O}{1..6};do 
+  awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2BEAD.bead.$j.bracken
+done > ../../Results/AUG20/STAT/KRAKEN/SXR.RCA.reads2BEAD.bead.$j.bracken & done
 
 ```
 
@@ -116,33 +113,40 @@ cp SAM/SFR/KRAKEN/BEAD/data/added.txt SAM/SFR/KRAKEN/BEAD+/data/added.txt
 cat $LFR/Source/REF/KRAKEN2/SUS/data/added.acc_taxid SAM/SFR/KRAKEN/BEAD/data/added.acc_taxid \
 |sort > SAM/SFR/KRAKEN/BEAD+/data/added.acc_taxid
 
-# rm SAM/SFR/KRAKEN/BEAD+/{database*,*.k2d} 
+ rm SAM/SFR/KRAKEN/BEAD+/{database*,*.k2d} 
 metabbq buildKraken2db.sh SAM/SFR/KRAKEN/BEAD+ 4
 
-perl -e 'while(<>){chomp;@s=split /\t/; @t=split /;/,$s[0]; $s[4] =~ s/\S+__//;
-print "$t[0]\t$s[1]\t$s[2]\t$s[3]\t$s[4]\t$sp\n"}' SAM/SFR/KRAKEN/BEAD+/taxonomy/paths.txt \
-> SAM/SFR/KRAKEN/BEAD+/data/topRank.map &
+perl -e 'while(<>){chomp;@s=split /\t/; @t=split /;/,$s[0]; %H=();%B=("T",0,"C",0);
+for(@t){$_=~/^(\S+)__(.+)$/;($k,$v)=($1,$2);$H{$k}=$v;if($k=~/CLADE/){$B{C}++}else{$B{T}++}}; 
+print "$s[1]\t$s[2]\t$s[3]\t$s[4]\t$s[5]\t$s[6]\t";
+print "$H{domain}\t$H{phylum}\t$H{genus}\t$H{species}\t$B{T}\t$B{C}\n"}' \
+SAM/SFR/KRAKEN/BEAD+/taxonomy/paths.txt|gzip >  SAM/SFR/KRAKEN/BEAD+/data/topRank.map.gz
 
 
 for i in {S,O}{4,5,6,A,B,C};do
 ln -s ../../SFR/KRAKEN/BEAD+ SAM/$i/KRAKEN/BEAD+;
 done
 
-metabbq smk --config kk2_db="BEAD+" -j -npk SAM/{S,O}{1,2,3,7,8,9}/KRAKEN/reads2BEAD+.bead.bracken
+metabbq smk --config kk2_db="BEAD+" -j -npk SAM/{S,O}{4,5,6}/KRAKEN/reads2BEAD+.bead.bracken
 
 
 for i in {S,O}{4,5,6,A,B,C};do 
   awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2BEAD+.bead.bracken 
 done > SAM/SFR/KRAKEN/reads2BEAD+.bead.bracken
-#no-barcode
-for i in {S,O}{4,5,6,A,B,C};do
-  bracken -d SAM/$i/KRAKEN/BEAD -i SAM/$i/KRAKEN/reads2BEAD+.kreport2 \
-  -o SAM/$i/KRAKEN/reads2BEAD+.read.bracken > SAM/$i/KRAKEN/reads2BEAD+.read.breport2 &
+
+# modify
+for i in {S,O}{4,5,6};do 
+  metabbq IO modKKreport -r Bacteria -m D1:P -i SAM/$i/KRAKEN/reads2BEAD+.bead.kreport2 -o SAM/$i/KRAKEN/reads2BEAD+.bead.R.kreport2 &
 done
 
-for i in {S,O}{4,5,6,A,B,C};do 
-  awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2BEAD.read.bracken;
-done > SAM/SFR/KRAKEN/reads2BEAD+.read.bracken
+# get profile of each rank
+for i in {S,O}{4,5,6};do for j in {P,F,G,S};do 
+  bracken -d SAM/$i/KRAKEN/BEAD+ -i SAM/$i/KRAKEN/reads2BEAD+.bead.R.kreport2 -l $j -o SAM/$i/KRAKEN/reads2BEAD+.bead.$j.bracken > SAM/$i/KRAKEN/reads2BEAD+.bead.$j.breport2 ;
+done & done
+
+for j in {P,G,F,S};do for i in {S,O}{1..6};do 
+  awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2BEAD+.bead.$j.bracken
+done > ../../Results/DEC20/STAT/KRAKEN/SXR.RCA.reads2BEAD+.bead.$j.bracken & done
 
 
 ```
@@ -158,8 +162,9 @@ metabbq IO clade2tree -i SAM/SFR/CLIP/validSeqs.clust.fa -a SAM/SFR/ANNO/CLIP.ma
 # rm SAM/SFR/KRAKEN/BEAD+/{database*,*.k2d} 
 metabbq buildKraken2db.sh SAM/SFR/KRAKEN/BEAD- 4
 
-perl -e 'while(<>){chomp;@s=split /\t/; @t=split /;/,$s[0]; $s[4] =~ s/\S+__//;
-print "$t[0]\t$s[1]\t$s[2]\t$s[3]\t$s[4]\t$sp\n"}' SAM/SFR/KRAKEN/BEAD-/taxonomy/paths.txt \
+perl -e 'while(<>){chomp;@s=split /\t/; @t=split /;/,$s[0]; $name=($s[5])?$s[5]:$t[-1];
+for(@t){$_=~/^(\w+)__(.+)$/;$H{$1}=$2}; print "$s[1]\t$s[2]\t$s[3]\t$s[4]\t$name\t$s[6]\t";
+print "$H{domain}\t$H{phylum}\t$H{genus}\t$H{species}\n"}'  SAM/SFR/KRAKEN/BEAD-/taxonomy/paths.txt \
 > SAM/SFR/KRAKEN/BEAD-/data/topRank.map &
 
 for i in {S,O}{4,5,6,A,B,C};do
@@ -173,6 +178,13 @@ for i in {S,O}{1,2,3,7,8,9};do
   awk -v n=$i 'FNR>1{print n"\t"$0}' SAM/$i/KRAKEN/reads2BEAD-.bead.bracken;
 done > SAM/SFR/KRAKEN/reads2BEAD-.bead.bracken
 ```
+## get PBA metadata
+```{bash,eval=FALSE}
+awk '!/#skip/{if($2!=pB){if(FNR>1){print $1"\t"pB"\t"blen"\t"ctg"\t"clips};blen=$10;ctg=1;clips=1}else{blen=blen+$10;clips=clips+1;if($4!=pc){ctg=ctg+1}};pc=$4;pB=$2}END{print $1"\t"pB"\t"blen"\t"ctg"\t"clips}' SAM/SFR/summary.BI.megahit.clip.metadata.tsv > SAM/SFR/summary.BI.megahit.clip.metadata.cut.tsv
+
+```
+
+
 
 ### observed OTUs estimation
 1. link dbs
@@ -192,7 +204,7 @@ for s in {S,O}{4,5,6,A,B,C}; do
 done;done > Soil.bracken.batch.sh
 
 ```
-
+3. summary
 ```{bash,eval=FALSE}
 for db in {SILVA138.1SSU,SILVA138.1LSU,UNITE8.2,SUS,BEAD};do
 for i in {S,O}{4,5,6,A,B,C};do 
