@@ -19,7 +19,7 @@ library(ggplot2)
 Ref:  
 1. https://guangchuangyu.github.io/ggtree-book/chapter-ggtree.html  
 2. https://yulab-smu.github.io/treedata-book/chapter2.html
-
+3. https://cran.r-project.org/web/packages/tidytree/tidytree.pdf
 
 **Get subunits sequence**
 ```{bash, eval=FALSE}
@@ -31,51 +31,66 @@ done > SAM/SBR/CLIP/all.SSU.fa
 for i in {S,O}{1,2,3};do 
   awk -v n=$i 'FNR%2==1{if(/>23S_rRNA/){gsub("23S_rRNA::",n);p=1}else{p=0}} (p==1){print}' SAM/$i/CLIP/all.barrnap.fa;
 done > SAM/SBR/CLIP/all.LSU.fa
-# or
-for i in {S,O}{1,2,3};do 
-  awk -v n=$i 'FNR%2==1{gsub(">",">"n)};{print}' SAM/$i/PREDICT/barrnap.ssu.fa;
-done > SAM/SBR/PREDICT/barrnap.ssu.fa
-for i in {S,O}{1,2,3};do 
-  awk -v n=$i 'FNR%2==1{gsub(">",">"n)};{print}' SAM/$i/PREDICT/barrnap.lsu.fa;
-done > SAM/SBR/PREDICT/barrnap.lsu.fa
+
+for i in {S,O}{1,2,3};do
+  perl -e '($tag,$f1,$f2)=@ARGV;open I,"< $f1";while(<I>){if($_=~/16S/&&$_!~/only \d+ percent of/){@s=split /\t/;$HS{$s[0]}++}};close I;
+    open I,"< $f2";$/=">";while(<I>){@s=split /\n/;@d=split /:/,$s[0];if(exists $HS{$d[2]}){print ">$tag$d[2]:$d[3]\n$s[1]\n"}};close I;' \
+    $i SAM/$i/CLIP/all.barrnap.gff SAM/$i/CLIP/all.barrnap.fa
+done > SAM/SBR/CLIP/full.SSU.fa
+
+for i in {S,O}{1,2,3};do
+  perl -e '($tag,$f1,$f2)=@ARGV;open I,"< $f1";while(<I>){if($_=~/23S/&&$_!~/only \d+ percent of/){@s=split /\t/;$HS{$s[0]}++}};close I;
+    open I,"< $f2";$/=">";while(<I>){@s=split /\n/;@d=split /:/,$s[0];if(exists $HS{$d[2]}){print ">$tag$d[2]:$d[3]\n$s[1]\n"}};close I;' \
+    $i SAM/$i/CLIP/all.barrnap.gff SAM/$i/CLIP/all.barrnap.fa
+done > SAM/SBR/CLIP/full.LSU.fa
+
+perl tmp.getValidCIDFA.pl SAM/SBR/KRAKEN/BEAD+/data/added.txt ../../Results/DEC20/STAT/KRAKEN/SXR.r2m.bracken.metadata.tsv SAM/SBR/CLIP/full.SSU.fa > SAM/SBR/CLIP/PBA.SSU.fa
+
+perl tmp.getValidCIDFA.pl SAM/SBR/KRAKEN/BEAD+/data/added.txt ../../Results/DEC20/STAT/KRAKEN/SXR.r2m.bracken.metadata.tsv SAM/SBR/CLIP/all.LSU.fa > SAM/SBR/CLIP/PBA.LSU.fa
+
 ```
 
 Get species level OTUs:
 ```{bash,eval=FALSE}
-metabbq IO tree2fa -s SAM/SBR/PREDICT/barrnap.ssu.fa -l SAM/SBR/PREDICT/barrnap.lsu.fa -r species -d CLADE0.99 -t SAM/SBR/KRAKEN/BEAD/data/added.txt -o SAM/SBR/PREDICT/species.fa -p -v
+mkdir -p SAM/SBR/PREDICT/
+metabbq IO tree2fa -s SAM/SBR/CLIP/PBA.SSU.fa -l SAM/SBR/CLIP/PBA.LSU.fa -r species -d CLADE0.99 -t SAM/SBR/KRAKEN/BEAD+/data/added.txt -o SAM/SBR/PREDICT/species.fa -p -v
 ```
 ```
 [tree2fa] start
-  Reading SAM/SBR/CLIP/all.SSU.fa ... done
-  Reading SAM/SBR/CLIP/all.LSU.fa ... done
-  Reading SAM/SBR/KRAKEN/BEAD/data/added.txt ... done
+  Reading  ... done
+  Reading SAM/SBR/CLIP/PBA.SSU.fa ... done
+  Reading SAM/SBR/CLIP/PBA.LSU.fa ... done
+  Reading SAM/SBR/KRAKEN/BEAD+/data/added.txt ... done
   Writing to SAM/SBR/PREDICT/species.fa ...done
-  Written 24206 clade seqs. 23793 records cannot found seqs.
-  SSU: 23599 (875+22687+37) | LSU: 1438(778+56+604) | BOTH:831(207+624+641)
+  Written 14512 clade seqs. 9151 records cannot found seqs.
+  SSU: 14509 (1105+13392+12) | LSU: 23(1+15+7) | BOTH:20(1+19+19)
+  *Each unit: <total number> (<from rank> + <from clade> + <from linkage clade>
 [All done!]
 ```
 Get genus level OTUs:
 ```{bash,eval=FALSE}
-metabbq IO tree2fa -s SAM/SBR/CLIP/all.SSU.fa -l SAM/SBR/CLIP/all.LSU.fa -r genus -d CLADE0.97 -t SAM/SBR/KRAKEN/BEAD/data/added.txt -o SAM/SBR/PREDICT/genus.fa -p -v
+metabbq IO tree2fa -s SAM/SBR/CLIP/PBA.SSU.fa -l SAM/SBR/CLIP/PBA.LSU.fa -r genus -d CLADE0.97 -t SAM/SBR/KRAKEN/BEAD+/data/added.txt -o SAM/SBR/PREDICT/genus.fa -p -v
 ```
 ```
 [tree2fa] start
-  Reading SAM/SBR/CLIP/all.SSU.fa ... done
-  Reading SAM/SBR/CLIP/all.LSU.fa ... done
-  Reading SAM/SBR/KRAKEN/BEAD/data/added.txt ... done
+  Reading  ... done
+  Reading SAM/SBR/CLIP/PBA.SSU.fa ... done
+  Reading SAM/SBR/CLIP/PBA.LSU.fa ... done
+  Reading SAM/SBR/KRAKEN/BEAD+/data/added.txt ... done
   Writing to SAM/SBR/PREDICT/genus.fa ...done
-  Written 3105 clade seqs. 10653 records cannot found seqs.
-  SSU: 3090 (212+2867+11) | LSU: 199(49+15+135) | BOTH:184(74+110+146)
+  Written 6732 clade seqs. 29245 records cannot found seqs.
+  SSU: 6729 (452+6269+8) | LSU: 18(0+14+4) | BOTH:15(0+15+12)
+  *Each unit: <total number> (<from rank> + <from clade> + <from linkage clade>
 [All done!]
 ```
 
 **RUN RAxML **
 genus: both subunits joint:
 ```{bash, eval=FALSE}
-mafft --thread 16 SAM/SBR/PREDICT/genus.both.fa > SAM/SBR/PREDICT/genus.both.mafft.fa
+mafft --thread 16 SAM/SBR/PREDICT/genus.SSU.fa > SAM/SBR/PREDICT/genus.ssu.mafft.fa
 trimal -gappyout -in SAM/SBR/PREDICT/genus.ssu.mafft.fa -out SAM/SBR/PREDICT/genus.ssu.mafft.trimal.fa
 
-raxmlHPC-HYBRID-AVX -f a -p 12345 -s SAM/SBR/PREDICT/genus.ssu.mafft.trimal.fa -x 12345 -T 20 -# 20 -m GTRCAT  -w $PWD/SAM/SBR/PREDICT -n genus.ssu.raxml
+raxmlHPC-HYBRID-AVX -f a -p 12345 -s SAM/SBR/PREDICT/genus.ssu.mafft.trimal.fa -x 12345 -T 40 -# 100 -m GTRCAT  -w $PWD/SAM/SBR/PREDICT -n genus.ssu.raxml
 ```
 
 treeio practices:
@@ -119,7 +134,7 @@ Time-scaled layout:
 beast_file <- system.file("examples/MCC_FluA_H3.tree", 
                           package="ggtree")
 beast_tree <- read.beast(beast_file)
-ggtree(beast_tree, mrsd="2013-01-01") + theme_tree2()
+ggtree(beast_tree, mrsd="2013-01-01",layout="circular") + theme_tree2()
 ```
 
 Annotation of clade
@@ -131,17 +146,17 @@ treetext = "(((ADH2:0.1[&&NHX:S=human], ADH1:0.11[&&NHX:S=human]):
 ADH3:0.13[&&NHX:S=yeast], ADH2:0.12[&&NHX:S=yeast],
 ADH1:0.11[&&NHX:S=yeast]):0.1[&&NHX:S=Fungi])[&&NHX:D=N];"
 tree <- read.nhx(textConnection(treetext))
-ggtree(tree) + geom_tiplab() + 
+ggtree(tree) + geom_tiplab(align=TRUE,linesize=.3,hjust=1) + 
   geom_label(aes(x=branch, label=S), fill='lightgreen') + 
   geom_label(aes(label=D), fill='steelblue') + 
-  geom_text(aes(label=B), hjust=-.5)
+  geom_text(aes(label=B), hjust=-.5,vjust=-1)
 ```
 
 
 ```{r}
 nwk <- system.file("extdata", "sample.nwk", package="treeio")
 tree <- read.tree(nwk)
-p <- ggtree(tree) + geom_tiplab()
+p <- ggtree(tree) + geom_tiplab(align=TRUE)
 viewClade(p, MRCA(p, "I", "L"))
 
 ```
@@ -188,28 +203,39 @@ p2
 
 read external info:
 ```{r}
+# awk -F "\t" '($0!~"PUB"){print $2"\t"$3"\t"$4"\t"$6"\t"$7"\t"$1}' SAM/SBR/KRAKEN/BEAD+/data/added.txt >  SAM/SBR/KRAKEN/BEAD+/data/added.tsv
+path.info <- read.table("../../Results/DEC20/SAM/SBR/KRAKEN/BEAD+/data/added.tsv",
+       sep="\t",fill = NA,col.names = c("id","rank","clade","anno","SID","path"),as.is = T)
 
-path.info <- read.table("../../Results/JAN20/SAM/SBR/KRAKEN/test/data/added.tsv",
-       sep="\t",fill = NA,col.names = c("id","rank","clade","anno","SID"),as.is = T)
 
-
-phylum.raxml <- read.raxml("../../Results/JAN20/SAM/SBR/PREDICT/RAXML/RAxML_bipartitionsBranchLabels.phylum+ref.ssu.raxml")
-p.info <- read.table("../../Results/JAN20/SAM/SBR/PREDICT/phylum.SSU.inf",sep="\t",fill=NA,
+genus.raxml <- read.raxml("../../Results/DEC20/SAM/SBR/PREDICT/RAxML_bipartitionsBranchLabels.genus.ssu.raxml")
+p.info <- read.table("../../Results/DEC20/SAM/SBR/PREDICT/genus.SSU.inf",sep="\t",fill=NA,
                      col.names = c("id","cladeName","SID","length","len","clades","annos"))
 
-p.info.df <- as_tibble(merge(data.frame(label=as.phylo(phylum.raxml)$tip.label),
+p.info.df <- as_tibble(merge(data.frame(label=as.phylo(genus.raxml)$tip.label),
       merge(p.info,path.info,by="id"),by.x="label",by.y="id",all.x=T))
 p.info.df$cladeName <- ifelse(is.na(p.info.df$cladeName),as.character(p.info.df$label),p.info.df$cladeName)
 p.info.df$anno <- ifelse(is.na(p.info.df$anno)|p.info.df$anno=="",as.character(p.info.df$cladeName),p.info.df$anno)
-p.tree <- full_join(phylum.raxml, p.info.df, by="label")
+p.info.df$anno2 <- ifelse(grepl("CLADE",p.info.df$anno),"",p.info.df$anno)
 
-p <- ggtree(p.tree) + geom_tiplab(aes(label=anno))
+p.tree <- full_join(genus.raxml, p.info.df, by="label")
+
+p <- ggtree(p.tree,layout="circular") + geom_tiplab(aes(label=anno))
 p
 
-p2 <- p %>% collapse(node=65) + 
-  geom_point2(aes(subset=(node==65)), shape=21, size=5, fill='green')
+ggsave(p,width=200,height=200,limitsize = FALSE,
+       filename = "../../Results/DEC20/SAM/SBR/PREDICT/genus.plot.pdf")
+```
 
-p2
+remove clade info, only show annotated clades
+```{r}
+p2 <- ggtree(p.tree,layout="circular") + geom_tiplab(aes(label=anno2))
+p2f <- p2%>%collapse(node=15143)%>%collapse(node=947611)
+p4 <- ggtree(p.tree) + geom_tiplab(align=TRUE,aes(label=path),linesize=.1,hjust=0,size=1)
+
+ggsave(p2,width=200,height=200,limitsize = FALSE,
+       filename = "../../Results/DEC20/SAM/SBR/PREDICT/genus.onlyAnno.plot.pdf")
+
 ```
 
 
