@@ -1,0 +1,50 @@
+---
+title: "ONT_zymo"
+author: "pengzhuobing"
+date: "2021/3/16"
+output: html_document
+---
+
+zymo infomation : `stLFR4META - 文档\Experiments\ZymoBIOMICS Microbial Community DNA Standard D6305`
+
+Zymo ONT summmary txt : `stLFR4META - 文档\Results\ONT\zymo\sequencing_summary_FAO65486_d224d9b1.txt`
+Zymo ONT data : /hwfssz5/ST_GCCNT/P18Z10200N0032/fanfei/Meta_Zymo_R10_20210225/
+
+set global vars (bash):
+```{bash}
+
+threads=24
+DB=../../Source/REF/zymo
+DataPath= /ldfssz1/ST_META/F16HQSB1SY2636_TumorMeta_ZH/pengzhuobing/benchmark4stlfr/Results/ONT_zymo # ../../Results/ONT/zymo 
+do.write<-F
+
+```
+
+A list of manuals for check:
+> nanoplot: http://nanoplot.bioinf.be/
+> filtlong:  https://github.com/rrwick/Filtlong
+> minimap2: https://github.com/lh3/minimap2
+> Samtools: http://www.htslib.org/doc/samtools.html
+> bwa: http://bio-bwa.sourceforge.net/bwa.shtml
+
+
+```{bash, include=FALSE}
+#0. prepare data
+cat /hwfssz5/ST_GCCNT/P18Z10200N0032/fanfei/Meta_Zymo_R10_20210225/fastq_pass/*fastq | gunzip > $DataPath/FAO65486_pass_d224d9b1_all.fastq.gz
+# data statistics: http://nanoplot.bioinf.be/nanoplot.php?key=dc3633b97fd896c6ce7129cd5a012d92#stats0
+
+#1. filt
+filtlong --min_length 1000 --min_mean_q 80 $DataPath/FAO65486_pass_d224d9b1_all.fastq.gz >$DataPath/clean.filtlong.FAO65486_pass_d224d9b1_all.fq
+
+#2. Mapping ONT to zymo genome reference (bwa)
+bwa mem -t $threads $DB/D6305.genomes.bwa $DataPath/clean.filtlong.FAO65486_pass_d224d9b1_all.fq |samtools view -b > ONTzymo.bwa.bam
+
+#3. Mapping ONT to zymo genome reference (minimap2)
+#minimap2 make zymo index #D6305.genomes
+minimap2 -d $DataPath/D6305.genomes.min $DB/D6305.genomes.fasta
+
+#minimap2
+minimap2 -ax map-ont $DataPath/D6305.genomes.min $DataPath/clean.filtlong.FAO65486_pass_d224d9b1_all.fq >$DataPath/ONTzymo.minimap.sam
+
+```
+
