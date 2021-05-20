@@ -1,0 +1,310 @@
+---
+title: "ggtree_Raxml.Rmd"
+author: "pengzhuobing"
+date: "2021/4/13"
+output: html_document
+---
+
+```{r setup, include=T, echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(treeio)
+library(ggtree)
+library(ape)
+library(ggplot2)
+library(dplyr)
+library(scales)
+do.write <- F
+```
+
+```{bash, eval=FALSE}
+
+# /ldfssz1/ST_META/F16HQSB1SY2636_TumorMeta_ZH/fangchao/benchmark4stlfr/Assay/16.DEC20/SAM/SFR/KRAKEN/BEAD+/taxonomy/paths.txt 
+python classfy.py paths.txt > ../../../Result/phylotree/Fungi/1.data/levPaths.0.1.txt
+
+```
+
+# 1. 载入树文件和注释文件
+
+```{r, echo=FALSE}
+tree <- read.raxml("../../../Result/phylotree/Fungi/1.data/RAxML_bipartitionsBranchLabels.species.raxml")
+pt <- ggtree(tree)
+pt
+
+# 读入物种注释文件
+anno <- read.delim("../../../Result/phylotree/Fungi/1.data/levPaths.0.1.txt",sep = "\t", comment.char = "", header = T)
+anno$label <- as.character(anno$label)
+
+#anno<-  read.delim("../../../Result/phylotree/Fungi/1.data/levPaths.0.2.txt", sep = "\t", comment.char = "", header = T)
+#anno$label <- as.character(anno$label)
+
+
+```
+
+# 2. 统计数据
+## 2.1 domain
+```{r, echo=FALSE}
+mergedat <- left_join(tree%>%as_tibble(), anno, by = 'label')
+
+# 树枝长度统计
+plot(sort(as.numeric(mergedat$branch.length)))
+
+tol.dat <- mergedat%>%filter(branch.length>0.1)
+
+dat <- drop.tip(mergedat%>%as.phylo(), tol.dat$node)
+ggtree(dat)
+
+```
+
+```{r, echo=FALSE}
+as.data.frame(table(mergedat$domain))
+
+ggplot(mergedat%>%filter(domain!="NA"), aes(x=domain, fill = kingdom))  + theme(axis.text.x = element_text(vjust = 0.5, hjust = 0.5, angle = 15))+stat_count(aes(x=domain))
+# domain水平为NA的一般是上级节点（无物种注释）
+```
+
+## 2.2 Kingdom of Eukaryota
+```{r, echo=FALSE}
+mergedat <- left_join(tree%>%as_tibble(), anno1, by = 'label')
+dat <- mergedat%>%filter(domain=="domain__Eukaryota")
+dat <- as.data.frame(table(dat$kingdom))
+dat <- dat%>%filter(Freq != 0)
+dat$perc <- round(dat$Freq/sum(dat$Freq),3)
+dat <- dat[order(dat$Freq),]
+
+
+cladedat <- dat[grep("CLADE", dat$Var1, ignore.case=T),]
+
+# 将比例较少<=0.01的CLADE物种认为是Unknown__CLADE,保留比例较大的CLADE未知物种
+exc.cladedat <- cladedat%>%filter(perc<=0.01) 
+dat$Spe <- dat$Var1
+dat$Spe <- as.character(dat$Spe)
+dat[which(dat$Var1%in%exc.cladedat$Var1),"Spe"] <- "Unknown__CLADE"
+
+dat%>%filter(Spe != "Unknown__CLADE")
+#mergedat[which(mergedat$domain=="domain__Eukaryota"&mergedat$kingdom%in%exc.cladedat$Var1),"Spe"] <- "domain__Eukaryota;NA"#paste("domain__Eukaryota","NA",sep = ";")
+
+dat$Var1 <- factor(dat$Var1, levels = dat$Var1, ordered = T)
+ggplot(dat, aes(x=Var1, y=Freq))+geom_point()+
+  theme(axis.text.x = element_text(vjust = 0.5, hjust = 0.5, angle =90))+
+  geom_hline(yintercept = 40, linetype="dotted", color="red") +
+  xlab("Kingdom") + ylab("Count")#+scale_y_log10()
+
+
+ggplot(dat,aes(x="", y=Freq, fill=Spe))+geom_bar(width = 1, stat = "identity")+ coord_polar("y", start=0)+
+  xlab("") + ylab("Proportion of Kingdom")
+
+#(< 1% of clades were classified as Unknown_ CLADE)
+
+```
+
+```{r, echo=FALSE}
+Euk.kingdtree <- mergedat
+Euk.kingdtree$kingdom <- as.character(Euk.kingdtree$kingdom)
+Euk.kingdtree$kingdom[Euk.kingdtree$kingdom%in%exc.cladedat$Var1] <- "Unknown__CLADE"
+
+Euk.kingdtree$label <- paste(Euk.kingdtree$domain, Euk.kingdtree$kingdom, sep = ";") #用物种名代替label, Unknown__CLADE代替CLADE
+
+tip <- get.tree(Euk.kingdtree)$tip.label
+nonEuk <- tip[-grep("domain__Eukaryota", tip)]
+nhx_reduced.Euk.kingdtree <- drop.tip(Euk.kingdtree%>%as.phylo(), nonEuk) # 这里保留真菌数据
+
+kin.col <- c("#1a9850","#bae4b3","yellow","#fff7ec","blue","#fed98e","#c2e699","#b35806","#fcb9b2","#fbb4b9","#bdd7e7","#b2e2e2")
+
+ggtree(nhx_reduced.Euk.kingdtree,color="gray") +  geom_tippoint(aes(color=label),alpha=1/4,size=4) +scale_color_manual(values=c(kin.col, "black"), na.value = "grey", breaks = unique(nhx_reduced.Euk.kingdtree$tip.label))
+
+```
+
+## 2.3 phylum of Fungi
+
+```{r, echo=FALSE}
+fung <- mergedat%>%filter(kingdom=="kingdom__Fungi")
+
+fung.class <- as.data.frame(table(fung$phylum, fung$class))
+fung.class <- fung.class%>%filter(Freq != 0)
+fung.class$perc <- round(fung.class$Freq/sum(dat$Freq),3)
+fung.class <- fung.class[order(fung.class$Freq),]
+
+cladedat <- fung.class[grep("CLADE", fung.class$Var2, ignore.case=T),]
+
+# 将比例较少<=0.01的CLADE物种认为是Unknown__CLADE,保留比例较大的CLADE未知物种
+exc.cladedat <- cladedat%>%filter(perc<=0.01) 
+fung.class$Spe <- fung.class$Var2
+fung.class$Spe <- as.character(fung.class$Spe)
+fung.class[which(fung.class$Var2%in%exc.cladedat$Var2),"Spe"] <- "Unknown__CLADE"
+
+fung.class$Var2 <- factor(fung.class$Var2, levels = unique(fung.class$Var2), ordered = T)
+
+
+topfung.class <- fung.class%>%filter(Freq>100)
+topfung.class
+
+ggplot(fung.class, aes(x=Var2, y=Freq))+geom_point()+
+  theme(axis.text.x = element_text(vjust = 0.5, hjust = 0.5, angle =90))+
+  geom_hline(yintercept = 40, linetype="dotted", color="red") +
+  xlab("Kingdom") + ylab("Count")#+scale_y_log10()
+
+
+ggplot(mergedat%>%filter(kingdom=="kingdom__Fungi"&class%in%topfung.class$Var2), aes(x=phylum, fill=class)) +  geom_bar() + theme(axis.text.x = element_text(vjust = 0.5, hjust = 0.5, angle = 45))
+
+#ggplot(fung.class,aes(x=Var1, y=Freq, fill=Var2)) + geom_bar()
+
+
+```
+真菌主要门为担子菌、子囊菌；其下的主要纲如上表格所示，出现频率大于100的有5个纲；
+
+
+```{r, echo=FALSE}
+cl <- fung.class%>%filter(Freq>100)
+cld <- fung%>%filter(class%in%cl$Var2)
+cld.s <- as.data.frame(table(cld$class, cld$order))
+cld.s <- cld.s%>%filter(Freq>1)
+cld.s%>%filter(Freq>50)
+
+ggplot(cld%>%filter(order%in%cld.s$Var2), aes(x=class, fill=order)) +  geom_bar() + theme(axis.text.x = element_text(vjust = 0.5, hjust = 0.5, angle = 45))
+
+```
+在目水平已经看不太出来物种分布
+
+
+
+# 3. Plots
+## 真菌门水平
+
+查看某些CLADE是否可以归类为已知物种
+
+```{r}
+mergedat <- left_join(tree%>%as_tibble(), anno1, by = 'label')
+nonEuk.fug <- which(mergedat$domain!="domain__Eukaryota"|mergedat$kingdom!="kingdom__Fungi"|is.na(mergedat$kingdom))
+nhx_reduced <- drop.tip(mergedat%>%as.phylo(), nonEuk.fug) # 这里保留真菌数据
+
+# 有的节点过长，将其剔掉
+x <- nhx_reduced%>%as_tibble()
+tolo.node <- which(x$node%in%c(44,45,46,47,48,151,453,452))
+nhx_reduced <- drop.tip(nhx_reduced%>%as.phylo(), tolo.node)
+
+
+#ggtree(nhx_reduced) + geom_tippoint(aes(color=label))+scale_color_manual(values=c(col, "black"), na.value = "grey", breaks = unique(nhx_reduced$tip.label))
+nhx_reduced <- left_join(nhx_reduced%>%as_tibble(), anno1, by = 'label')
+tmpdat <- nhx_reduced
+tmpdat$kingdom <- as.character(tmpdat$kingdom)
+tmpdat$phylum <- as.character(tmpdat$phylum)
+tmpdat$phylum[grep("CLADE",tmpdat$phylum, ignore.case=T)] <- "Unknown__CLADE"
+
+nhx_reduced$label <- paste(tmpdat$domain, tmpdat$kingdom, tmpdat$phylum, sep = ";") #用物种名代替label, Unknown__CLADE代替CLADE
+#mergedat$label <- paste(mergedat$domain, mergedat$kingdom, mergedat$phylum, mergedat$class, mergedat$order) #用物种名代替label
+nhx_reduced$phylum[-grep("CLADE",nhx_reduced$phylum, ignore.case=T)] <- "NA"
+nhx_reduced$label <- gsub("domain__Eukaryota;kingdom__Fungi;", "", nhx_reduced$label)
+nhx_reduced$label <- gsub("phylum__", "", nhx_reduced$label)
+
+col <- c("#fcb9b2", "#998ec3","#91cf60","#b35806","#ff715b","#d8b365","#06aed5","#1a9850","blue","yellow")
+#col <- c("#06aed5","#91cf60","#1a9850","#ff715b","yellow","#d8b365","#998ec3","#b35806","#fcb9b2")
+
+p <- ggtree(nhx_reduced%>%as.phylo(),color="gray") + geom_tippoint(aes(color=label),alpha=1/4,size=4)+scale_color_manual(values=c(col, "black"), na.value = "grey") 
+
+p <- p %<+% nhx_reduced + geom_tiplab(mapping=aes(label=phylum), size=2)
+if(do.write){
+  ggsave(p, filename = "../../../Result/phylotree/Fungi/2.plot/Phylotree_Raxml_Fungi_phylum.pdf")
+}
+#open_tree(p, 180)
+
+
+```
+
+
+## 注释上层分支/合并分支
+```{r, warning=FALSE}
+y <- nhx_reduced
+
+par <- rev(sort(unique(y$parent)))
+sn <- c()
+
+for (m in par){
+  tmp <- offspring(y,m)
+  tl <- tmp$label
+  levn <- vector( mode = "list" )
+  noNAnum <- 0 # 这里考虑到有NA;NA;NA(应该只存在于上一级)的情况，这里考虑将NA；NA;NA降比例为0.3
+  for (i in 1:length(tl)){
+    if (tl[i]=="NA;NA;NA"|is.na(tl[i])){
+    #if (is.na(tl[i])){
+      noNAnum = noNAnum + 0.3 # 设置NA的权重为0.1
+      break
+    }
+    if (tl[i] %in% names(levn)){
+      levn[tl[i]][[1]] = levn[tl[i]][[1]]+1
+    }
+    else{
+      levn[tl[i]]=1
+    }
+    noNAnum = noNAnum + 1
+  }
+  
+  if (length(levn)>0){
+    for (j in 1:length(levn)){
+      #levn[[j]] = levn[[j]]/length(tl)
+      levn[[j]] = levn[[j]]/noNAnum # 计算其中某种菌在所在分支下的占比率，若超过0.8则将该分支合并设为该菌
+      if (levn[[j]] > 0.9){ # 2-0.666/3-0.8
+        #print(levn[j])
+        sn <- c(sn,m) #sn是指需要合并的分支
+        y[y$node==m, names(y)=="label"] <- names(levn[j])
+        #y[y$parent==m, names(y)=="label"] <- names(levn[j])
+        y[tmp$node, names(y)=="label"] <- names(levn[j])  # 该分支下所有node均改为该菌
+        #y[tmp$node, ]
+        #names(levn[j])
+      }
+    }
+  }
+}
+
+col <- c("#fcb9b2", "#998ec3","#91cf60","#b35806","#ff715b","#d8b365","#06aed5","black","blue","yellow")
+pn1 <- ggtree(y%>%as.phylo(), aes(color=label)) + geom_tiplab(aes(label=label),size=0.5)+scale_color_manual(values=c(col, "#1a9850"), na.value = "grey") 
+
+pn1
+#open_tree(pn1, 30)
+ 
+for (n in sn){
+  pn1 <- collapse(pn1, node=n)
+}
+
+pn1
+
+```
+
+
+
+## 真菌纲水平
+```{r}
+
+mergedat <- left_join(tree%>%as_tibble(), anno1, by = 'label')
+#mergedat <- mergedat%>%filter(kingdom!="NA"&phylum!="NA"&class!="NA")
+nonEuk.fug <- which(mergedat$domain!="domain__Eukaryota"|mergedat$kingdom!="kingdom__Fungi"|mergedat$phylum!="phylum__Ascomycota"|mergedat$kingdom=="NA"|mergedat$phylum=="NA"|mergedat$class=="NA")
+nonEuk.fug <- c(nonEuk.fug, which(is.na(mergedat$kingdom)|is.na(mergedat$phylum)|is.na(mergedat$class)))
+
+nhx_reduced <- drop.tip(mergedat%>%as.phylo(), nonEuk.fug) # 这里保留真菌phylum__Ascomycota数据
+#ggtree(nhx_reduced) + geom_tippoint(aes(color=label))+scale_color_manual(values=c(col, "black"), na.value = "grey", breaks = unique(nhx_reduced$tip.label))
+nhx_reduced <- left_join(nhx_reduced%>%as_tibble(), anno1, by = 'label')
+
+tmpdat <- nhx_reduced
+tmpdat$class <- as.character(tmpdat$class)
+tmpdat$class[grep("CLADE",tmpdat$class, ignore.case=T)] <- "Unknown__CLADE"
+
+nhx_reduced$label <- paste(tmpdat$domain, tmpdat$kingdom, tmpdat$phylum, tmpdat$class, sep = ";") #用物种名代替label, Unknown__CLADE代替CLADE
+#mergedat$label <- paste(mergedat$domain, mergedat$kingdom, mergedat$phylum, mergedat$class, mergedat$order) #用物种名代替label
+nhx_reduced$class[-grep("CLADE",nhx_reduced$class, ignore.case=T)] <- "NA"
+
+col <- c("#998ec3","#91cf60","#b35806","#ff715b","yellow","#d8b365","#06aed5","#1a9850","#fcb9b2", "blue","red")
+#col <- c("#06aed5","#91cf60","#1a9850","#ff715b","yellow","#d8b365","#998ec3","#b35806","#fcb9b2")
+
+p <- ggtree(nhx_reduced%>%as.phylo(),color="gray") +  geom_tippoint(aes(color=label),alpha=1/4,size=4)+scale_color_manual(values=c(col, "black"), na.value = "grey")
+p
+
+p %<+% nhx_reduced + geom_tiplab(mapping=aes(label=class), size=2,hjust = -0.5)
+
+nhx_reduced%>%filter(phylum!="NA")
+
+#open_tree(p, 180)
+
+# geom_tiplab(geom = 'shadowtext', bg.colour = alpha('firebrick', .5))
+
+```
+
+

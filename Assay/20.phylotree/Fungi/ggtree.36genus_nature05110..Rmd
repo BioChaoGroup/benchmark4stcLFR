@@ -1,0 +1,53 @@
+---
+title: "ggtree.36genus_nature05110"
+author: "pengzhuobing"
+date: "2021/5/12"
+output: html_document
+---
+
+```{r setup, include=T}
+knitr::opts_chunk$set(echo = TRUE)
+library(treeio)
+library(ggtree)
+#library(ape) # Warning：ape包与filp()函数不兼容
+library(ggplot2)
+library(dplyr)
+library(scales)
+```
+
+
+
+```{r}
+
+tree <- read.tree("../../../Result/phylotree/nature05110/01.data/intersection.genus.36.fa.raxml.bestTree")
+anno <- read.table("../../../Result/phylotree/nature05110/01.data/anno.txt", sep = " ")
+names(anno) <- c("genus", "label")
+anno$label <- as.character(anno$label)
+tree.a <- left_join(tree%>%as_tibble(), anno, by = 'label')
+
+
+p <- ggtree(tree)  #+ geom_label(aes(label=node)) 
+p <- p%<+% tree.a + geom_tiplab(mapping=aes(label=genus), size=3) #+ geom_label(aes(label=node))
+p
+
+p1 <- flip(p, 45, 32) # 翻转38、41的内部结构 #! Candida
+p1 <- flip(p1, 36, 38) # 
+
+#-------------
+#p1 <- flip(p1, 17, 58) # 
+#p1 <- flip(p1, 18, 59) # 
+#p1 <- rotate(p, 32) %>% rotate(45) # 翻转38与41
+p1 <- flip(p1, 29, 67) #
+p1 <- flip(p1, 25, 68) #
+p1 <- flip(p1, 26, 69) #
+p1 <- flip(p1, 30, 60) #
+#p1 <- flip(p1, 27,28) # 
+
+p1
+
+ggsave(p1,filename="../../../Result/phylotree/nature05110/02.plot/tree36.genus.pdf")
+```
+
+
+
+
