@@ -8,34 +8,33 @@ output: html_document
 ```{r setup, include=T, echo=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(treeio)
-library(ggtree)
+library(ggtree) # 需要更新至github最新版本
 library(ape)
 library(ggplot2)
 library(dplyr)
 library(scales)
+library(ggnewscale)
 do.write <- F
 ```
+
 
 ```{bash, eval=FALSE}
 
 # /ldfssz1/ST_META/F16HQSB1SY2636_TumorMeta_ZH/fangchao/benchmark4stlfr/Assay/16.DEC20/SAM/SFR/KRAKEN/BEAD+/taxonomy/paths.txt 
-python classfy.py paths.txt > ../../../Result/phylotree/Fungi/1.data/levPaths.0.1.txt
+python classfy.py paths.txt > ../../../Results/phylotree/Fungi/1.data/levPaths.0.1.txt
 
 ```
 
 # 1. 载入树文件和注释文件
 
 ```{r, echo=FALSE}
-tree <- read.raxml("../../../Result/phylotree/Fungi/1.data/RAxML_bipartitionsBranchLabels.species.raxml")
+tree <- read.raxml("../../../Results/phylotree/Fungi/1.data/RAxML_bipartitionsBranchLabels.species.raxml")
 pt <- ggtree(tree)
 pt
 
 # 读入物种注释文件
-anno <- read.delim("../../../Result/phylotree/Fungi/1.data/levPaths.0.1.txt",sep = "\t", comment.char = "", header = T)
-anno$label <- as.character(anno$label)
-
-#anno<-  read.delim("../../../Result/phylotree/Fungi/1.data/levPaths.0.2.txt", sep = "\t", comment.char = "", header = T)
-#anno$label <- as.character(anno$label)
+anno1<-  read.delim("../../../Results/phylotree/Fungi/1.data/levPaths.0.2.txt", sep = "\t", comment.char = "", header = T)
+anno1$label <- as.character(anno1$label)
 
 
 ```
@@ -43,7 +42,7 @@ anno$label <- as.character(anno$label)
 # 2. 统计数据
 ## 2.1 domain
 ```{r, echo=FALSE}
-mergedat <- left_join(tree%>%as_tibble(), anno, by = 'label')
+mergedat <- left_join(tree%>%as_tibble(), anno1, by = 'label')
 
 # 树枝长度统计
 plot(sort(as.numeric(mergedat$branch.length)))
@@ -54,6 +53,7 @@ dat <- drop.tip(mergedat%>%as.phylo(), tol.dat$node)
 ggtree(dat)
 
 ```
+
 
 ```{r, echo=FALSE}
 as.data.frame(table(mergedat$domain))
@@ -202,25 +202,50 @@ col <- c("#fcb9b2", "#998ec3","#91cf60","#b35806","#ff715b","#d8b365","#06aed5",
 p <- ggtree(nhx_reduced%>%as.phylo(),color="gray") + geom_tippoint(aes(color=label),alpha=1/4,size=4)+scale_color_manual(values=c(col, "black"), na.value = "grey") 
 
 p <- p %<+% nhx_reduced + geom_tiplab(mapping=aes(label=phylum), size=2)
+
 if(do.write){
-  ggsave(p, filename = "../../../Result/phylotree/Fungi/2.plot/Phylotree_Raxml_Fungi_phylum.pdf")
+  ggsave(p, filename = "../../../Results/phylotree/Fungi/2.plot/Phylotree_Raxml_Fungi_phylum.pdf")
 }
 #open_tree(p, 180)
 
+```
+
+## 真菌数据 genus水平物种建树
+```{r}
+mergedat <- left_join(tree%>%as_tibble(), anno1, by = 'label')
+nonEuk.fug <- which(mergedat$domain!="domain__Eukaryota"|mergedat$kingdom!="kingdom__Fungi"|is.na(mergedat$kingdom)|is.na(mergedat$phylum)|is.na(mergedat$genus))
+nhx_reduced <- drop.tip(mergedat%>%as.phylo(), nonEuk.fug) # 这里保留真菌数据
+
+# 有的节点过长，将其剔掉
+x <- nhx_reduced%>%as_tibble()
+tolo.node <- which(x$node%in%c(44,45,46,47,48,151,453,452))
+nhx_reduced <- drop.tip(nhx_reduced%>%as.phylo(), tolo.node)
+nhx_reduced <- left_join(nhx_reduced%>%as_tibble(), anno1, by = 'label')
+
+nhx_reduced$genus <- gsub("genus__", "", nhx_reduced$genus)
+nhx_reduced$phylum <- gsub("phylum__", "", nhx_reduced$phylum)
+nhx_reduced$phylum[grep("CLADE",nhx_reduced$phylum, ignore.case=T)] <- "Unknown__CLADE"
+
+col <- c("#fcb9b2", "#998ec3","#91cf60","#b35806","#ff715b","#d8b365","#06aed5","#1a9850","blue","yellow")
+
+ggtree(nhx_reduced%>%as.phylo(),color="gray",layout = "circular",size=0.1) %<+% nhx_reduced + geom_tiplab(aes(label=genus),size=0.5)
 
 ```
+由上图可知，在genus水平有许多想近并且相同的物种，这里可以考虑将他们合并，即折叠上层节点
+通过观察发现大部分都是100%相似，这里认为同一节点下物种100%相似，则折叠
 
 
 ## 注释上层分支/合并分支
 ```{r, warning=FALSE}
 y <- nhx_reduced
+y$label <- y$node
 
 par <- rev(sort(unique(y$parent)))
 sn <- c()
 
 for (m in par){
   tmp <- offspring(y,m)
-  tl <- tmp$label
+  tl <- tmp$genus
   levn <- vector( mode = "list" )
   noNAnum <- 0 # 这里考虑到有NA;NA;NA(应该只存在于上一级)的情况，这里考虑将NA；NA;NA降比例为0.3
   for (i in 1:length(tl)){
@@ -242,12 +267,13 @@ for (m in par){
     for (j in 1:length(levn)){
       #levn[[j]] = levn[[j]]/length(tl)
       levn[[j]] = levn[[j]]/noNAnum # 计算其中某种菌在所在分支下的占比率，若超过0.8则将该分支合并设为该菌
-      if (levn[[j]] > 0.9){ # 2-0.666/3-0.8
+      if (levn[[j]] == 1){ # 2-0.666/3-0.8
         #print(levn[j])
         sn <- c(sn,m) #sn是指需要合并的分支
-        y[y$node==m, names(y)=="label"] <- names(levn[j])
-        #y[y$parent==m, names(y)=="label"] <- names(levn[j])
-        y[tmp$node, names(y)=="label"] <- names(levn[j])  # 该分支下所有node均改为该菌
+        y[y$node==m, names(y)=="genus"] <- names(levn[j])
+        y[tmp$node, names(y)=="genus"] <- names(levn[j])  # 该分支下所有node均改为该菌
+        y[y$node==m, names(y)=="phylum"] <- child(y, m)[1,names(y)=="phylum"] # 更新新注释的节点上层注释信息
+        y[y$node==m, names(y)=="kingdom"] <- child(y, m)[1,names(y)=="kingdom"] # 更新新注释的节点上层注释信息
         #y[tmp$node, ]
         #names(levn[j])
       }
@@ -255,55 +281,213 @@ for (m in par){
   }
 }
 
-col <- c("#fcb9b2", "#998ec3","#91cf60","#b35806","#ff715b","#d8b365","#06aed5","black","blue","yellow")
-pn1 <- ggtree(y%>%as.phylo(), aes(color=label)) + geom_tiplab(aes(label=label),size=0.5)+scale_color_manual(values=c(col, "#1a9850"), na.value = "grey") 
+y$genus <- as.character(y$genus)
+pn1 <- ggtree(y%>%as.phylo(), size=0.1,layout="circular") %<+% y + geom_tiplab(aes(label=genus),size=0.5)+geom_nodelab(aes(label=genus),geom = "text",size=0.5)#+geom_text2(aes(subset=!isTip, label=node), hjust=-0.3, size=0.5, color="black") + geom_tippoint(aes(color=phylum),alpha=1/4,size=4)
 
-pn1
-#open_tree(pn1, 30)
- 
+
+## 合并相同属分支，注释上级分支；  √
+## 去除注释错误序列（或者用颜色标注）
+
 for (n in sn){
   pn1 <- collapse(pn1, node=n)
 }
 
-pn1
+
+# 根据上图调整位置，翻转节点 1. 2031(2032,2191); 2. 1879(1880, 2031)
+# 未去除NA之前的翻转节点
+#pn1 <- flip(pn1, 1880, 2031)
+#pn1 <- flip(pn1, 2032, 2198) #
+
+# 去除NA之后的翻转节点
+
+pn1 <- flip(pn1, 1144, 1250)
+pn1 <- flip(pn1, 1251, 1323)
+
+## 添加门水平注释信息
+
+dd <- y[,c(4, 10)]
+dd <- as.data.frame(dd)
+dd <- na.omit(dd)
+
+ddd <- as.data.frame(dd$phylum)
+rownames(ddd) <- dd$label
+names(ddd) <- "Phylum"
+
+heatcol <- c("#06aed5","#91cf60","#1a9850","#ff715b","yellow","#d8b365","#998ec3","#b35806","#fcb9b2")
+x <- gheatmap(pn1, ddd, offset=0, width=.1, colnames_offset_y = .25,colnames = F) +scale_fill_manual(values=heatcol, name="Phylum")
+
+
+if(do.write){
+  ggsave(x, height = 20, width = 20, filename = "../../../Results/phylotree/Fungi/2.plot/Phylotree_Raxml_Fungi_genus.pdf")
+}
+
+
+```
+
+
+
+## 全部真核生物数据 genus水平物种建树 界门
+```{r}
+mergedat <- left_join(tree%>%as_tibble(), anno1, by = 'label')
+nonEuk <- which(mergedat$domain!="domain__Eukaryota"|is.na(mergedat$kingdom)|is.na(mergedat$phylum)|is.na(mergedat$genus)) # 有许多分支注释信息为NA，这里可以考虑将NA去掉
+nhx_reduced <- drop.tip(mergedat%>%as.phylo(), nonEuk) # 这里保留真核生物数据
+
+# 有的节点过长，将其剔掉
+x <- nhx_reduced%>%as_tibble()
+tolo.node <- which(x$node%in%c(44,45,46,47,48,151,453,452))
+nhx_reduced <- drop.tip(nhx_reduced%>%as.phylo(), tolo.node)
+nhx_reduced <- left_join(nhx_reduced%>%as_tibble(), anno1, by = 'label')
+
+nhx_reduced$genus <- gsub("genus__", "", nhx_reduced$genus)
+nhx_reduced$phylum <- gsub("phylum__", "", nhx_reduced$phylum)
+nhx_reduced$phylum[grep("CLADE",nhx_reduced$phylum, ignore.case=T)] <- "Unknown__CLADE"
+nhx_reduced$kingdom <- gsub("kingdom__", "", nhx_reduced$kingdom)
+nhx_reduced$kingdom[grep("CLADE",nhx_reduced$kingdom, ignore.case=T)] <- "Unknown__CLADE"
+
+# 仅显示真菌门类信息，其他界的门类信息用nonFungi表示
+nhx_reduced[which(nhx_reduced$kingdom!="Fungi"),c(10)] <- "nonFungi"
+
+col <- c("#fcb9b2", "#998ec3","#91cf60","#b35806","#ff715b","#d8b365","#06aed5","#1a9850","blue","yellow")
+
+ggtree(nhx_reduced%>%as.phylo(),color="gray",layout = "circular",size=0.1) %<+% nhx_reduced + geom_tiplab(aes(label=genus),size=0.5)
+
+```
+由上图可知，在genus水平有许多想近并且相同的物种，这里可以考虑将他们合并，即折叠上层节点
+通过观察发现大部分都是100%相似，这里认为同一节点下物种100%相似，则折叠
+
+
+## 注释上层分支/合并分支
+```{r, warning=FALSE}
+y <- nhx_reduced
+y$label <- y$node
+
+par <- rev(sort(unique(y$parent)))
+sn <- c()
+
+for (m in par){
+  tmp <- offspring(y,m)
+  tl <- tmp$genus
+  levn <- vector( mode = "list" )
+  noNAnum <- 0 # 这里考虑到有NA;NA;NA(应该只存在于上一级)的情况，这里考虑将NA；NA;NA降比例为0.3
+  for (i in 1:length(tl)){
+    if (tl[i]=="NA;NA;NA"|is.na(tl[i])){
+    #if (is.na(tl[i])){
+      noNAnum = noNAnum + 0.3 # 设置NA的权重为0.1
+      break
+    }
+    if (tl[i] %in% names(levn)){
+      levn[tl[i]][[1]] = levn[tl[i]][[1]]+1
+    }
+    else{
+      levn[tl[i]]=1
+    }
+    noNAnum = noNAnum + 1
+  }
+  
+  if (length(levn)>0){
+    for (j in 1:length(levn)){
+      #levn[[j]] = levn[[j]]/length(tl)
+      levn[[j]] = levn[[j]]/noNAnum # 计算其中某种菌在所在分支下的占比率，若超过0.8则将该分支合并设为该菌
+      if (levn[[j]] == 1){ # 2-0.666/3-0.8
+        #print(levn[j])
+        sn <- c(sn,m) #sn是指需要合并的分支
+        y[y$node==m, names(y)=="genus"] <- names(levn[j])
+        #y[y$parent==m, names(y)=="genus"] <- names(levn[j])
+        y[tmp$node, names(y)=="genus"] <- names(levn[j])  # 该分支下所有node均改为该菌
+        y[y$node==m, names(y)=="phylum"] <- child(y, m)[1,names(y)=="phylum"] # 更新新注释的节点上层注释信息
+        y[y$node==m, names(y)=="kingdom"] <- child(y, m)[1,names(y)=="kingdom"] # 更新新注释的节点上层注释信息
+      }
+    }
+  }
+}
+
+y$genus <- as.character(y$genus)
+pn1 <- ggtree(y%>%as.phylo(), size=0.1,layout="circular") %<+% y + geom_tiplab(aes(label=genus),size=0.5)+geom_nodelab(aes(label=genus),geom = "text",size=0.5)# 添加节点信息和点颜色 +geom_text2(aes(subset=!isTip, label=node), hjust=-0.3, size=0.5, color="black") + geom_tippoint(aes(color=phylum),alpha=1/4,size=4)
+
+for (n in sn){
+  pn1 <- collapse(pn1, node=n)
+}
+
+
+# 根据上图调整位置，翻转节点 1. 2031(2032,2191); 2. 1879(1880, 2031)
+#pn1 <- flip(pn1, 1880, 2031)
+#pn1 <- flip(pn1, 2032, 2198) #
+
+
+
+## 添加门水平注释信息
+
+dd <- y[,c(4, 10)]
+dd <- as.data.frame(dd)
+dd <- na.omit(dd)
+
+ddd <- as.data.frame(dd$phylum)
+rownames(ddd) <- dd$label
+names(ddd) <- "Phylum"
+heatcol <- c("#06aed5","#91cf60","#1a9850","#ff715b","yellow","#d8b365","#998ec3","#b35806","#fcb9b2")
+x <- gheatmap(pn1, ddd, offset=0, width=.1, colnames_offset_y = .25,colnames = F) +scale_fill_manual(values=heatcol,name="Phylum")
+
+## 添加界水平注释信息
+
+dd <- y[,c(4, 7)]
+dd <- as.data.frame(dd)
+dd <- na.omit(dd)
+
+ddd <- as.data.frame(dd$kingdom)
+rownames(ddd) <- dd$label
+names(ddd) <- "Kingdom"
+heatcol1 <- c("#8dd3c7", "#ffffb3","#bebada","#fb8072","#80b1d3","#fdb462","#b3de69","#fccde5","#d9d9d9")
+
+x1 <- x + new_scale_fill()
+
+x1 <- gheatmap(x1, ddd, offset=0.5, width=.3, colnames_offset_y = .25,colnames = F) +scale_fill_manual(values=heatcol1,name="Kingdom")
+
+
+if(do.write){
+  ggsave(x1, height = 20, width = 20, filename = "../../../Results/phylotree/Fungi/2.plot/Phylotree_Raxml_Eukaryota_Fungi_genus.pdf")
+}
+
+
+
+
 
 ```
 
 
 
 ## 真菌纲水平
-```{r}
-
-mergedat <- left_join(tree%>%as_tibble(), anno1, by = 'label')
-#mergedat <- mergedat%>%filter(kingdom!="NA"&phylum!="NA"&class!="NA")
-nonEuk.fug <- which(mergedat$domain!="domain__Eukaryota"|mergedat$kingdom!="kingdom__Fungi"|mergedat$phylum!="phylum__Ascomycota"|mergedat$kingdom=="NA"|mergedat$phylum=="NA"|mergedat$class=="NA")
-nonEuk.fug <- c(nonEuk.fug, which(is.na(mergedat$kingdom)|is.na(mergedat$phylum)|is.na(mergedat$class)))
-
-nhx_reduced <- drop.tip(mergedat%>%as.phylo(), nonEuk.fug) # 这里保留真菌phylum__Ascomycota数据
-#ggtree(nhx_reduced) + geom_tippoint(aes(color=label))+scale_color_manual(values=c(col, "black"), na.value = "grey", breaks = unique(nhx_reduced$tip.label))
-nhx_reduced <- left_join(nhx_reduced%>%as_tibble(), anno1, by = 'label')
-
-tmpdat <- nhx_reduced
-tmpdat$class <- as.character(tmpdat$class)
-tmpdat$class[grep("CLADE",tmpdat$class, ignore.case=T)] <- "Unknown__CLADE"
-
-nhx_reduced$label <- paste(tmpdat$domain, tmpdat$kingdom, tmpdat$phylum, tmpdat$class, sep = ";") #用物种名代替label, Unknown__CLADE代替CLADE
-#mergedat$label <- paste(mergedat$domain, mergedat$kingdom, mergedat$phylum, mergedat$class, mergedat$order) #用物种名代替label
-nhx_reduced$class[-grep("CLADE",nhx_reduced$class, ignore.case=T)] <- "NA"
-
-col <- c("#998ec3","#91cf60","#b35806","#ff715b","yellow","#d8b365","#06aed5","#1a9850","#fcb9b2", "blue","red")
-#col <- c("#06aed5","#91cf60","#1a9850","#ff715b","yellow","#d8b365","#998ec3","#b35806","#fcb9b2")
-
-p <- ggtree(nhx_reduced%>%as.phylo(),color="gray") +  geom_tippoint(aes(color=label),alpha=1/4,size=4)+scale_color_manual(values=c(col, "black"), na.value = "grey")
-p
-
-p %<+% nhx_reduced + geom_tiplab(mapping=aes(label=class), size=2,hjust = -0.5)
-
-nhx_reduced%>%filter(phylum!="NA")
-
-#open_tree(p, 180)
-
-# geom_tiplab(geom = 'shadowtext', bg.colour = alpha('firebrick', .5))
+# ```{r}
+# 
+# mergedat <- left_join(tree%>%as_tibble(), anno1, by = 'label')
+# #mergedat <- mergedat%>%filter(kingdom!="NA"&phylum!="NA"&class!="NA")
+# nonEuk.fug <- which(mergedat$domain!="domain__Eukaryota"|mergedat$kingdom!="kingdom__Fungi"|mergedat$phylum!="phylum__Ascomycota"|mergedat$kingdom=="NA"|mergedat$phylum=="NA"|mergedat$class=="NA")
+# nonEuk.fug <- c(nonEuk.fug, which(is.na(mergedat$kingdom)|is.na(mergedat$phylum)|is.na(mergedat$class)))
+# 
+# nhx_reduced <- drop.tip(mergedat%>%as.phylo(), nonEuk.fug) # 这里保留真菌phylum__Ascomycota数据
+# #ggtree(nhx_reduced) + geom_tippoint(aes(color=label))+scale_color_manual(values=c(col, "black"), na.value = "grey", breaks = unique(nhx_reduced$tip.label))
+# nhx_reduced <- left_join(nhx_reduced%>%as_tibble(), anno1, by = 'label')
+# 
+# tmpdat <- nhx_reduced
+# tmpdat$class <- as.character(tmpdat$class)
+# tmpdat$class[grep("CLADE",tmpdat$class, ignore.case=T)] <- "Unknown__CLADE"
+# 
+# nhx_reduced$label <- paste(tmpdat$domain, tmpdat$kingdom, tmpdat$phylum, tmpdat$class, sep = ";") #用物种名代替label, Unknown__CLADE代替CLADE
+# #mergedat$label <- paste(mergedat$domain, mergedat$kingdom, mergedat$phylum, mergedat$class, mergedat$order) #用物种名代替label
+# nhx_reduced$class[-grep("CLADE",nhx_reduced$class, ignore.case=T)] <- "NA"
+# 
+# col <- c("#998ec3","#91cf60","#b35806","#ff715b","yellow","#d8b365","#06aed5","#1a9850","#fcb9b2", "blue","red")
+# #col <- c("#06aed5","#91cf60","#1a9850","#ff715b","yellow","#d8b365","#998ec3","#b35806","#fcb9b2")
+# 
+# p <- ggtree(nhx_reduced%>%as.phylo(),color="gray") +  geom_tippoint(aes(color=label),alpha=1/4,size=4)+scale_color_manual(values=c(col, "black"), na.value = "grey")
+# p
+# 
+# p %<+% nhx_reduced + geom_tiplab(mapping=aes(label=class), size=2,hjust = -0.5)
+# 
+# nhx_reduced%>%filter(phylum!="NA")
+# 
+# #open_tree(p, 180)
+# 
+# # geom_tiplab(geom = 'shadowtext', bg.colour = alpha('firebrick', .5))
 
 ```
 
