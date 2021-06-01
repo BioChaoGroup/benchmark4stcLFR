@@ -33,8 +33,9 @@ for i in {S,O}{1,2,3};do
 done > SAM/SBR/CLIP/all.LSU.fa
 
 for i in {S,O}{1,2,3};do
-  perl -e '($tag,$f1,$f2)=@ARGV;open I,"< $f1";while(<I>){if($_=~/16S/&&$_!~/only \d+ percent of/){@s=split /\t/;$HS{$s[0]}++}};close I;
-    open I,"< $f2";$/=">";while(<I>){@s=split /\n/;@d=split /:/,$s[0];if(exists $HS{$d[2]}){print ">$tag$d[2]:$d[3]\n$s[1]\n"}};close I;' \
+  perl -e '($tag,$f1,$f2)=@ARGV;open I,"< $f1";while(<I>){if($_=~/16S/&&$_!~/only \d+ percent of/){
+      @s=split /\t/;$HS{$s[0]}=($s[3]-1)."-".$s[4]."($s[6])";}};close I;
+    open I,"< $f2";$/=">";while(<I>){@s=split /\n/;@d=split /:/,$s[0];if($d[3] eq $HS{$d[2]}){print ">$tag$d[2]:$d[3]\n$s[1]\n"}};close I;' \
     $i SAM/$i/CLIP/all.barrnap.gff SAM/$i/CLIP/all.barrnap.fa
 done > SAM/SBR/CLIP/full.SSU.fa
 
@@ -62,11 +63,30 @@ metabbq IO tree2fa -s SAM/SBR/CLIP/PBA.SSU.fa -l SAM/SBR/CLIP/PBA.LSU.fa -r spec
   Reading SAM/SBR/CLIP/PBA.LSU.fa ... done
   Reading SAM/SBR/KRAKEN/BEAD+/data/added.txt ... done
   Writing to SAM/SBR/PREDICT/species.fa ...done
-  Written 14512 clade seqs. 9151 records cannot found seqs.
-  SSU: 14509 (1105+13392+12) | LSU: 23(1+15+7) | BOTH:20(1+19+19)
+  Written 5590 clade seqs. 18073 records cannot found seqs.
+  SSU: 5574 (279+5295+0) | LSU: 16(1+15+0) | BOTH:0(0+0+0)
   *Each unit: <total number> (<from rank> + <from clade> + <from linkage clade>
 [All done!]
 ```
+**RUN RAxML **
+species: ssu subunits joint:
+```{bash, eval=FALSE}
+mafft --thread 16 SAM/SBR/PREDICT/species.SSU.fa > SAM/SBR/PREDICT/species.ssu.mafft.fa
+trimal -gappyout -in SAM/SBR/PREDICT/species.ssu.mafft.fa -out SAM/SBR/PREDICT/species.ssu.mafft.trimal.fa
+
+raxmlHPC-HYBRID-AVX -f a -p 12345 -s SAM/SBR/PREDICT/species.ssu.mafft.trimal.fa -x 12345 -T 20 -# 100 -m GTRCAT  -w $PWD/SAM/SBR/PREDICT -n species.ssu.raxml
+```
+
+**RUN RAxML-NG **
+species: ssu subunits joint:
+```{bash, eval=FALSE}
+raxml-ng --check --msa SAM/SBR/PREDICT/species.ssu.mafft.trimal.fa --model GTR+G --prefix SAM/SBR/PREDICT/T1
+
+raxml-ng --parse --msa SAM/SBR/PREDICT/species.ssu.mafft.trimal.fa --model GTR+G --prefix SAM/SBR/PREDICT/T2
+
+raxml-ng --msa SAM/SBR/PREDICT/species.ssu.mafft.trimal.fa --model GTR+G --prefix SAM/SBR/PREDICT/T3 --threads 40 --seed 2
+```
+
 Get genus level OTUs:
 ```{bash,eval=FALSE}
 metabbq IO tree2fa -s SAM/SBR/CLIP/PBA.SSU.fa -l SAM/SBR/CLIP/PBA.LSU.fa -r genus -d CLADE0.97 -t SAM/SBR/KRAKEN/BEAD+/data/added.txt -o SAM/SBR/PREDICT/genus.fa -p -v
@@ -78,8 +98,8 @@ metabbq IO tree2fa -s SAM/SBR/CLIP/PBA.SSU.fa -l SAM/SBR/CLIP/PBA.LSU.fa -r genu
   Reading SAM/SBR/CLIP/PBA.LSU.fa ... done
   Reading SAM/SBR/KRAKEN/BEAD+/data/added.txt ... done
   Writing to SAM/SBR/PREDICT/genus.fa ...done
-  Written 6732 clade seqs. 29245 records cannot found seqs.
-  SSU: 6729 (452+6269+8) | LSU: 18(0+14+4) | BOTH:15(0+15+12)
+  Written 2793 clade seqs. 33184 records cannot found seqs.
+  SSU: 2782 (228+2554+0) | LSU: 14(0+14+0) | BOTH:3(0+3+0)
   *Each unit: <total number> (<from rank> + <from clade> + <from linkage clade>
 [All done!]
 ```
@@ -93,7 +113,115 @@ trimal -gappyout -in SAM/SBR/PREDICT/genus.ssu.mafft.fa -out SAM/SBR/PREDICT/gen
 raxmlHPC-HYBRID-AVX -f a -p 12345 -s SAM/SBR/PREDICT/genus.ssu.mafft.trimal.fa -x 12345 -T 40 -# 100 -m GTRCAT  -w $PWD/SAM/SBR/PREDICT -n genus.ssu.raxml
 ```
 
-treeio practices:
+
+#read real data
+```{r}
+read.raxml2 <- function (file) 
+{
+  tree.text <- readLines(file)
+  #tree_text <- gsub("(:[0-9\\.eE+\\-]+)\\[(\\d+)\\]", "\\@\\2\\1", tree.text)
+  tree_text <- gsub("\\)(\\d+)(:[0-9\\.eE+\\-]+)", "\\)\\@\\1\\2", tree.text)
+  phylo <- read.tree(text = tree_text)
+  if (any(grepl("@", phylo$node.label))) {
+    bootstrap <- as.numeric(gsub("[^@]*@(\\d+)", "\\1", 
+      phylo$node.label))
+    phylo$node.label <- gsub("@\\d+", "", phylo$node.label)
+  }
+  if (all(phylo$node.label == "")) {
+    phylo$node.label <- NULL
+  }
+  bootstrap <- data_frame(node = Ntip(phylo) + 1:phylo$Nnode, bootstrap = bootstrap)
+  new("treedata", file = file, treetext = tree.text,phylo = phylo, data = bootstrap)
+}
+phylum.raxml <- read.raxml2("../../Results/JAN20/SAM/SBR/PREDICT/RAxML_bipartitions.phylum+ref.ssu.raxml")
+get.fields((phylum.raxml))
+
+p <- ggtree(phylum.raxml) + geom_tiplab() #+ geom_label(aes(label=bootstrap))
+
+p2 <- p %>% collapse(node=65) + 
+  geom_point2(aes(subset=(node==65)), shape=21, size=5, fill='green')
+
+p2
+```
+
+# read external info:
+```{r}
+# awk -F "\t" '($0!~"PUB"){print $2"\t"$3"\t"$4"\t"$6"\t"$7"\t"$1}' SAM/SBR/KRAKEN/BEAD+/data/added.txt >  SAM/SBR/KRAKEN/BEAD+/data/added.tsv
+path.info <- read.table("../../Results/DEC20/SAM/SBR/KRAKEN/BEAD+/data/added.tsv",
+       sep="\t",fill = NA,col.names = c("id","rank","clade","anno","SID","path"),as.is = T)
+
+
+genus.raxml <- read.raxml("../../Results/DEC20/SAM/SBR/PREDICT/RAxML_bipartitionsBranchLabels.genus.ssu.raxml")
+p.info <- read.table("../../Results/DEC20/SAM/SBR/PREDICT/genus.SSU.inf",sep="\t",fill=NA,
+                     col.names = c("id","cladeName","SID","length","len","clades","annos"))
+
+p.info.df <- as_tibble(merge(data.frame(label=as.phylo(genus.raxml)$tip.label),
+      merge(p.info,path.info,by="id"),by.x="label",by.y="id",all.x=T))
+p.info.df$cladeName <- ifelse(is.na(p.info.df$cladeName),as.character(p.info.df$label),p.info.df$cladeName)
+p.info.df$anno <- ifelse(is.na(p.info.df$anno)|p.info.df$anno=="",as.character(p.info.df$cladeName),p.info.df$anno)
+p.info.df$anno2 <- ifelse(grepl("CLADE",p.info.df$anno),"",p.info.df$anno)
+
+tmp <- strsplit(p.info.df$path,";")
+p.info.df$domain <- sapply(tmp,"[",1)
+p.info.df$phylum <- sapply(tmp,"[",2)
+p.info.df$class  <- sapply(tmp,"[",3)
+p.info.df$order  <- sapply(tmp,"[",4)
+p.info.df$family <- sapply(tmp,"[",5)
+
+p.info.df$domain <- ifelse(grepl("CLADE",p.info.df$domain),"",p.info.df$domain)
+p.info.df$phylum <- ifelse(grepl("CLADE",p.info.df$phylum),"",p.info.df$phylum)
+
+p.tree <- full_join(genus.raxml, p.info.df, by="label")
+
+p <- ggtree(p.tree,layout="circular") + geom_tiplab(aes(label=anno))
+p
+
+ggsave(p,width=200,height=200,limitsize = FALSE,
+       filename = "../../Results/DEC20/SAM/SBR/PREDICT/genus.plot.pdf")
+```
+
+remove clade info, only show annotated clades
+```{r}
+p2 <- ggtree(p.tree,layout="circular") + geom_tiplab(aes(label=phylum),align=T)
+p2f <-  ggtree(p.tree,layout="circular") %>%
+  collapse(node=parent(p.tree,nodeid(p.tree,15143))) %>% collapse(node=parent(p.tree,nodeid(p.tree,947611))) +
+  geom_tiplab(aes(label=phylum),align=TRUE,linesize=.3,hjust=1) 
+
+#p4 <- ggtree(p.tree) + geom_tiplab(align=TRUE,aes(label=path),linesize=.1,hjust=0,size=1)
+
+ggsave(p2f,width=200,height=200,limitsize = FALSE,
+       filename = "../../Results/DEC20/SAM/SBR/PREDICT/genus.onlyAnnoPhylum.plot.pdf")
+
+```
+
+
+
+# test species tree:
+```{r}
+sp.raxml <- read.raxml2("../../Results/JAN20/SAM/SBR/PREDICT/RAxML_bipartitions.species+ref.ssu.raxml")
+sp.info <- read.table("../../Results/JAN20/SAM/SBR/PREDICT/species.SSU.inf",sep="\t",fill = NA,
+                     col.names = c("id","SID","length","len","clades","annos"))
+
+sp.info.df <- as_tibble(merge(data.frame(label=as.phylo(sp.raxml)$tip.label),
+      merge(sp.info,path.info,by="id"),by.x="label",by.y="id",all.x=T))
+sp.info.df$clade <- ifelse(is.na(sp.info.df$clade),as.character(sp.info.df$label),sp.info.df$clade)
+sp.info.df$anno <- ifelse(is.na(sp.info.df$anno)|sp.info.df$anno=="",as.character(sp.info.df$clade),sp.info.df$anno)
+sp.tree <- full_join(sp.raxml, sp.info.df, by="label")
+
+sp <- ggtree(sp.tree,layout="circular") #+ geom_tiplab(aes(label=anno))
+sp
+
+p2 <- sp %>% collapse(node=671) + 
+  geom_point2(aes(subset=(node==671)), shape=21, size=5, fill='green')
+
+p2
+
+
+```
+
+
+
+# treeio practices:
 ```{r}
 beast_file <- system.file("examples/MCC_FluA_H3.tree", 
                           package="ggtree")
@@ -151,6 +279,12 @@ ggtree(tree) + geom_tiplab(align=TRUE,linesize=.3,hjust=1) +
   geom_label(aes(label=D), fill='steelblue') + 
   geom_text(aes(label=B), hjust=-.5,vjust=-1)
 ```
+```{r}
+ggtree(tree,layout="circular",aes(color=factor(label))) + geom_tiplab(align=TRUE,linesize=NA,hjust=1) + 
+  geom_label(aes(x=branch, label=S), fill='lightgreen') + 
+  geom_label(aes(label=D), fill='steelblue') + 
+  geom_text(aes(label=B), hjust=-.5,vjust=-1)
+```
 
 
 ```{r}
@@ -168,98 +302,6 @@ p2 <- collapse(p2, node=23) +
   geom_point2(aes(subset=(node==23)), shape=23, size=5, fill='red')
 print(p2)
 expand(p2, node=23) %>% expand(node=21)
-```
-
-
-read real data
-```{r}
-read.raxml2 <- function (file) 
-{
-  tree.text <- readLines(file)
-  #tree_text <- gsub("(:[0-9\\.eE+\\-]+)\\[(\\d+)\\]", "\\@\\2\\1", tree.text)
-  tree_text <- gsub("\\)(\\d+)(:[0-9\\.eE+\\-]+)", "\\)\\@\\1\\2", tree.text)
-  phylo <- read.tree(text = tree_text)
-  if (any(grepl("@", phylo$node.label))) {
-    bootstrap <- as.numeric(gsub("[^@]*@(\\d+)", "\\1", 
-      phylo$node.label))
-    phylo$node.label <- gsub("@\\d+", "", phylo$node.label)
-  }
-  if (all(phylo$node.label == "")) {
-    phylo$node.label <- NULL
-  }
-  bootstrap <- data_frame(node = Ntip(phylo) + 1:phylo$Nnode, bootstrap = bootstrap)
-  new("treedata", file = file, treetext = tree.text,phylo = phylo, data = bootstrap)
-}
-phylum.raxml <- read.raxml2("../../Results/JAN20/SAM/SBR/PREDICT/RAxML_bipartitions.phylum+ref.ssu.raxml")
-get.fields((phylum.raxml))
-
-p <- ggtree(phylum.raxml) + geom_tiplab() #+ geom_label(aes(label=bootstrap))
-
-p2 <- p %>% collapse(node=65) + 
-  geom_point2(aes(subset=(node==65)), shape=21, size=5, fill='green')
-
-p2
-```
-
-read external info:
-```{r}
-# awk -F "\t" '($0!~"PUB"){print $2"\t"$3"\t"$4"\t"$6"\t"$7"\t"$1}' SAM/SBR/KRAKEN/BEAD+/data/added.txt >  SAM/SBR/KRAKEN/BEAD+/data/added.tsv
-path.info <- read.table("../../Results/DEC20/SAM/SBR/KRAKEN/BEAD+/data/added.tsv",
-       sep="\t",fill = NA,col.names = c("id","rank","clade","anno","SID","path"),as.is = T)
-
-
-genus.raxml <- read.raxml("../../Results/DEC20/SAM/SBR/PREDICT/RAxML_bipartitionsBranchLabels.genus.ssu.raxml")
-p.info <- read.table("../../Results/DEC20/SAM/SBR/PREDICT/genus.SSU.inf",sep="\t",fill=NA,
-                     col.names = c("id","cladeName","SID","length","len","clades","annos"))
-
-p.info.df <- as_tibble(merge(data.frame(label=as.phylo(genus.raxml)$tip.label),
-      merge(p.info,path.info,by="id"),by.x="label",by.y="id",all.x=T))
-p.info.df$cladeName <- ifelse(is.na(p.info.df$cladeName),as.character(p.info.df$label),p.info.df$cladeName)
-p.info.df$anno <- ifelse(is.na(p.info.df$anno)|p.info.df$anno=="",as.character(p.info.df$cladeName),p.info.df$anno)
-p.info.df$anno2 <- ifelse(grepl("CLADE",p.info.df$anno),"",p.info.df$anno)
-
-p.tree <- full_join(genus.raxml, p.info.df, by="label")
-
-p <- ggtree(p.tree,layout="circular") + geom_tiplab(aes(label=anno))
-p
-
-ggsave(p,width=200,height=200,limitsize = FALSE,
-       filename = "../../Results/DEC20/SAM/SBR/PREDICT/genus.plot.pdf")
-```
-
-remove clade info, only show annotated clades
-```{r}
-p2 <- ggtree(p.tree,layout="circular") + geom_tiplab(aes(label=anno2))
-p2f <- p2%>%collapse(node=15143)%>%collapse(node=947611)
-p4 <- ggtree(p.tree) + geom_tiplab(align=TRUE,aes(label=path),linesize=.1,hjust=0,size=1)
-
-ggsave(p2,width=200,height=200,limitsize = FALSE,
-       filename = "../../Results/DEC20/SAM/SBR/PREDICT/genus.onlyAnno.plot.pdf")
-
-```
-
-
-
-test species tree:
-```{r}
-sp.raxml <- read.raxml2("../../Results/JAN20/SAM/SBR/PREDICT/RAxML_bipartitions.species+ref.ssu.raxml")
-sp.info <- read.table("../../Results/JAN20/SAM/SBR/PREDICT/species.SSU.inf",sep="\t",fill = NA,
-                     col.names = c("id","SID","length","len","clades","annos"))
-
-sp.info.df <- as_tibble(merge(data.frame(label=as.phylo(sp.raxml)$tip.label),
-      merge(sp.info,path.info,by="id"),by.x="label",by.y="id",all.x=T))
-sp.info.df$clade <- ifelse(is.na(sp.info.df$clade),as.character(sp.info.df$label),sp.info.df$clade)
-sp.info.df$anno <- ifelse(is.na(sp.info.df$anno)|sp.info.df$anno=="",as.character(sp.info.df$clade),sp.info.df$anno)
-sp.tree <- full_join(sp.raxml, sp.info.df, by="label")
-
-sp <- ggtree(sp.tree,layout="circular") #+ geom_tiplab(aes(label=anno))
-sp
-
-p2 <- sp %>% collapse(node=671) + 
-  geom_point2(aes(subset=(node==671)), shape=21, size=5, fill='green')
-
-p2
-
 ```
 
 

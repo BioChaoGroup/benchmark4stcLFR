@@ -307,7 +307,7 @@ for DOM in {SBR,SFR};do
   for SAM in {S,O};do 
     for i in {000..111};do 
       if [ -f SAM/$DOM/KRAKEN/rand/$db.$SAM.$i.k2.bead.bracken ];then
-        awk -v t="$DOM\t$db\t$SAM\t$i" 'FNR>1&&$4>0{count=count+1;if($0~/^CLADE/){clade=clade+1}else{taxon=taxon+1}}END{print t"\t"count"\t"taxon"\t"clade}' SAM/$DOM/KRAKEN/rand/$db.$SAM.$i.k2.bead.bracken
+        perl tmp.obs.pl "$DOM,$db,$SAM,$i" SAM/$DOM/KRAKEN/$db/data/topRank.map.gz SAM/$DOM/KRAKEN/rand/$db.$SAM.$i.k2.bead.bracken
       fi
     done > SAM/$DOM/KRAKEN/rand/summary.$db.$SAM.observeOTU.stat.tsv &
   done
@@ -323,7 +323,7 @@ for DOM in {SBR,SFR};do
   for SAM in {S,O};do 
     for i in {0..9};do 
       if [ -f SAM/$DOM/KRAKEN/rand/$db.$SAM.000.$i.k2.bead.bracken ];then
-        awk -v t="$DOM\t$db\t$SAM\t$i" 'FNR>1&&$4>0{count=count+1;if($0~/^CLADE/){clade=clade+1}else{taxon=taxon+1}}END{print t"\t"count"\t"taxon"\t"clade}' SAM/$DOM/KRAKEN/rand/$db.$SAM.000.$i.k2.bead.bracken
+        perl tmp.obs.pl "$DOM,$db,$SAM,$i" SAM/$DOM/KRAKEN/$db/data/topRank.map.gz SAM/$DOM/KRAKEN/rand/$db.$SAM.000.$i.k2.bead.bracken
       fi
     done > SAM/$DOM/KRAKEN/rand/summary.$db.$SAM.000.observeOTU.stat.tsv &
   done
@@ -500,6 +500,8 @@ SXR.r2m.bracken.more$taxonSet <- factor(paste0(SXR.r2m.bracken.more$findAnno,SXR
 
 levels(SXR.r2m.bracken.more$taxonSet) <- c("PBAs found annotation","PBAs without annotaion","taxons that PBA not covered")
 
+SXR.r2m.bracken.taxID <- unique(SXR.r2m.bracken.more[,c("DOM","SAM","DB","profRank","taxonSet","taxID")])
+
 count.stat0 <- SXR.r2m.bracken.more%>%group_by(DOM,DB,SAM,profRank,taxonSet)%>%
   summarise(observe=length(unique(taxID)),beads=sum(new_est_reads),abun=sum(pct.k)/3)%>%
   group_by(DOM,SAM,DB,taxonSet,profRank)%>%
@@ -536,6 +538,8 @@ p.obs.db.S.compare.bar
 if(do.write){
   ggsave(p.obs.db.compare.bar,width=5.5,height=6,file="../../Results/DEC20/FIG/p.obs.db.compare.bar.pdf")
   ggsave(p.obs.db.S.compare.bar,width=4.5,height=6,file="../../Results/DEC20/FIG/p.obs.db.S.compare.bar.pdf")
+  write.table(SXR.r2m.bracken.taxID,sep="\t",quote=F,row.names = F, eol = "\n",
+              "../../Results/DEC20/STAT/KRAKEN/SXR.r2m.bracken.metadata.tsv")
 }
 
 ```
@@ -1172,45 +1176,59 @@ ggplot(SBR.stat.sp.df3SF.k%>%filter(tech=="BEAD"),aes(x=rep1,y=rep2,color=set)) 
 ## load
 ```{r}
 SXR.rand.obs.5M.raw <- read.table(
-  md5("../../Results/DEC20/STAT/KRAKEN/SXR.rand.observeOTU.stat.tsv","16522e374a947dfd1662362905c56919"),
-  sep="\t",col.names = c("DOM","DB","SAM","size","count","annos","clades"))
+  md5("../../Results/DEC20/STAT/KRAKEN/SXR.rand.observeOTU.stat.tsv","960ab508064c5407d8c5183d09d7d306"),
+  sep="\t",col.names = c("DOM","DB","SAM","size","total_count","SHARE","PUBs","PBAs","NONE"))
 
 SXR.rand.obs.500k.raw <- read.table(
-  md5("../../Results/DEC20/STAT/KRAKEN/SXR.000.rand.observeOTU.stat.tsv","3c19136bde13cb3fab0112182bb6976f"),
-  sep="\t",col.names = c("DOM","DB","SAM","size","count","annos","clades"))
+  md5("../../Results/DEC20/STAT/KRAKEN/SXR.000.rand.observeOTU.stat.tsv","beb2df7c0d0b7e5d7461ae29d65730ad"),
+  sep="\t",col.names = c("DOM","DB","SAM","size","total_count","SHARE","PUBs","PBAs","NONE"))
 
 SXR.rand.obs.500k.raw$size <- (SXR.rand.obs.500k.raw$size+1)*0.5
+#add a line of size 0
+tmp.0.df <- ddply(SXR.rand.obs.500k.raw,c("DOM","DB","SAM"),summarise,size=0,total_count=0,
+                  SHARE=0,PUBs=0,PBAs=0,NONE=NA)
+SXR.rand.obs.500k.raw <- rbind(tmp.0.df,SXR.rand.obs.500k.raw)
 SXR.rand.obs.5M.raw$size <- (SXR.rand.obs.5M.raw$size+1)*5
 
 SXR.rand.obs.raw <- rbind(SXR.rand.obs.5M.raw,SXR.rand.obs.500k.raw)
 SXR.rand.obs.melt <- melt(SXR.rand.obs.raw,
-                          measure.vars = c("count","annos","clades"),
+                          measure.vars = c("SHARE","PBAs","PUBs"),
                           value.name = "count",variable.name = "group")
-#SXR.rand.obs.melt$count[which(is.na(SXR.rand.obs.melt$count))] <- 0
-#SXR.rand.obs.melt <- ddply(SXR.rand.obs.melt,c("DOM","DB","group"),transform,
 
-SXR.rand.PBA.obs.raw <- read.table(
-  md5("../../Results/DEC20/STAT/KRAKEN/SXR.PBA.rand.observeOTU.stat.tsv","6af6bf3b7cf0f418f9e8a717157a7f12"),
-  sep="\t",col.names = c("DOM","DB","SAM","size","totalCount","PBATAX","PBA","TAX","Unclassified"))
+sFUN <- function(d){
+  d$top95 <- F
+  d$top95[which(d$count/max(d$count)-0.95 > 0)[1]] <- T
+  return(d)
+}
+SXR.rand.obs.melt <- ddply(SXR.rand.obs.melt,c("DOM","DB","SAM","group"),sFUN)
 
-SXR.PBA.rand.obs.melt <- melt(SXR.rand.PBA.obs.raw,
-                          measure.vars = c("totalCount","PBATAX","PBA","TAX","Unclassified"),
-                          value.name = "count",variable.name = "group")
-SXR.PBA.rand.obs.melt.0 <- SXR.PBA.rand.obs.melt%>%filter(size==0.5)
-SXR.PBA.rand.obs.melt.0$size <- 0
-SXR.PBA.rand.obs.melt.0$count <- 0
-
-SXR.PBA.rand.obs.melt <- rbind(SXR.PBA.rand.obs.melt.0,SXR.PBA.rand.obs.melt)
 ```
 
 ```{r}
 
-SXR.rand.obs.top <- ddply(SXR.rand.obs.melt%>%filter(SAM=="S"&group=="count"),c("DOM","DB","group"),summarise,top=max(count))
-ggplot(SXR.rand.obs.melt%>%filter(SAM=="S"&group!="annos"),aes(x=size,y=count,color=DB)) +
-  geom_hline(data=SXR.rand.obs.top,aes(yintercept = top*.95,color=DB),linetype=5,alpha=.5,size=1) +
-  geom_line(aes(linetype=group),size=1) +
-  facet_grid(.~DOM) + scale_x_continuous(breaks=seq(0,500,50)) + theme_bw()
+SXR.rand.obs.top <- ddply(SXR.rand.obs.melt%>%filter(SAM=="S"),c("DOM","DB","group"),summarise,top=max(count))
+p.rarefraction2.curve1 <- ggplot(SXR.rand.obs.melt%>%filter(SAM=="S"),aes(x=size,y=count,color=group)) +
+  geom_line(aes(linetype=DOM),size=1) + scale_color_brewer(palette="Set1") +
+  geom_text(data=SXR.rand.obs.melt%>%filter(top95==T&SAM=="S"),
+            aes(label=paste0("(",size,",",count,")"))) +
+  geom_point(data=SXR.rand.obs.melt%>%filter(top95==T&SAM=="S"),shape=4,size=6) +
+  scale_y_continuous(breaks=c(seq(400,1400,200),2000,seq(0,100000,10000))) +
+  scale_x_continuous(breaks=seq(0,600,50)) + theme_bw() 
+
+p.rarefraction2.curve1
 ```
+```{r}
+p.rarefraction2.curve2 <- ggplot(SXR.rand.obs.melt%>%filter(SAM=="S"),aes(x=size,y=count,color=group)) +
+  geom_line(aes(linetype=DOM),size=1) + scale_color_brewer(palette="Set1") +
+  geom_text(data=SXR.rand.obs.melt%>%filter(top95==T&SAM=="S"),
+            aes(label=paste0("(",size,",",count,")"))) +
+  geom_point(data=SXR.rand.obs.melt%>%filter(top95==T&SAM=="S"),shape=4,size=6) +
+  scale_y_continuous(breaks=c(seq(0,2000,200),2000,seq(0,100000,10000)),limits=c(0,2000)) +
+  scale_x_continuous(breaks=seq(0,600,50)) + theme_bw()
+
+p.rarefraction2.curve2
+```
+
 ```{r}
 ggplot(SXR.rand.obs.melt%>%filter(SAM=="S"&group!="annos"),aes(x=size,y=count,color=DB)) +
   geom_line(aes(linetype=group),size=1) +
@@ -1256,8 +1274,7 @@ p.rarefraction.curve
 ```{r}
 pick.grp <- c("totalCount","PBATAX","PBA","TAX")
 SXR.PBA.rand.obs.melt$group <- factor(SXR.PBA.rand.obs.melt$group,levels=c("PBATAX","PBA","TAX","totalCount","Unclassified"))
-p.rarefraction2.curve1 <- ggplot(SXR.PBA.rand.obs.melt%>%filter(SAM=="S"&group%in%pick.grp&DB=="BEAD+"),
-                                aes(x=size,y=count,color=group)) +
+#p.rarefraction2.curve1 <- ggplot(SXR.PBA.rand.obs.melt%>%filter(SAM=="S"&group%in%pick.grp&DB=="BEAD+"), aes(x=size,y=count,color=group)) +
   #geom_hline(data=SXR.PBA.rand.obs.top,aes(yintercept = top*.95,color=DB,linetype=DOM),alpha=.5,size=1) +
   geom_line(aes(linetype=DOM),size=1) + scale_y_continuous(breaks=c(seq(400,1400,200),2000,seq(0,100000,20000))) +
   geom_point(data=SXR.PBA.rand.obs.melt%>%filter(top95==T&SAM=="S"&group%in%pick.grp&DB=="Combined"),shape=3,size=6) +
@@ -1268,11 +1285,10 @@ p.rarefraction2.curve1 <- ggplot(SXR.PBA.rand.obs.melt%>%filter(SAM=="S"&group%i
   #facet_wrap(~group,scale="free_y") +  
   scale_x_continuous(breaks=seq(0,500,50)) + theme_bw()
 
-p.rarefraction2.curve1
+#p.rarefraction2.curve1
 
 
-p.rarefraction2.curve2 <- ggplot(SXR.PBA.rand.obs.melt%>%filter(SAM=="S"&group%in%pick.grp&DB=="Combined"),
-                                aes(x=size,y=count,color=group)) +
+#p.rarefraction2.curve2 <- ggplot(SXR.PBA.rand.obs.melt%>%filter(SAM=="S"&group%in%pick.grp&DB=="Combined"), aes(x=size,y=count,color=group)) +
   #geom_hline(data=SXR.PBA.rand.obs.top,aes(yintercept = top*.95,color=DB,linetype=DOM),alpha=.5,size=1) +
   geom_line(aes(linetype=DOM),size=1) + scale_y_continuous(breaks=c(seq(400,1400,200),2000,seq(0,100000,20000)),limits=c(0,1400)) +
   geom_point(data=SXR.PBA.rand.obs.melt%>%filter(top95==T&SAM=="S"&group%in%pick.grp&DB=="Combined"),shape=3,size=6) +
@@ -1283,7 +1299,7 @@ p.rarefraction2.curve2 <- ggplot(SXR.PBA.rand.obs.melt%>%filter(SAM=="S"&group%i
   #facet_wrap(~group,scale="free_y") +  
   scale_x_continuous(breaks=seq(0,500,50)) + theme_bw()
 
-p.rarefraction2.curve2
+#p.rarefraction2.curve2
 
 ```
 ```{r}
