@@ -1,0 +1,243 @@
+---
+title: "phylotree of Bacteria"
+author: "pengzhuobing"
+date: "2021/6/3"
+output: html_document
+---
+
+```{r setup, include=T, echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ape) # ape最好在ggtree前面加载，因为都有rotate()函数
+library(treeio)
+library(ggtree) # 需要更新至github最新版本
+library(ggplot2)
+library(dplyr)
+library(scales)
+library(ggnewscale)
+library(ggtreeExtra)
+do.write <- F
+```
+
+# 0. 整合注释信息，将其分类至不同水平
+```{bash, eval=FALSE}
+# /ldfssz1/ST_META/F16HQSB1SY2636_TumorMeta_ZH/fangchao/benchmark4stlfr/Assay/16.DEC20/SAM/SBR/KRAKEN/BEAD+/taxonomy/paths.txt 
+
+## update 20210714
+vi ../../../Results/phylotree/Bacteria/1.data/paths.txt; # %s/;//g
+python ../classfy_paths.py ../../../Results/phylotree/Bacteria/1.data/paths.txt bac > ../../../Results/phylotree/Bacteria/1.data/levPaths.0.3.txt
+```
+
+
+# 1. 载入树文件和注释文件
+```{r, echo=FALSE}
+tree <- read.tree("../../../Results/phylotree/Bacteria/1.data/T3.raxml.bestTreeCollapsed")
+
+# 读入物种注释文件
+#anno <- read.delim("../../../Results/phylotree/Bacteria/1.data/levPaths.0.1.txt", sep = "\t", comment.char = "", header = T)
+
+## update 210608
+anno <- read.delim("../../../Results/phylotree/Bacteria/1.data/levPaths.0.3.txt", sep = "\t", comment.char = "", header = T)
+anno <- anno[,c("domain","phylum","genus","species","label")]
+
+anno$label <- as.character(anno$label)
+anno$genus <- gsub("genus__", "", anno$genus)
+anno$species <- gsub("species__", "", anno$species)
+anno$phylum <- gsub("phylum__", "", anno$phylum)
+anno$domain <- gsub("domain__", "", anno$domain)
+```
+
+
+# 2. 画图
+```{r}
+mergedat <- left_join(tree%>%as_tibble(), anno, by = 'label')
+nonbac <- which(mergedat$domain!="Bacteria")
+#nonEuk <- which(mergedat$domain!="Eukaryota"|is.na(mergedat$kingdom)|is.na(mergedat$phylum)|is.na(mergedat$genus)) # 有许多分支注释信息为NA，这里可以考虑将NA去掉
+nhx_reduced <- drop.tip(mergedat%>%as.phylo(), nonbac) # 这里保留细菌物数据
+
+nhx_reduced <- left_join(nhx_reduced%>%as_tibble(), anno, by = 'label')
+nhx_reduced$phylum[grep("CLADE",nhx_reduced$phylum, ignore.case=T)] <- "Unknown__CLADE"
+nhx_reduced$domain[grep("CLADE",nhx_reduced$domain, ignore.case=T)] <- "Unknown__CLADE"
+nhx_reduced$genus[grep("CLADE",nhx_reduced$genus, ignore.case=T)] <- "Unknown__CLADE"
+nhx_reduced$species[grep("CLADE",nhx_reduced$species, ignore.case=T)] <- "Unknown__CLADE"
+```
+
+
+```{r}
+
+# 设置枝条颜色，红色代表unknown__clade
+nhx_reduced$label <- paste0(nhx_reduced$domain,";",nhx_reduced$phylum,";",nhx_reduced$genus)
+#nhx_reduced$group <- NA
+#nhx_reduced$group[nhx_reduced$genus=="Unknown__CLADE"] <- "unknown_clade"
+phy32.col <- c("#f7acbc", "#f8aba6","#f05b72","#bd6758","#f26522","#7a1723","#987165","#853f04","#c7a252","#e0861a","#ffd400","#fab27b","#f47920","#bed742","#7fb80e","#5c7a29","#7f7522","#1d953f","#77ac98","#007d65","#50b7c1","#00a6ac","#008792","#c77eb5","#009ad6","#1b315e","#8552a1","#411445","red","#6c4c49","#563624","#6950a1","white")
+
+
+#p <- ggtree(tree2%>%as.phylo(), layout = "circular",size=0.01, aes(color=group))%>% ggtree::rotate(3476)%>% ggtree::rotate(3724)%>%ggtree::rotate(3725)%>%ggtree::rotate(4117)+geom_text2(aes(subset=!isTip, label=node), hjust=-0.3, size=0.5, color="black") + scale_color_manual(values=c("black", "red"))
+
+nhx_reduced$genus <- factor(nhx_reduced$genus,levels = c("Proteobacteria","Bacteroidota","Actinobacteriota", "Acidobacteriota", "Chloroflexi","Planctomycetota","Firmicutes","Myxococcota","Verrucomicrobiota", "Gemmatimonadota","Bdellovibrionota","Methylomirabilota","Nitrospirota","Desulfobacterota","Latescibacterota","Elusimicrobiota","Patescibacteria","Dependentiae","RCP2-54","NB1-j","Armatimonadota","MBNT15","Sumerlaeota","Entotheonellaeota","Cyanobacteria","WS2","WPS-2","Abditibacteriota","Dadabacteria","Fibrobacterota","Spirochaetota","Unknown__CLADE","NA"))
+
+p <- ggtree(nhx_reduced%>%as.phylo(), layout = "circular",size=0.05)%>% ggtree::rotate(7659)%>% ggtree::rotate(9495)%>%ggtree::rotate(6603)%>%ggtree::rotate(7660)#%>%ggtree::rotate(3589)%>%ggtree::rotate(3590)
+
+p <- p %<+% nhx_reduced + 
+  geom_tippoint(aes(color=phylum),alpha=2/6,size=0.1)+ 
+  #geom_tiplab2(align = T, linetype = )
+  geom_text2(aes(subset=!isTip, label=node), hjust=-0.3, size=0.5, color="black") +
+  #scale_color_manual(values=c("red", "white")) + 
+  geom_fruit(
+    geom = geom_tile, 
+    mapping = aes(fill=phylum),
+    width=0.4)+
+   scale_fill_manual(
+         values=phy32.col,
+         name="Phylum (Bacteria)")
+
+```
+
+
+细菌：species注释率为100%
+      species中unknown_clade注释率为95.4%
+
+```{r}
+dim(nhx_reduced%>%filter(!is.na(species)))[1]/dim(nhx_reduced)[1]
+nhx_reduced_x <- nhx_reduced%>%filter(label!="NA;NA;NA")
+
+dim(nhx_reduced_x%>%filter(!is.na(species)))[1]/dim(nhx_reduced_x)[1]
+dim(nhx_reduced_x%>%filter(species=="Unknown__CLADE"))[1]/dim(nhx_reduced_x)[1]
+```
+
+
+```{r}
+## 7673 8435 ancest: 7672 
+# Bacteroidota: node:7673
+Bacteroidota <- offspring(nhx_reduced,7673)
+length(which(Bacteroidota$phylum=="Bacteroidota"))/length(which(!is.na(Bacteroidota$phylum)&Bacteroidota$phylum!="Unknown__CLADE"))
+1-length(which(Bacteroidota$phylum=="Bacteroidota"))/length(which(!is.na(Bacteroidota$phylum)))
+```
+
+
+```{r}
+# Bdellovibrionota node:8435
+Bdellovibrionota <- offspring(nhx_reduced,8435)
+length(which(Bdellovibrionota$phylum=="Bdellovibrionota"))/length(which(!is.na(Bdellovibrionota$phylum)&Bdellovibrionota$phylum!="Unknown__CLADE"))
+1-length(which(Bdellovibrionota$phylum=="Bdellovibrionota"))/length(which(!is.na(Bdellovibrionota$phylum)))
+```
+
+
+```{r}
+# Gemmatimonadota node:9585
+Gemmatimonadota <- offspring(nhx_reduced,9585)
+length(which(Gemmatimonadota$phylum=="Gemmatimonadota"))/length(which(!is.na(Gemmatimonadota$phylum)&Gemmatimonadota$phylum!="Unknown__CLADE"))
+1-length(which(Gemmatimonadota$phylum=="Gemmatimonadota"))/length(which(!is.na(Gemmatimonadota$phylum)))
+```
+
+```{r}
+# Proteobacteria: node:7621  remove node:7672 remove node: 9585
+Proteobacteria <- offspring(nhx_reduced,7621)
+# 这一段为插在	Basidiomycota 分支中的，应该去除
+re1 <- offspring(nhx_reduced,7672)
+Proteobacteria <- Proteobacteria%>%filter(!node%in%re1$node)
+re2 <- offspring(nhx_reduced,9585)
+Proteobacteria <- Proteobacteria%>%filter(!node%in%re2$node)
+length(which(Proteobacteria$phylum=="Proteobacteria"))/length(which(!is.na(Proteobacteria$phylum)&Proteobacteria$phylum!="Unknown__CLADE"))
+1-length(which(Proteobacteria$phylum=="Proteobacteria"))/length(which(!is.na(Proteobacteria$phylum)))
+```
+
+```{r}
+# Actinobacteriota node: 6745
+Actinobacteriota <- offspring(nhx_reduced,6745)
+length(which(Actinobacteriota$phylum=="Actinobacteriota"))/length(which(!is.na(Actinobacteriota$phylum)&Actinobacteriota$phylum!="Unknown__CLADE"))
+1-length(which(Actinobacteriota$phylum=="Actinobacteriota"))/length(which(!is.na(Actinobacteriota$phylum)))
+```
+
+```{r}
+# Firmicutes node: 6604
+Firmicutes <- offspring(nhx_reduced,6604)
+length(which(Firmicutes$phylum=="Firmicutes"))/length(which(!is.na(Firmicutes$phylum)&Firmicutes$phylum!="Unknown__CLADE"))
+1-length(which(Firmicutes$phylum=="Firmicutes"))/length(which(!is.na(Firmicutes$phylum)))
+```
+
+```{r}
+# Myxococcota node: 7431
+Myxococcota <- offspring(nhx_reduced,7431)
+length(which(Myxococcota$phylum=="Myxococcota"))/length(which(!is.na(Myxococcota$phylum)&Myxococcota$phylum!="Unknown__CLADE"))
+1-length(which(Myxococcota$phylum=="Myxococcota"))/length(which(!is.na(Myxococcota$phylum)))
+```
+
+```{r}
+# Chloroflexi node: 6337
+Chloroflexi <- offspring(nhx_reduced,6337)
+length(which(Chloroflexi$phylum=="Chloroflexi"))/length(which(!is.na(Chloroflexi$phylum)&Chloroflexi$phylum!="Unknown__CLADE"))
+cat("Chloroflexi", 1-length(which(Chloroflexi$phylum=="Chloroflexi"))/length(which(!is.na(Chloroflexi$phylum))))
+```
+
+```{r}
+# Patescibacteria node: 6318
+Patescibacteria <- offspring(nhx_reduced,6318)
+length(which(Patescibacteria$phylum=="Patescibacteria"))/length(which(!is.na(Patescibacteria$phylum)&Patescibacteria$phylum!="Unknown__CLADE"))
+1-length(which(Patescibacteria$phylum=="Patescibacteria"))/length(which(!is.na(Patescibacteria$phylum)))
+```
+
+```{r}
+# Planctomycetota node: 6091
+Planctomycetota <- offspring(nhx_reduced,6091)
+length(which(Planctomycetota$phylum=="Planctomycetota"))/length(which(!is.na(Planctomycetota$phylum)&Planctomycetota$phylum!="Unknown__CLADE"))
+1-length(which(Planctomycetota$phylum=="Planctomycetota"))/length(which(!is.na(Planctomycetota$phylum)))
+```
+
+```{r}
+# Verrucomicrobiota node: 5994
+Verrucomicrobiota <- offspring(nhx_reduced,5994)
+length(which(Verrucomicrobiota$phylum=="Verrucomicrobiota"))/length(which(!is.na(Verrucomicrobiota$phylum)&Verrucomicrobiota$phylum!="Unknown__CLADE"))
+1-length(which(Verrucomicrobiota$phylum=="Verrucomicrobiota"))/length(which(!is.na(Verrucomicrobiota$phylum)))
+```
+
+```{r}
+# Acidobacteriota node: 5276 remove node: 5866
+Acidobacteriota <- offspring(nhx_reduced,5276)
+# 这一段为插在	Basidiomycota 分支中的，应该去除
+re1 <- offspring(nhx_reduced,5866)
+Acidobacteriota <- Acidobacteriota%>%filter(!node%in%re1$node)
+
+length(which(Acidobacteriota$phylum=="Acidobacteriota"))/length(which(!is.na(Acidobacteriota$phylum)&Acidobacteriota$phylum!="Unknown__CLADE"))
+1-length(which(Acidobacteriota$phylum=="Acidobacteriota"))/length(which(!is.na(Acidobacteriota$phylum)))
+```
+```{r}
+Latescibacterota <- offspring(nhx_reduced,6282)
+
+length(which(Latescibacterota$phylum=="Latescibacterota"))/length(which(!is.na(Latescibacterota$phylum)&Latescibacterota$phylum!="Unknown__CLADE"))
+1-length(which(Latescibacterota$phylum=="Latescibacterota"))/length(which(!is.na(Latescibacterota$phylum)))
+```
+
+
+```{r}
+Methylomirabilota <- offspring(nhx_reduced,5946)
+
+length(which(Methylomirabilota$phylum=="Methylomirabilota"))/length(which(!is.na(Methylomirabilota$phylum)&Methylomirabilota$phylum!="Unknown__CLADE"))
+1-length(which(Methylomirabilota$phylum=="Methylomirabilota"))/length(which(!is.na(Methylomirabilota$phylum)))
+
+
+#Nitrospirota: 5906, remove 5946
+Nitrospirota <- offspring(nhx_reduced,5906)
+Nitrospirota <- Nitrospirota%>%filter(!node%in%Methylomirabilota$node)
+length(which(Nitrospirota$phylum=="Nitrospirota"))/length(which(!is.na(Nitrospirota$phylum)&Nitrospirota$phylum!="Unknown__CLADE"))
+1-length(which(Nitrospirota$phylum=="Nitrospirota"))/length(which(!is.na(Nitrospirota$phylum)))
+```
+
+
+# 统计每个门下属水平unknown_clade占比
+```{r}
+for (i in unique(nhx_reduced$phylum)){
+  a <- nhx_reduced[which(nhx_reduced$phylum==i),"genus"]
+  cat(i,":", sprintf("%1.1f%%", 100*dim(a%>%filter(genus=="Unknown__CLADE"))[1] /dim(a)[1]),"(", dim(a%>%filter(genus=="Unknown__CLADE"))[1],"/",dim(a)[1],")","\n")
+}
+
+```
+
+
+# 统计每个门下种水平unknown_clade占比
+```{r}
+for (i in unique(nhx_reduced$phylum)){
+  a <- nhx_reduced[which(nhx_reduced$phylum==i),"species"]
+  cat(i,":", sprintf("%1.1f%%", 100*dim(a%>%filter(species=="Unknown__CLADE"))[1] /dim(a)[1]),"(", dim(a%>%filter(species=="Unknown__CLADE"))[1],"/",dim(a)[1],")","\n")
+}
+
+```

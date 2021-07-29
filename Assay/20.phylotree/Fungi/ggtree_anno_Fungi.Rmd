@@ -1,0 +1,199 @@
+---
+title: "ggtree_Raxml.Rmd"
+author: "pengzhuobing"
+date: "2021/7"
+output: html_document
+---
+
+```{r setup, include=T, echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ape) # ape最好在ggtree前面加载，因为都有rotate()函数
+library(treeio)
+library(ggtree) # 需要更新至github最新版本
+library(ggplot2)
+library(dplyr)
+library(scales)
+library(ggnewscale)
+library(ggtreeExtra)
+do.write <- F
+```
+
+
+```{bash, eval=FALSE}
+
+# /ldfssz1/ST_META/F16HQSB1SY2636_TumorMeta_ZH/fangchao/benchmark4stlfr/Assay/16.DEC20/SAM/SFR/KRAKEN/BEAD+/taxonomy/paths.txt 
+#python classfy.py paths.txt > ../../../Results/phylotree/Fungi/1.data/levPaths.0.1.txt
+
+## update 20210618
+vi ../../../Results/phylotree/Fungi/1.data/paths.txt #%s/"//g # 部分有行”“，需要去掉
+
+python ../classfy_paths.py ../../../Results/phylotree/Fungi/1.data/paths.txt fug > ../../../Results/phylotree/Fungi/1.data/levPaths.0.3.txt
+```
+
+
+# 1. 载入树文件和注释文件
+```{r, echo=FALSE}
+tree <- read.raxml("../../../Results/phylotree/Fungi/1.data/RAxML_bipartitionsBranchLabels.species.raxml")
+
+# 读入物种注释文件
+#anno1<-  read.delim(f"../../../Results/phylotree/Fungi/1.data/levPaths.0.2.txt", sep = "\t", comment.char = "", header = T)
+
+##  update 20210618
+#anno1<-  read.delim("../../../Results/phylotree/Fungi/1.data/levPaths.0.3.txt", sep = "\t", comment.char = "", header = T)
+anno1<-  read.delim("../../../Results/phylotree/Fungi/1.data/levPaths.0.4.txt", sep = "\t", comment.char = "", header = T)
+anno1 <- anno1[,c("domain","kingdom","phylum","genus","species","label")]
+anno1$label <- as.character(anno1$label)
+anno1$genus <- gsub("genus__", "", anno1$genus)
+anno1$phylum <- gsub("phylum__", "", anno1$phylum)
+anno1$kingdom <- gsub("kingdom__", "", anno1$kingdom)
+anno1$domain <- gsub("domain__", "", anno1$domain)
+anno1$species <- gsub("species__", "", anno1$species)
+```
+
+
+# 2. 画图
+```{r}
+mergedat <- left_join(tree%>%as_tibble(), anno1, by = 'label')
+nonEuk <- which(mergedat$domain!="Eukaryota")
+nhx_reduced <- drop.tip(mergedat%>%as.phylo(), nonEuk) # 这里保留真核生物数据
+x <- nhx_reduced%>%as_tibble()
+
+nhx_reduced <- left_join(nhx_reduced%>%as_tibble(), anno1, by = 'label')
+nhx_reduced$phylum[grep("CLADE",nhx_reduced$phylum, ignore.case=T)] <- "Unknown__CLADE"
+nhx_reduced$kingdom[grep("CLADE",nhx_reduced$kingdom, ignore.case=T)] <- "Unknown__CLADE"
+nhx_reduced$domain[grep("CLADE",nhx_reduced$domain, ignore.case=T)] <- "Unknown__CLADE"
+nhx_reduced$genus[grep("CLADE",nhx_reduced$genus, ignore.case=T)] <- "Unknown__CLADE"
+nhx_reduced$species[grep("CLADE",nhx_reduced$species, ignore.case=T)] <- "Unknown__CLADE"
+
+
+# 设置枝条颜色，红色代表unknown__clade
+nhx_reduced$label <- paste0(nhx_reduced$domain,";",nhx_reduced$kingdom,";",nhx_reduced$phylum,";",nhx_reduced$genus,";",nhx_reduced$species)
+
+#nhx_reduced$group <- NA
+#nhx_reduced$group[nhx_reduced$species=="Unknown__CLADE"] <- "unknown_clade"
+nhx_reduced$fungi_phy <- nhx_reduced$phylum
+nhx_reduced[which(nhx_reduced$kingdom!="Fungi"), "fungi_phy"] <- NA
+```
+
+
+```{r}
+fug_phy.col <- c("#8dd3c7", "#fdb462","#bebada","#d9d9d9","#80b1d3","#ffffb3","#b3de69","#e31a1c","#fccde5","white")
+#kingdom.col <- c("#a6cee3","#1f78b4","#b2df8a","#33a02c","#fb9a99","#ffffb3","#fdbf6f","#ff7f00","#cab2d6","#e31a1c","white")
+kingdom.col <- c("#377eb8","#4daf4a","#984ea3","#ff7f00","#ffff33","#fb8072","#f781bf","#a65628","#e31a1c","#a6cee3","white")
+
+#p <- ggtree(tree2%>%as.phylo(), layout = "circular",size=0.01, aes(color=group))%>% ggtree::rotate(3476)%>% ggtree::rotate(3724)%>%ggtree::rotate(3725)%>%ggtree::rotate(4117)+geom_text2(aes(subset=!isTip, label=node), hjust=-0.3, size=0.5, color="black") + scale_color_manual(values=c("black", "red"))
+
+p <- ggtree(nhx_reduced%>%as.phylo(), layout = "circular",size=0.05)%>% ggtree::rotate(3476)%>% ggtree::rotate(3724)%>%ggtree::rotate(3725)%>%ggtree::rotate(4117)%>%ggtree::rotate(3589)%>%ggtree::rotate(3590)
+
+p <- p %<+% nhx_reduced + 
+  geom_tippoint(aes(color=fungi_phy),alpha=2/6,size=0.01)+ 
+  geom_text2(aes(subset=!isTip, label=node), hjust=-0.3, size=0.5, color="black") +
+  #scale_color_manual(values=c("red", "white")) + 
+  geom_fruit(
+    geom = geom_tile, 
+    mapping = aes(fill=fungi_phy),
+    width=0.4)+
+   scale_fill_manual(
+         values=fug_phy.col,
+         name="phylum(fungi)")
+
+p <- p + new_scale_fill() + 
+  geom_fruit(geom=geom_tile,mapping = aes(fill=kingdom),width=0.4,offset=0.25) +
+  scale_fill_manual(
+    values = kingdom.col) +
+  theme(
+    legend.title=element_text(size=10), # The size should be adjusted with the different devout.
+    legend.text=element_text(size=9),
+    legend.spacing.y = unit(0.02, "cm"))
+
+```
+
+枝条颜色代表种水平物种信息为unknown_clade，但是枝条已经去掉了，因为看不清，后续用统计量代表
+
+# 3. 统计
+
+统计响应色块对应的物种，统计该物种中其他物种的比例
+```{r}
+fungi <- offspring(nhx_reduced, 3475)
+o1 <- offspring(nhx_reduced, 3882)
+o2 <- offspring(nhx_reduced,4157)
+
+fungi <- fungi%>%filter(!node%in%o1$node)
+fungi <- fungi%>%filter(!node%in%o2$node)
+length(which(fungi$kingdom=="Fungi"))/length(which(!is.na(fungi$kingdom)&fungi$kingdom!="Unknown__CLADE"))
+1-length(which(fungi$kingdom=="Fungi"))/length(which(!is.na(fungi$kingdom)&fungi$kingdom!="Unknown__CLADE"))
+```
+
+
+node:4405为Ascomycota母节点，只需要统计下属子节点非Ascomycota的占比
+
+```{r}
+Ascomycota <- offspring(nhx_reduced,4405)
+length(which(Ascomycota$phylum=="Ascomycota"))/length(which(!is.na(Ascomycota$phylum)&Ascomycota$kingdom!="Unknown__CLADE"))
+1-length(which(Ascomycota$phylum=="Ascomycota"))/length(which(!is.na(Ascomycota$phylum)&Ascomycota$kingdom!="Unknown__CLADE"))
+```
+
+
+```{r}
+Basidiomycota <- offspring(nhx_reduced,3477)
+length(which(Basidiomycota$phylum=="Basidiomycota"))/length(which(!is.na(Basidiomycota$phylum)&Basidiomycota$kingdom!="Unknown__CLADE"))
+
+# 这一段为插在	Basidiomycota 分支中的，应该去除
+Cercozoa <- offspring(nhx_reduced,3596)
+Basidiomycota <- Basidiomycota%>%filter(!node%in%Cercozoa$node)
+
+length(which(Basidiomycota$phylum=="Basidiomycota"))/length(which(!is.na(Basidiomycota$phylum)&Basidiomycota$kingdom!="Unknown__CLADE"))
+1-length(which(Basidiomycota$phylum=="Basidiomycota"))/length(which(!is.na(Basidiomycota$phylum)&Basidiomycota$kingdom!="Unknown__CLADE"))
+```
+
+```{r}
+Mucoromycota <- offspring(nhx_reduced, 3734)
+other <- offspring(nhx_reduced, 3745)
+Mucoromycota <- Mucoromycota%>%filter(!node%in%other$node)
+length(which(Mucoromycota$phylum=="Mucoromycota"))/length(which(!is.na(Mucoromycota$phylum)&Mucoromycota$kingdom!="Unknown__CLADE"))
+1-length(which(Mucoromycota$phylum=="Mucoromycota"))/length(which(!is.na(Mucoromycota$phylum)&Mucoromycota$kingdom!="Unknown__CLADE"))
+
+```
+
+```{r}
+Cryptomycota <- offspring(nhx_reduced, 3759)
+length(which(Cryptomycota$phylum=="Cryptomycota"))/length(which(!is.na(Cryptomycota$phylum)&Cryptomycota$kingdom!="Unknown__CLADE"))
+1-length(which(Cryptomycota$phylum=="Cryptomycota"))/length(which(!is.na(Cryptomycota$phylum)&Cryptomycota$kingdom!="Unknown__CLADE"))
+
+```
+
+```{r}
+Chytridiomycota <- offspring(nhx_reduced,3841)
+length(which(Chytridiomycota$phylum=="Chytridiomycota"))/length(which(!is.na(Chytridiomycota$phylum)&Chytridiomycota$kingdom!="Unknown__CLADE"))
+1-length(which(Chytridiomycota$phylum=="Chytridiomycota"))/length(which(!is.na(Chytridiomycota$phylum)&Chytridiomycota$kingdom!="Unknown__CLADE"))
+```
+
+unknown_clade属/种 统计
+```{r}
+fug.dat <- nhx_reduced%>%filter(kingdom=="Fungi")
+table(fug.dat$phylum)
+
+# unknown_clade 在fungi中总占比为
+length(which(fug.dat$phylum=="Unknown__CLADE"))/dim(fug.dat)[1]
+length(which(fug.dat$species=="Unknown__CLADE"))/dim(fug.dat)[1]
+
+# 输出fug门下unknown_clade属水平占比
+for (i in unique(fug.dat$phylum)){
+  a <- fug.dat[which(fug.dat$phylum==i),"genus"]
+  cat(i, dim(a%>%filter(genus=="Unknown__CLADE"))[1] /dim(a)[1], " ", dim(a%>%filter(genus=="Unknown__CLADE"))[1],"/",dim(a)[1],"\n")
+}
+
+
+
+# 输出fug门下unknown_clade种水平占比
+for (i in unique(fug.dat$phylum)){
+  a <- fug.dat[which(fug.dat$phylum==i),"species"]
+  cat(i, sprintf("%1.1f%%", 100*dim(a%>%filter(species=="Unknown__CLADE"))[1]/dim(a)[1]),"(", dim(a%>%filter(species=="Unknown__CLADE"))[1],"/",dim(a)[1],")\n")
+}
+
+
+```
+
+
+
+
