@@ -9,9 +9,9 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library(ape) # ape最好在ggtree前面加载，因为都有rotate()函数
 library(treeio)
-library(ggtree) # 需要更新至github最新版本
+library(ggtree) # 需要更新至github最新版本 # remotes::install_github("YuLab-SMU/ggtree")
 library(ggplot2)
-library(dplyr)
+library(dplyr) # devtools::install_version("dplyr",version="1.0.5")
 library(scales)
 library(ggnewscale)
 library(ggtreeExtra)
@@ -20,7 +20,7 @@ do.write <- F
 
 # 0. 整合注释信息，将其分类至不同水平
 ```{bash, eval=FALSE}
-# /ldfssz1/ST_META/F16HQSB1SY2636_TumorMeta_ZH/fangchao/benchmark4stlfr/Assay/16.DEC20/SAM/SBR/KRAKEN/BEAD+/taxonomy/paths.txt 
+# /Results/DEC20/SAM/SAM/SBR/KRAKEN/BEAD+/taxonomy/paths.txt 
 
 ## update 20210714
 vi ../../../Results/phylotree/Bacteria/1.data/paths.txt; # %s/;//g
@@ -65,6 +65,7 @@ nhx_reduced$species[grep("CLADE",nhx_reduced$species, ignore.case=T)] <- "Unknow
 ```{r}
 
 # 设置枝条颜色，红色代表unknown__clade
+nhx_reduced$seqID <- nhx_reduced$label
 nhx_reduced$label <- paste0(nhx_reduced$domain,";",nhx_reduced$phylum,";",nhx_reduced$genus)
 #nhx_reduced$group <- NA
 #nhx_reduced$group[nhx_reduced$genus=="Unknown__CLADE"] <- "unknown_clade"
@@ -73,9 +74,11 @@ phy32.col <- c("#f7acbc", "#f8aba6","#f05b72","#bd6758","#f26522","#7a1723","#98
 
 #p <- ggtree(tree2%>%as.phylo(), layout = "circular",size=0.01, aes(color=group))%>% ggtree::rotate(3476)%>% ggtree::rotate(3724)%>%ggtree::rotate(3725)%>%ggtree::rotate(4117)+geom_text2(aes(subset=!isTip, label=node), hjust=-0.3, size=0.5, color="black") + scale_color_manual(values=c("black", "red"))
 
-nhx_reduced$genus <- factor(nhx_reduced$genus,levels = c("Proteobacteria","Bacteroidota","Actinobacteriota", "Acidobacteriota", "Chloroflexi","Planctomycetota","Firmicutes","Myxococcota","Verrucomicrobiota", "Gemmatimonadota","Bdellovibrionota","Methylomirabilota","Nitrospirota","Desulfobacterota","Latescibacterota","Elusimicrobiota","Patescibacteria","Dependentiae","RCP2-54","NB1-j","Armatimonadota","MBNT15","Sumerlaeota","Entotheonellaeota","Cyanobacteria","WS2","WPS-2","Abditibacteriota","Dadabacteria","Fibrobacterota","Spirochaetota","Unknown__CLADE","NA"))
+nhx_reduced$genus <- as.factor(nhx_reduced$genus)
 
 p <- ggtree(nhx_reduced%>%as.phylo(), layout = "circular",size=0.05)%>% ggtree::rotate(7659)%>% ggtree::rotate(9495)%>%ggtree::rotate(6603)%>%ggtree::rotate(7660)#%>%ggtree::rotate(3589)%>%ggtree::rotate(3590)
+
+# If got error, ref: https://stackoverflow.com/questions/67542581/ggtree-2-4-2-error-error-in-datamasknew-data-caller-env-argument-caller
 
 p <- p %<+% nhx_reduced + 
   geom_tippoint(aes(color=phylum),alpha=2/6,size=0.1)+ 
@@ -225,19 +228,26 @@ length(which(Nitrospirota$phylum=="Nitrospirota"))/length(which(!is.na(Nitrospir
 
 # 统计每个门下属水平unknown_clade占比
 ```{r}
+unk_genus <- NULL
 for (i in unique(nhx_reduced$phylum)){
   a <- nhx_reduced[which(nhx_reduced$phylum==i),"genus"]
-  cat(i,":", sprintf("%1.1f%%", 100*dim(a%>%filter(genus=="Unknown__CLADE"))[1] /dim(a)[1]),"(", dim(a%>%filter(genus=="Unknown__CLADE"))[1],"/",dim(a)[1],")","\n")
+  count_unk <- dim(a%>%filter(genus=="Unknown__CLADE"|is.na(genus)))[1]
+  count_all <- dim(a)[1]
+  unk_genus <- c(unk_genus,
+                 paste0(i,":", sprintf("%1.1f%%", 100*count_unk /count_all),"(", count_unk,"/",count_all,")"))
 }
-
+unk_genus
 ```
 
 
 # 统计每个门下种水平unknown_clade占比
 ```{r}
+unk_sp <- NULL
 for (i in unique(nhx_reduced$phylum)){
   a <- nhx_reduced[which(nhx_reduced$phylum==i),"species"]
-  cat(i,":", sprintf("%1.1f%%", 100*dim(a%>%filter(species=="Unknown__CLADE"))[1] /dim(a)[1]),"(", dim(a%>%filter(species=="Unknown__CLADE"))[1],"/",dim(a)[1],")","\n")
+  count_unk <- dim(a%>%filter(species=="Unknown__CLADE"|is.na(species)))[1]
+  count_all <- dim(a)[1]
+  unk_sp <- c(unk_sp, paste0(i,":", sprintf("%1.1f%%", 100*count_unk /count_all),"(", count_unk,"/",count_all,")"))
 }
-
+unk_sp
 ```
