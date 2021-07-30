@@ -74,6 +74,8 @@ phy32.col <- c("#f7acbc", "#f8aba6","#f05b72","#bd6758","#f26522","#7a1723","#98
 
 #p <- ggtree(tree2%>%as.phylo(), layout = "circular",size=0.01, aes(color=group))%>% ggtree::rotate(3476)%>% ggtree::rotate(3724)%>%ggtree::rotate(3725)%>%ggtree::rotate(4117)+geom_text2(aes(subset=!isTip, label=node), hjust=-0.3, size=0.5, color="black") + scale_color_manual(values=c("black", "red"))
 
+nhx_reduced$phylum <- factor(nhx_reduced$phylum,levels = c("Proteobacteria","Bacteroidota","Actinobacteriota", "Acidobacteriota", "Chloroflexi","Planctomycetota","Firmicutes","Myxococcota","Verrucomicrobiota", "Gemmatimonadota","Bdellovibrionota","Methylomirabilota","Nitrospirota","Desulfobacterota","Latescibacterota","Elusimicrobiota","Patescibacteria","Dependentiae","RCP2-54","NB1-j","Armatimonadota","MBNT15","Sumerlaeota","Entotheonellaeota","Cyanobacteria","WS2","WPS-2","Abditibacteriota","Dadabacteria","Fibrobacterota","Spirochaetota","Unknown__CLADE","NA"))
+
 nhx_reduced$genus <- as.factor(nhx_reduced$genus)
 
 p <- ggtree(nhx_reduced%>%as.phylo(), layout = "circular",size=0.05)%>% ggtree::rotate(7659)%>% ggtree::rotate(9495)%>%ggtree::rotate(6603)%>%ggtree::rotate(7660)#%>%ggtree::rotate(3589)%>%ggtree::rotate(3590)
