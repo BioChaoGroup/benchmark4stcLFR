@@ -1,0 +1,66 @@
+---
+title: "JAN20 DATA ASSESSMENT"
+author: "Chao"
+date: "1/21/2020"
+output: 
+  html_notebook:
+    code_fold: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(treeio)
+library(ggtree)
+library(ggplot2)
+```
+
+# Background
+
+Ref:  
+1. https://guangchuangyu.github.io/ggtree-book/chapter-ggtree.html  
+2. https://yulab-smu.github.io/treedata-book/chapter2.html
+3. https://cran.r-project.org/web/packages/tidytree/tidytree.pdf
+
+Get species level OTUs:
+```{bash,eval=FALSE}
+mkdir -p  ../16.DEC20/SAM/ALL/phylotree
+cd ../16.DEC20/SAM/ALL/phylotree
+sed 's/>/>B/' ../../SBR/PREDICT/species.SSU.fa > SBR.species.SSU.fa
+sed 's/>/>F/' ../../SFR/PREDICT/species.SSU.fa > SFR.species.SSU.fa
+
+cat SBR.species.SSU.fa SFR.species.SSU.fa > ALL.species.SSU.fa
+
+
+```
+**RUN RAxML **
+species: ssu subunits joint:
+```{bash, eval=FALSE}
+mafft --thread 16 ALL.species.SSU.fa > ALL.species.ssu.mafft.fa
+trimal -gappyout -in ALL.species.ssu.mafft.fa -out ALL.species.ssu.mafft.trimal.fa
+
+raxmlHPC-HYBRID-AVX -f a -p 12345 -s ALL.species.ssu.mafft.trimal.fa -x 12345 -T 48 -# 100 -m GTRCAT  -w $PWD/ -n ALL.species.ssu.raxml
+
+raxml-ng --msa  ALL.species.ssu.mafft.trimal.fa --model GTR+G --prefix ALL.species.ssu.raxml --threads 12 --seed 0
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#FIN.
