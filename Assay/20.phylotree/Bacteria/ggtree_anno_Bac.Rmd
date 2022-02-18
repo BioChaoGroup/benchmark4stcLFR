@@ -227,6 +227,15 @@ length(which(Nitrospirota$phylum=="Nitrospirota"))/length(which(!is.na(Nitrospir
 1-length(which(Nitrospirota$phylum=="Nitrospirota"))/length(which(!is.na(Nitrospirota$phylum)))
 ```
 
+# 统计门、属、种数量
+```{r}
+valid.tips <- nhx_reduced%>%filter(label!="NA;NA;NA")
+count.phylum <- table(valid.tips$phylum)
+count.genus <- table(valid.tips$genus)
+count.species <- table(valid.tips$species)
+
+```
+
 
 # 统计每个门下属水平unknown_clade占比
 ```{r}

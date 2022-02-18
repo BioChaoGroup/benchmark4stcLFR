@@ -1,0 +1,26 @@
+---
+title: "Reformat tree seq for a better phylotree"
+author: "Chao"
+date: "5/17/2021"
+output: 
+  html_notebook:
+    code_fold: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(treeio)
+library(ggtree)
+library(ggplot2)
+```
+
+# Background
+
+
+# pre-test
+
+1. Check the subunits detected from PBAs
+
+```{bash,eval=FALSE}
+
+```
