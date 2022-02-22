@@ -9,6 +9,8 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(plyr)
+library(dplyr)
 library(treeio)
 library(ggtree)
 library(ggplot2)
@@ -133,7 +135,7 @@ read.raxml2 <- function (file)
   bootstrap <- data_frame(node = Ntip(phylo) + 1:phylo$Nnode, bootstrap = bootstrap)
   new("treedata", file = file, treetext = tree.text,phylo = phylo, data = bootstrap)
 }
-phylum.raxml <- read.raxml2("../../Results/JAN20/SAM/SBR/PREDICT/RAxML_bipartitions.phylum+ref.ssu.raxml")
+phylum.raxml <- read.raxml2("../../Results/DEC20/SAM/SBR/PREDICT/RAxML_bipartitions.phylum+ref.ssu.raxml")
 get.fields((phylum.raxml))
 
 p <- ggtree(phylum.raxml) + geom_tiplab() #+ geom_label(aes(label=bootstrap))
@@ -147,6 +149,7 @@ p2
 # read external info:
 ```{r}
 # awk -F "\t" '($0!~"PUB"){print $2"\t"$3"\t"$4"\t"$6"\t"$7"\t"$1}' SAM/SBR/KRAKEN/BEAD+/data/added.txt >  SAM/SBR/KRAKEN/BEAD+/data/added.tsv
+
 path.info <- read.table("../../Results/DEC20/SAM/SBR/KRAKEN/BEAD+/data/added.tsv",
        sep="\t",fill = NA,col.names = c("id","rank","clade","anno","SID","path"),as.is = T)
 
@@ -176,9 +179,147 @@ p.tree <- full_join(genus.raxml, p.info.df, by="label")
 p <- ggtree(p.tree,layout="circular") + geom_tiplab(aes(label=anno))
 p
 
+if(do.write){
 ggsave(p,width=200,height=200,limitsize = FALSE,
        filename = "../../Results/DEC20/SAM/SBR/PREDICT/genus.plot.pdf")
+}
 ```
+# Get tree levels 
+```{r}
+calTreeLv <- function(tree){
+  root_i <- rootnode(tree)
+  res <- data.frame(parent=root_i,node=root_i,level=0,tip=F)
+  k=1
+  while(k){
+    root_k <- NULL
+    for( i in root_i){
+      childs <- child(tree,i)
+      if(length(childs) == 0){
+        res$tip[which(res$node==i)] <- T
+      }else{
+        res <- rbind(
+          res,
+          data.frame(parent=i,node=childs,level=k,tip=F))
+      }
+      root_k <- c(root_k,childs)
+    }
+    if(length(root_k) == 0 ){
+      break
+    }
+    root_i <- root_k
+    k = k + 1
+  }
+  return(res)
+}
+
+genus.phylo.lvs <- calTreeLv(genus.raxml)
+```
+
+
+# Summary annotations
+```{r}
+tree_tb <- as_tibble(p.tree)
+tree_tb$offsprings <- 0
+
+for(i in max(genus.phylo.lvs$level):1){
+  #lv_df <- genus.phylo.lvs %>% filter(level==i) %>% group_by(parent) %>% sumNodeFun(tree_tb)
+  for(p in unique((genus.phylo.lvs %>% filter(level==i))$parent)){
+    ind <- which(tree_tb$node==p)
+    df_i <- tree_tb %>% filter(parent == p)
+    for(rank_i in c("domain","phylum","class","order", "family")){
+      taxon <- df_i[,rank_i,T]
+      taxon[which(is.na(taxon))] <- "unknown"
+      r_tab1 <- table(unlist(lapply(strsplit(df_i[,rank_i,T],"__"),"[",1)))
+      r_tab2 <- table(unlist(lapply(strsplit(df_i[,rank_i,T],"__"),"[",2)))
+
+      if(length(r_tab1)==1){
+        if(length(r_tab2)==1){
+          tree_tb$rank[ind] <- names(r_tab1)[1]
+          tree_tb$annos[ind] <- paste0(names(r_tab1)[1],"__",names(r_tab2)[1])
+          tree_tb[ind,rank_i] <- paste0(names(r_tab1)[1],"__",names(r_tab2)[1])
+        }else{
+          tree_tb$rank[ind] <- names(r_tab1)[1]
+          tree_tb$annos[ind] <- paste0(names(r_tab1)[1],"__Mixed")
+          tree_tb[ind,rank_i] <- "Mixed"
+        }
+      }else{
+        tree_tb$rank[ind] <- "Mixed"
+        tree_tb$annos[ind] <- "Mixed_Mixed"
+        tree_tb[ind,rank_i] <- "Mixed"
+      }
+    }
+    if(is.na(tree_tb$label[ind])){
+      tree_tb$label[ind] <- paste0("n",tree_tb$node[ind])
+    }
+    tree_tb$offsprings[ind] <- sum(df_i$offsprings) + nrow(df_i)
+  }
+}
+```
+
+```{r}
+df <- as_tibble(data.frame(parent=c(5,5,4,4,4),node=c(1,2,3,4,5),
+                            branch.length=c(1e-6,2e-6,3e-6,NA,0.001),
+                           label=c("t1","t2","t3",NA,NA)),
+               )
+class(df) <- c("tbl_tree",class(df))
+
+ggtree(as.phylo(df))
+ape::rtree()
+```
+
+```{r}
+load("test.RData")
+#save.image("test.RData")
+select_nodes <- genus.phylo.lvs$node[which(genus.phylo.lvs$level<=2)]
+
+subtree <- tree_tb%>%filter(node%in%select_nodes)
+  
+genus.subset.phylo <- as.phylo(subtree)
+genus.subset.phylo$edge[,1] <- unlist(sapply(genus.subset.phylo$edge[,1],function(x){which(sort(select_nodes)==x)}))
+genus.subset.phylo$edge[,2] <- unlist(sapply(genus.subset.phylo$edge[,2],function(x){which(sort(select_nodes)==x)}))
+
+nodeMap <- subtree$node
+subtree <- as.data.frame(subtree)
+subtree$parent <- unlist(lapply(subtree$parent,function(x){which(nodeMap==x)}))
+subtree$node <- unlist(lapply(subtree$node,function(x){which(nodeMap==x)}))
+class(subtree) <- c("tbl_tree","tbl","data.frame")
+genus.subset.phylo <- as.phylo(subtree)
+
+ggtree(genus.subset.phylo)
+```
+
+```{r}
+select_nodes <- genus.phylo.lvs$node[which(genus.phylo.lvs$level<=20)]
+
+genus.subset.phylo <- as.phylo(p.tree) %>% drop.tip(., .$tip.label[-select_nodes], rooted = TRUE) %>%
+  left_join(select(tree_tb,-c("parent","node","branch.length","bootstrap")),by="label")
+
+genus.subset.df <- as_tibble(genus.subset.phylo)
+phylum.freq <- table(genus.subset.df$phylum)
+show.phylum.color <- names(phylum.freq[which(phylum.freq>1)])
+genus.subset.df$phylum.shown <- ifelse(genus.subset.df$phylum%in%show.phylum.color,genus.subset.df$phylum,"others")
+
+genus.tree3 <- as.treedata(genus.subset.df)
+p <- ggtree(genus.tree3,aes(color=phylum.shown)) +
+  geom_tiplab(aes(label=node)) + 
+  geom_nodelab(aes(label=node)) + 
+  theme_tree2()
+
+p
+ggtree::rotate(p,766) %>% 
+  ggtree::rotate(727)
+```
+
+```{r}
+tdf <- genus.subset.df%>%filter(label%in%genus.tree3@phylo$tip.label)
+
+p %<+% tdf + geom_tippoint(aes(color=phylum.shown)) +
+  geom_facet(panel = "Trait", data=tdf[,c("label","offsprings")],
+               geom = geom_col, 
+               aes(x = offsprings.x,color=phylum.shown),
+               orientation = 'y') 
+```
+
 
 remove clade info, only show annotated clades
 ```{r}
@@ -186,15 +327,20 @@ p2 <- ggtree(p.tree,layout="circular") + geom_tiplab(aes(label=phylum),align=T)
 p2f <-  ggtree(p.tree,layout="circular") %>%
   collapse(node=parent(p.tree,nodeid(p.tree,15143))) %>% collapse(node=parent(p.tree,nodeid(p.tree,947611))) +
   geom_tiplab(aes(label=phylum),align=TRUE,linesize=.3,hjust=1) 
-
+p2f
 #p4 <- ggtree(p.tree) + geom_tiplab(align=TRUE,aes(label=path),linesize=.1,hjust=0,size=1)
 
+if(do.write){
 ggsave(p2f,width=200,height=200,limitsize = FALSE,
        filename = "../../Results/DEC20/SAM/SBR/PREDICT/genus.onlyAnnoPhylum.plot.pdf")
-
+}
 ```
 
 
+#test
+```{r}
+
+```
 
 # test species tree:
 ```{r}
