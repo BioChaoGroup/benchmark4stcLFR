@@ -9,9 +9,56 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(plyr)
+library(dplyr)
+
+library(ggplot2)
+library(reshape2)
 library(treeio)
 library(ggtree)
-library(ggplot2)
+library(ggtreeExtra) # BiocManager::install("ggtreeExtra")
+
+do.write<- F
+
+calTreeLv <- function(tree){
+  root_i <- rootnode(tree)
+  res <- data.frame(parent=root_i,node=root_i,level=0,tip=F)
+  k=1
+  while(k){
+    root_k <- NULL
+    for( i in root_i){
+      childs <- child(tree,i)
+      if(length(childs) == 0){
+        res$tip[which(res$node==i)] <- T
+      }else{
+        res <- rbind(
+          res,
+          data.frame(parent=i,node=childs,level=k,tip=F))
+      }
+      root_k <- c(root_k,childs)
+    }
+    
+    if(length(root_k) == 0 ){
+      break
+    }
+    root_i <- root_k
+    k = k + 1
+  }
+  return(res)
+}
+
+get.sub.treedata <- function(tree_df,select_nodes){
+  subtree <- tree_df%>%filter(node%in%select_nodes)
+  tips <- setdiff(subtree$node,subtree$parent)
+  nodes <- setdiff(subtree$parent,tips)
+  newOrder <- c(sort(tips),sort(nodes))
+  subtree$parent <- unlist(sapply(subtree$parent,function(x){which(newOrder==x)}))
+  subtree$node <- unlist(sapply(subtree$node,function(x){which(newOrder==x)}))
+
+  return(as.treedata(subtree))
+  
+}
+
 ```
 
 # Background
@@ -93,181 +140,271 @@ trimal -gappyout -in SAM/SFR/PREDICT/genus.ssu.mafft.fa -out SAM/SFR/PREDICT/gen
 raxmlHPC-HYBRID-AVX -f a -p 12345 -s SAM/SFR/PREDICT/genus.ssu.mafft.trimal.fa -x 12345 -T 40 -# 100 -m GTRCAT  -w $PWD/SAM/SFR/PREDICT -n genus.ssu.raxml
 ```
 
-treeio practices:
+# read external info:
 ```{r}
-beast_file <- system.file("examples/MCC_FluA_H3.tree", 
-                          package="ggtree")
-rst_file <- system.file("examples/rst", package="ggtree")
-mlc_file <- system.file("examples/mlc", package="ggtree")
-
-beast_tree <- read.beast(beast_file)
-codeml_tree <- read.codeml(rst_file, mlc_file)
-merged_tree <- merge_tree(beast_tree, codeml_tree)
-
-get.fields(merged_tree)
-```
-```{r}
-library(dplyr)
-df <- fortify(merged_tree) %>%
-  select(dN_vs_dS, dN, dS, rate) %>%
-  subset(dN_vs_dS >=0 & dN_vs_dS <= 1.5) %>%
-  tidyr::gather(type, value, dN_vs_dS:dS)
-df$type[df$type == 'dN_vs_dS'] <- 'dN/dS'
-df$type <- factor(df$type, levels=c("dN/dS", "dN", "dS"))
-ggplot(df, aes(rate, value)) + geom_hex() + 
-  facet_wrap(~type, scale='free_y') 
-```
+# awk -F "\t" '($0!~"PUB"){print $2"\t"$3"\t"$4"\t"$6"\t"$7"\t"$1}' SAM/SFR/KRAKEN/BEAD+/data/added.txt >  SAM/SFR/KRAKEN/BEAD+/data/added.tsv
 
 
-Read from Raxml:
-```{r}
-raxml_file <- system.file("extdata/RAxML/",
-                          "RAxML_bipartitionSFRanchLabels.H3", 
-                          package="treeio")
-raxml <- read.raxml(raxml_file)
-get.fields((raxml))
-ggtree(raxml)
+sp.raxml <- read.tree("../../Results/DEC20/SAM/SFR/PREDICT/RAxML_bipartitionsBranchLabels.species.raxml")
+sp.info <- read.table("../../Results/DEC20/SAM/SFR/PREDICT/species.both.inf",sep="\t",fill = NA, quote="",
+                     col.names = c("id","cid","SID","length","len","clades","annos"))
 
-```
-Time-scaled layout:
-```{r}
-beast_file <- system.file("examples/MCC_FluA_H3.tree", 
-                          package="ggtree")
-beast_tree <- read.beast(beast_file)
-ggtree(beast_tree, mrsd="2013-01-01") + theme_tree2()
-```
+sp.path.info <- read.table("../../Results/DEC20/SAM/SFR/KRAKEN/BEAD+/data/added.tsv",
+       sep="\t",fill = NA,col.names = c("id","rank","clade","anno","SID","path"),as.is = T,quote="")
 
-Annotation of clade
-```{r}
-treetext = "(((ADH2:0.1[&&NHX:S=human], ADH1:0.11[&&NHX:S=human]):
-0.05 [&&NHX:S=primates:D=Y:B=100],ADHY:
-0.1[&&NHX:S=nematode],ADHX:0.12 [&&NHX:S=insect]):
-0.1[&&NHX:S=metazoa:D=N],(ADH4:0.09[&&NHX:S=yeast],
-ADH3:0.13[&&NHX:S=yeast], ADH2:0.12[&&NHX:S=yeast],
-ADH1:0.11[&&NHX:S=yeast]):0.1[&&NHX:S=Fungi])[&&NHX:D=N];"
-tree <- read.nhx(textConnection(treetext))
-ggtree(tree) + geom_tiplab() + 
-  geom_label(aes(x=branch, label=S), fill='lightgreen') + 
-  geom_label(aes(label=D), fill='steelblue') + 
-  geom_text(aes(label=B), hjust=-.5)
-```
-
-
-```{r}
-nwk <- system.file("extdata", "sample.nwk", package="treeio")
-tree <- read.tree(nwk)
-p <- ggtree(tree) + geom_tiplab()
-viewClade(p, MRCA(p, "I", "L"))
-
-```
-
-```{r}
-p2 <- p %>% collapse(node=21) + 
-  geom_point2(aes(subset=(node==21)), shape=21, size=5, fill='green')
-p2 <- collapse(p2, node=23) + 
-  geom_point2(aes(subset=(node==23)), shape=23, size=5, fill='red')
-print(p2)
-expand(p2, node=23) %>% expand(node=21)
-```
-
-
-read real data
-```{r}
-read.raxml2 <- function (file) 
-{
-  tree.text <- readLines(file)
-  #tree_text <- gsub("(:[0-9\\.eE+\\-]+)\\[(\\d+)\\]", "\\@\\2\\1", tree.text)
-  tree_text <- gsub("\\)(\\d+)(:[0-9\\.eE+\\-]+)", "\\)\\@\\1\\2", tree.text)
-  phylo <- read.tree(text = tree_text)
-  if (any(grepl("@", phylo$node.label))) {
-    bootstrap <- as.numeric(gsub("[^@]*@(\\d+)", "\\1", 
-      phylo$node.label))
-    phylo$node.label <- gsub("@\\d+", "", phylo$node.label)
-  }
-  if (all(phylo$node.label == "")) {
-    phylo$node.label <- NULL
-  }
-  bootstrap <- data_frame(node = Ntip(phylo) + 1:phylo$Nnode, bootstrap = bootstrap)
-  new("treedata", file = file, treetext = tree.text,phylo = phylo, data = bootstrap)
-}
-phylum.raxml <- read.raxml2("../../Results/JAN20/SAM/SFR/PREDICT/RAxML_bipartitions.phylum+ref.ssu.raxml")
-get.fields((phylum.raxml))
-
-p <- ggtree(phylum.raxml) + geom_tiplab() #+ geom_label(aes(label=bootstrap))
-
-p2 <- p %>% collapse(node=65) + 
-  geom_point2(aes(subset=(node==65)), shape=21, size=5, fill='green')
-
-p2
-```
-
-read external info:
-```{r}
-
-path.info <- read.table("../../Results/JAN20/SAM/SFR/KRAKEN/test/data/added.tsv",
-       sep="\t",fill = NA,col.names = c("id","rank","clade","anno","SID"),as.is = T)
-
-
-phylum.raxml <- read.raxml("../../Results/JAN20/SAM/SFR/PREDICT/RAXML/RAxML_bipartitionSFRanchLabels.phylum+ref.ssu.raxml")
-p.info <- read.table("../../Results/JAN20/SAM/SFR/PREDICT/phylum.SSU.inf",sep="\t",fill=NA,
-                     col.names = c("id","cladeName","SID","length","len","clades","annos"))
-
-p.info.df <- as_tibble(merge(data.frame(label=as.phylo(phylum.raxml)$tip.label),
-      merge(p.info,path.info,by="id"),by.x="label",by.y="id",all.x=T))
-p.info.df$cladeName <- ifelse(is.na(p.info.df$cladeName),as.character(p.info.df$label),p.info.df$cladeName)
-p.info.df$anno <- ifelse(is.na(p.info.df$anno)|p.info.df$anno=="",as.character(p.info.df$cladeName),p.info.df$anno)
-p.tree <- full_join(phylum.raxml, p.info.df, by="label")
-
-p <- ggtree(p.tree) + geom_tiplab(aes(label=anno))
-p
-
-p2 <- p %>% collapse(node=65) + 
-  geom_point2(aes(subset=(node==65)), shape=21, size=5, fill='green')
-
-p2
-```
-
-
-
-test species tree:
-```{r}
-sp.raxml <- read.raxml2("../../Results/JAN20/SAM/SFR/PREDICT/RAxML_bipartitions.species+ref.ssu.raxml")
-sp.info <- read.table("../../Results/JAN20/SAM/SFR/PREDICT/species.SSU.inf",sep="\t",fill = NA,
-                     col.names = c("id","SID","length","len","clades","annos"))
 
 sp.info.df <- as_tibble(merge(data.frame(label=as.phylo(sp.raxml)$tip.label),
-      merge(sp.info,path.info,by="id"),by.x="label",by.y="id",all.x=T))
+      merge(sp.info,sp.path.info,by="id"),by.x="label",by.y="id",all.x=T))
+
 sp.info.df$clade <- ifelse(is.na(sp.info.df$clade),as.character(sp.info.df$label),sp.info.df$clade)
 sp.info.df$anno <- ifelse(is.na(sp.info.df$anno)|sp.info.df$anno=="",as.character(sp.info.df$clade),sp.info.df$anno)
+sp.info.df$anno2 <- ifelse(grepl("CLADE",sp.info.df$anno),"",sp.info.df$anno)
+
+sp.info.df$domain <- ifelse(grepl(".*domain__(\\w+);.*",sp.info.df$path,perl=T),
+                            sub(".*(domain__\\w+);.*","\\1",sp.info.df$path, perl=T),NA)
+sp.info.df$superkingdom <- ifelse(grepl(".*;superkingdom__(\\w+);.*",sp.info.df$path,perl=T),
+                                  sub(".*;(superkingdom__\\w+);.*","\\1",sp.info.df$path, perl=T),NA)
+sp.info.df$subkingdom <-  ifelse(grepl(".*;subkingdom__(\\w+);.*",sp.info.df$path,perl=T),
+                                  sub(".*;(subkingdom__\\w+);.*","\\1",sp.info.df$path, perl=T),NA)
+sp.info.df$kingdom <-  ifelse(grepl(".*;kingdom__(\\w+);.*",sp.info.df$path,perl=T),
+                                  sub(".*;(kingdom__\\w+);.*","\\1",sp.info.df$path, perl=T),NA)
+sp.info.df$phylum <-  ifelse(grepl(".*;phylum__(\\w+);.*",sp.info.df$path,perl=T),
+                                  sub(".*;(phylum__\\w+);.*","\\1",sp.info.df$path, perl=T),NA)
+sp.info.df$class  <-  ifelse(grepl(".*;class__(\\w+);.*",sp.info.df$path,perl=T),
+                                  sub(".*;(class__\\w+);.*","\\1",sp.info.df$path, perl=T),NA)
+sp.info.df$order  <-  ifelse(grepl(".*;order__(\\w+);.*",sp.info.df$path,perl=T),
+                                  sub(".*;(order__\\w+);.*","\\1",sp.info.df$path, perl=T),NA)
+sp.info.df$family <-  ifelse(grepl(".*;family__(\\w+);.*",sp.info.df$path,perl=T),
+                                  sub(".*;(family__\\w+);.*","\\1",sp.info.df$path, perl=T),NA)
+sp.info.df$genus <-  ifelse(grepl(".*;genus__(\\w+);.*",sp.info.df$path,perl=T),
+                                  sub(".*;(genus__\\w+);.*","\\1",sp.info.df$path, perl=T),NA)
+sp.info.df$species <-  ifelse(grepl(".*;species__(\\w+);.*",sp.info.df$path,perl=T),
+                                  sub(".*;(species__\\w+);.*","\\1",sp.info.df$path, perl=T),NA)
+
+sp.info.df$domain <- ifelse(grepl("CLADE",sp.info.df$domain),"",sp.info.df$domain)
+sp.info.df$phylum <- ifelse(grepl("CLADE",sp.info.df$phylum),"",sp.info.df$phylum)
+sp.info.df$class <- ifelse(grepl("CLADE",sp.info.df$class),"",sp.info.df$class)
+sp.info.df$order <- ifelse(grepl("CLADE",sp.info.df$order),"",sp.info.df$order)
+sp.info.df$family <- ifelse(grepl("CLADE",sp.info.df$family),"",sp.info.df$family)
+sp.info.df$genus <- ifelse(grepl("CLADE",sp.info.df$genus),"",sp.info.df$genus)
+sp.info.df$species <- ifelse(grepl("CLADE",sp.info.df$species),"",sp.info.df$species)
+
+
 sp.tree <- full_join(sp.raxml, sp.info.df, by="label")
 
-sp <- ggtree(sp.tree,layout="circular") #+ geom_tiplab(aes(label=anno))
-sp
 
-p2 <- sp %>% collapse(node=671) + 
-  geom_point2(aes(subset=(node==671)), shape=21, size=5, fill='green')
+```
 
-p2
+# Summary annotations
+```{r}
+species.phylo.lvs <- calTreeLv(sp.tree)
 
+tree_tb <- as_tibble(sp.tree)
+tree_tb$offsprings <- 0
+
+for(i in max(species.phylo.lvs$level):1){
+  #lv_df <- species.phylo.lvs %>% filter(level==i) %>% group_by(parent) %>% sumNodeFun(tree_tb)
+  for(p in unique((species.phylo.lvs %>% filter(level==i))$parent)){
+    ind <- which(tree_tb$node==p)
+    df_i <- tree_tb %>% filter(parent == p)
+    for(rank_i in c("domain","superkingdom","kingdom","subkingdom","phylum","class","order", "family","genus","species")){
+      taxon <- df_i[,rank_i,T]
+      taxon[which(is.na(taxon))] <- "NA__NA"
+      r_tab1 <- table(unlist(lapply(strsplit(taxon,"__"),"[",1)))
+      r_tab2 <- table(unlist(lapply(strsplit(taxon,"__"),"[",2)))
+      
+      r_tab1[which(r_tab1=="NA")] <- NA
+      r_tab2[which(r_tab2=="NA")] <- NA
+      
+      if(length(r_tab1)==1){
+        if(length(r_tab2)==1){
+          tree_tb$rank[ind] <- names(r_tab1)[1]
+          tree_tb$annos[ind] <- paste0(names(r_tab1)[1],"__",names(r_tab2)[1])
+          tree_tb[ind,rank_i] <- paste0(names(r_tab1)[1],"__",names(r_tab2)[1])
+        }else{
+          tree_tb$rank[ind] <- names(r_tab1)[1]
+          tree_tb$annos[ind] <- paste0(names(r_tab1)[1],"__Mixed")
+          tree_tb[ind,rank_i] <- "Mixed"
+        }
+      }else{
+        tree_tb$rank[ind] <- "Mixed"
+        tree_tb$annos[ind] <- "Mixed_Mixed"
+        tree_tb[ind,rank_i] <- "Mixed"
+      }
+    }
+    if(is.na(tree_tb$label[ind])){
+      tree_tb$label[ind] <- paste0("n",tree_tb$node[ind])
+    }
+    tree_tb$offsprings[ind] <- sum(df_i$offsprings) + nrow(df_i)
+  }
+}
+
+```
+
+
+# tree with all sp. level
+```{r}
+# save.image(file="SFR.sp.tree.RData")
+# load("SFR.sp.tree.RData")
+phylum.freq <- table(tree_tb$phylum)
+show.phylum.color <- names(rev(sort(phylum.freq))[1:11])
+tree_tb$phylum.shown <- ifelse(
+  is.na(tree_tb$phylum)|tree_tb$phylum == "NA__NA","Unknown",
+  ifelse(tree_tb$phylum%in%show.phylum.color,tree_tb$phylum,"Others"))
+
+
+#
+tree_tb.tr <- tree_tb[,c("parent","node","branch.length","label","phylum")]
+tree_tb.df <- tree_tb[,c("node","label","domain","kingdom","phylum.shown")]
+tree_tb.df$phylum.shown <- factor(
+  tree_tb.df$phylum.shown,
+  levels=c(show.phylum.color,"Others","Unknown"))
+### 
+
+p0f <- ggtree(as.treedata(tree_tb.tr)) +
+  geom_tiplab(align=T,aes(label=phylum)) +
+  geom_nodelab(aes(label=node))
+
+
+p1f <- p0f %>% rotate(3597) +
+  geom_hilight(data=tree_tb.df%>%filter(!phylum.shown%in%c("",NA,"Mixed","others","unknown__unknown")),mapping=aes(node=node,fill=phylum.shown),
+                  alpha=0.1,
+                  size=0.05)
+
+p2f <-  ggtree(as.treedata(tree_tb.tr)) +
+  geom_tiplab(align=T,aes(label=phylum)) +
+  geom_nodelab(aes(label=node)) +
+  geom_hilight(data=tree_tb.df%>%filter(!phylum.shown%in%c("",NA,"Mixed","others")),mapping=aes(node=node,fill=kingdom),
+                  alpha=0.1,
+                  size=0.05)
+
+if(do.write){
+  ggsave(p1f,width=50,height=200,limitsize = FALSE,
+       filename = "../../Results/DEC20/SAM/SFR/PREDICT/species.ver.onlyAnnoPhylum.with.node.plot.pdf")
+  ggsave(p2f,width=50,height=200,limitsize = FALSE,
+       filename = "../../Results/DEC20/SAM/SFR/PREDICT/species.ver.onlyAnnoDomain.with.node.plot.pdf")
+}
+
+
+p0fc <- ggtree(as.treedata(tree_tb.tr),layout="fan",) +
+  geom_tiplab(align=TRUE,aes(label=phylum)) +
+  geom_nodelab(aes(label=node))
+
+p0fc0 <- ggtree(as.treedata(tree_tb.tr),layout="fan",) +
+  geom_nodelab(aes(label=node)) + 
+  geom_hilight(data=tree_tb.df%>%filter(!phylum.shown%in%c("",NA,"Mixed","others","unknown__unknown")),mapping=aes(node=node,fill=phylum.shown),
+                  alpha=0.5,
+                  size=0.05)
+
+p0fc1 <- ggtree(as.treedata(tree_tb.tr),layout="fan",) +
+  geom_nodelab(aes(label=node)) + 
+  geom_hilight(data=tree_tb.df%>%filter(!phylum.shown%in%c("",NA,"Mixed","others")),mapping=aes(node=node,fill=kingdom),
+                  alpha=0.1,
+                  size=0.05)
+
+if(do.write){
+  ggsave(p0fc0,width=200,height=200,limitsize = FALSE,
+       filename = "../../Results/DEC20/SAM/SFR/PREDICT/species.cir0.onlyAnnoPhylum.with.node.plot.pdf")
+  ggsave(p0fc1,width=200,height=200,limitsize = FALSE,
+       filename = "../../Results/DEC20/SAM/SFR/PREDICT/species.cir.onlyAnnokingdom.with.node.plot.pdf")
+}
+
+
+### 180
+p2f0 <- ggtree(as.treedata(tree_tb.tr),layout="circular")
+
+p2f1 <- open_tree(p2f0,180) %>% rotate(3598) + 
+  geom_nodelab(aes(label=node)) +
+  geom_hilight(data=tree_tb.df%>%filter(!phylum.shown%in%c("",NA,"Mixed")),mapping=aes(node=node,fill=phylum.shown), alpha=0.1, size=0.05)
+
+if(do.write){
+  ggsave(p2f1,width=200,height=200,limitsize = FALSE,
+       filename = "../../Results/DEC20/SAM/SFR/PREDICT/species.180.onlyAnnoPhylum.with.node.plot.pdf")
+
+}
+
+p2f2 <- open_tree(p2f0,180) +
+  geom_hilight(data=tree_tb.df%>%filter(!phylum.shown%in%c("",NA,"Mixed")),mapping=aes(node=node,fill=phylum.shown), alpha=0.1, size=0.05)
+
+if(do.write){
+  ggsave(p2f2,width=200,height=200,limitsize = FALSE,
+       filename = "../../Results/DEC20/SAM/SFR/PREDICT/species.180.onlyAnnoPhylum.without.node.plot.pdf")
+
+}
 ```
 
 
 
 
 
+```{r}
+getCladeDf <- function(treedata,nodes){
+  clade.df <- NULL
+  clade.nodes <- NULL
+  for(i in nodes){
+    i.df <- offspring(treedata,i)
+    clade.nodes <- c(clade.nodes,i.df$node)
+  }
+  clade.nodes <- unique(clade.nodes)
+  clade.df <- treedata%>%filter(node%in%clade.nodes)
+  clade.tips <- setdiff(clade.df$node,clade.df$parent)
+  clade.df <- clade.df%>%filter(node%in%clade.tips)
+
+  clade.table <- table(clade.df$phylum)
+  clade.pie <- pie(clade.table)
+  return(list(df=clade.df,tb=clade.table,pie=clade.pie))
+}
+
+area1.obj <- getCladeDf(tree_tb,c(4481))
+area2.obj <- getCladeDf(tree_tb,c(4000))
+area3.obj <- getCladeDf(tree_tb,c(3872))
+area4.obj <- getCladeDf(tree_tb,c(4200,3867,4233,4257,3851))
+area5.obj <- getCladeDf(tree_tb,c(4258))
+area6.obj <- getCladeDf(tree_tb,c(3713))
+area7.obj <- getCladeDf(tree_tb,c(3788))
+area8.obj <- getCladeDf(tree_tb,c(3602,3604,3606,3822,3819,3815))
+area9.obj <- getCladeDf(tree_tb,c(6023,553,6031,3581,544,6053,3517,3263,
+                                   3244,3225,3036,6059))
 
 
+SFR.summary.clades.df <- rbind(
+  cbind(area1.obj$df,area="I"),
+  cbind(area2.obj$df,area="II"),
+  cbind(area3.obj$df,area="III"),
+  cbind(area4.obj$df,area="IV"),
+  cbind(area5.obj$df,area="V"),
+  cbind(area6.obj$df,area="VI"),
+  cbind(area7.obj$df,area="VII"),
+  cbind(area8.obj$df,area="VIII"),
+  cbind(area9.obj$df,area="IX")
+)
+SFR.summary.clades.df$area <- factor(
+  SFR.summary.clades.df$area,
+  levels=c("I","II","III","IV","V","VI","VII","VIII","IX"))
+```
+
+```{r}
+ggplot(SFR.summary.clades.df,aes(x=factor(area))) + 
+  geom_bar(aes(fill=phylum.shown),position="fill") + 
+  coord_flip() + theme_bw()
+```
 
 
+```{r}
+sumFun <- function(d){
+  freq <- rev(sort(table(d$phylum)))
+  top1 <- sub("phylum__","",names(freq)[1])
+  count <- freq[1]
+  unk <- length(which(d$phylum=="Unknown"|is.na(d$phylum)))
+  text <- paste(count,unk,nrow(d),sep="/")
+  res <- data.frame(topTax=top1,c.top=count,unk=unk,total=nrow(d),text=text)
+  return(res)
+}
+SFR.summary.df <- ddply(SFR.summary.clades.df,"area",sumFun)
+SFR.summary.df
+SFR.summary.df[,c(1,2,6)]
 
-
-
-
-
-
-
-
-
+```
 
 
 
