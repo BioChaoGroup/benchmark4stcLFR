@@ -455,7 +455,7 @@ for(i in max(species.phylo.lvs$level):1){
 
 ```{r}
 #save.image(file="SBR.sp.tree.RData")
-# load("SBR.sp.tree.RData")
+#load("SBR.sp.tree.RData")
 phylum.freq <- table(tree_tb$phylum)
 #Bdellovibrionota
 #Patescibacteria
@@ -581,6 +581,9 @@ SBR.summary.clades.df$area <- factor(SBR.summary.clades.df$area,
 ```
 
 ```{r}
+SBR.summary.clades.df$area <- factor(SBR.summary.clades.df$area,
+                                     levels=seq(1,15))
+
 ggplot(SBR.summary.clades.df,aes(x=factor(area))) + 
   geom_bar(aes(fill=phylum.shown),position="fill") + 
   coord_flip() + theme_bw()
@@ -603,6 +606,42 @@ summary.df
 
 ```{r}
 summary.df[,c(2,6)]
+```
+
+```{r}
+SBR.summary.clades.df$is.phylum <- ifelse(is.na(SBR.summary.clades.df$phylum)|SBR.summary.clades.df$phylum=="",
+                                          "Unknown","Known") 
+SBR.summary.clades.df$is.class <- ifelse(is.na(SBR.summary.clades.df$class)|SBR.summary.clades.df$class=="",
+                                         "Unknown","Known") 
+SBR.summary.clades.df$is.order <- ifelse(is.na(SBR.summary.clades.df$order)|SBR.summary.clades.df$order=="",
+                                         "Unknown","Known") 
+SBR.summary.clades.df$is.family <- ifelse(is.na(SBR.summary.clades.df$family)|SBR.summary.clades.df$family=="",
+                                          "Unknown","Known") 
+SBR.summary.clades.df$is.genus <- ifelse(is.na(SBR.summary.clades.df$genus)|SBR.summary.clades.df$genus=="",
+                                         "Unknown","Known") 
+SBR.summary.clades.df$is.species <- ifelse(is.na(SBR.summary.clades.df$species)|SBR.summary.clades.df$species=="",
+                                           "Unknown","Known") 
+
+SBR.unkown.stat <- melt(
+  SBR.summary.clades.df, id.vars = c("SID.x","node","area"),
+  measure.vars = c("is.phylum","is.class","is.order","is.family","is.genus","is.species"),
+  variable.name = "Rank",value.name = "annotation")
+
+
+SBR.unkown.stat$Annotation <- factor(SBR.unkown.stat$annotation,levels=c("Unknown","Known"))
+SBR.unkown.stat$Rank <- as.factor(SBR.unkown.stat$Rank)
+levels(SBR.unkown.stat$Rank) <- c("P","C","O","F","G","S")
+ggplot(SBR.unkown.stat,aes(x=Rank)) + 
+  geom_bar(stat="count",position="fill",aes(fill=Annotation),color="black") +
+  facet_grid(area~.) + theme_bw() + 
+  scale_fill_manual(values = c("grey90","deepskyblue3")) +
+  scale_y_continuous(breaks=seq(0,1,1))
+
+if(do.write){
+  ggsave(width=4,height=6,limitsize = FALSE,
+       filename = "../../Results/DEC20/SAM/SBR/PREDICT/SBR.knownAnno.stat.barplot.pdf")
+
+}
 ```
 
 

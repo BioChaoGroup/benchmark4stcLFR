@@ -246,35 +246,49 @@ for(i in max(species.phylo.lvs$level):1){
 ```{r}
 # save.image(file="SFR.sp.tree.RData")
 # load("SFR.sp.tree.RData")
-phylum.freq <- table(tree_tb$phylum)
-show.phylum.color <- names(rev(sort(phylum.freq))[1:11])
+tree_tb$annoColor <- paste0(
+  sub("kingdom__","",tree_tb$kingdom),"|",
+  sub("phylum__","",tree_tb$phylum))
+
+phylum.freq <- table((tree_tb%>%filter(!is.na(kingdom)))$phylum)
+show.phylum.color <- names(rev(sort(phylum.freq))[1:12])
 tree_tb$phylum.shown <- ifelse(
   is.na(tree_tb$phylum)|tree_tb$phylum == "NA__NA","Unknown",
   ifelse(tree_tb$phylum%in%show.phylum.color,tree_tb$phylum,"Others"))
 
 
 #
-tree_tb.tr <- tree_tb[,c("parent","node","branch.length","label","phylum")]
+tree_tb.tr <- tree_tb[,c("parent","node","branch.length","label","SID.x",
+                         "domain","kingdom","phylum","class","order","family","genus","species","phylum.shown")]
 tree_tb.df <- tree_tb[,c("node","label","domain","kingdom","phylum.shown")]
 tree_tb.df$phylum.shown <- factor(
   tree_tb.df$phylum.shown,
   levels=c(show.phylum.color,"Others","Unknown"))
-### 
+###
 
-p0f <- ggtree(as.treedata(tree_tb.tr)) +
+SFR.tree.df <- as.treedata(tree_tb.tr)
+rooted.tree <- root(SFR.tree.df,
+                    outgroup = "689535",
+                    edgelabel = TRUE)
+rooted.tree.df <- as_tibble(rooted.tree)
+rooted.tree.df$phylum.shown <- factor(
+  rooted.tree.df$phylum.shown,
+  levels=c(show.phylum.color,"Others","Unknown"))
+
+p0f <- ggtree(rooted.tree) +
   geom_tiplab(align=T,aes(label=phylum)) +
   geom_nodelab(aes(label=node))
 
 
 p1f <- p0f %>% rotate(3597) +
-  geom_hilight(data=tree_tb.df%>%filter(!phylum.shown%in%c("",NA,"Mixed","others","unknown__unknown")),mapping=aes(node=node,fill=phylum.shown),
+  geom_hilight(data=rooted.tree.df%>%filter(!phylum.shown%in%c("",NA,"Mixed","others","unknown__unknown")),mapping=aes(node=node,fill=phylum.shown),
                   alpha=0.1,
                   size=0.05)
 
-p2f <-  ggtree(as.treedata(tree_tb.tr)) +
+p2f <-  ggtree(rooted.tree) +
   geom_tiplab(align=T,aes(label=phylum)) +
   geom_nodelab(aes(label=node)) +
-  geom_hilight(data=tree_tb.df%>%filter(!phylum.shown%in%c("",NA,"Mixed","others")),mapping=aes(node=node,fill=kingdom),
+  geom_hilight(data=rooted.tree.df%>%filter(!phylum.shown%in%c("",NA,"Mixed","others")),mapping=aes(node=node,fill=kingdom),
                   alpha=0.1,
                   size=0.05)
 
@@ -286,19 +300,19 @@ if(do.write){
 }
 
 
-p0fc <- ggtree(as.treedata(tree_tb.tr),layout="fan",) +
+p0fc <- ggtree(rooted.tree,layout="fan",) +
   geom_tiplab(align=TRUE,aes(label=phylum)) +
   geom_nodelab(aes(label=node))
 
-p0fc0 <- ggtree(as.treedata(tree_tb.tr),layout="fan",) +
+p0fc0 <- ggtree(rooted.tree,layout="fan",) +
   geom_nodelab(aes(label=node)) + 
-  geom_hilight(data=tree_tb.df%>%filter(!phylum.shown%in%c("",NA,"Mixed","others","unknown__unknown")),mapping=aes(node=node,fill=phylum.shown),
+  geom_hilight(data=rooted.tree.df%>%filter(!phylum.shown%in%c("",NA,"Mixed","others","unknown__unknown","Unknown")),mapping=aes(node=node,fill=phylum.shown),
                   alpha=0.5,
                   size=0.05)
 
-p0fc1 <- ggtree(as.treedata(tree_tb.tr),layout="fan",) +
+p0fc1 <- ggtree(rooted.tree,layout="fan",) +
   geom_nodelab(aes(label=node)) + 
-  geom_hilight(data=tree_tb.df%>%filter(!phylum.shown%in%c("",NA,"Mixed","others")),mapping=aes(node=node,fill=kingdom),
+  geom_hilight(data=rooted.tree.df%>%filter(!phylum.shown%in%c("",NA,"Mixed","others")),mapping=aes(node=node,fill=kingdom),
                   alpha=0.1,
                   size=0.05)
 
@@ -311,11 +325,11 @@ if(do.write){
 
 
 ### 180
-p2f0 <- ggtree(as.treedata(tree_tb.tr),layout="circular")
+p2f0 <- ggtree(rooted.tree,layout="circular")
 
-p2f1 <- open_tree(p2f0,180) %>% rotate(3598) + 
+p2f1 <- open_tree(p2f0,180) %>% rotate(3599) + 
   geom_nodelab(aes(label=node)) +
-  geom_hilight(data=tree_tb.df%>%filter(!phylum.shown%in%c("",NA,"Mixed")),mapping=aes(node=node,fill=phylum.shown), alpha=0.1, size=0.05)
+  geom_hilight(data=rooted.tree.df%>%filter(!phylum.shown%in%c("",NA,"Mixed")),mapping=aes(node=node,fill=phylum.shown), alpha=0.1, size=0.05)
 
 if(do.write){
   ggsave(p2f1,width=200,height=200,limitsize = FALSE,
@@ -323,14 +337,15 @@ if(do.write){
 
 }
 
-p2f2 <- open_tree(p2f0,180) +
-  geom_hilight(data=tree_tb.df%>%filter(!phylum.shown%in%c("",NA,"Mixed")),mapping=aes(node=node,fill=phylum.shown), alpha=0.1, size=0.05)
+p2f2 <- open_tree(p2f0,180)  %>% rotate(3599) +
+  geom_hilight(data=rooted.tree.df%>%filter(!phylum.shown%in%c("",NA,"Mixed")),mapping=aes(node=node,fill=phylum.shown), alpha=0.1, size=0.05)
 
 if(do.write){
   ggsave(p2f2,width=200,height=200,limitsize = FALSE,
        filename = "../../Results/DEC20/SAM/SFR/PREDICT/species.180.onlyAnnoPhylum.without.node.plot.pdf")
 
-}
+
+  }
 ```
 
 
@@ -338,33 +353,53 @@ if(do.write){
 
 
 ```{r}
-getCladeDf <- function(treedata,nodes){
+getCladeDf <- function(treedata,nodes,exclude_nodes=NULL){
   clade.df <- NULL
   clade.nodes <- NULL
   for(i in nodes){
     i.df <- offspring(treedata,i)
-    clade.nodes <- c(clade.nodes,i.df$node)
+    if(class(i.df)=="integer"){
+      clade.nodes <- c(clade.nodes,i.df)
+    }else{
+      clade.nodes <- c(clade.nodes,i.df$node)
+    }
   }
   clade.nodes <- unique(clade.nodes)
-  clade.df <- treedata%>%filter(node%in%clade.nodes)
+  if(!is.null(exclude_nodes)){
+        ex.nodes <- NULL
+    for(i in exclude_nodes){
+      i.df <- offspring(treedata,i)
+      if(class(i.df)[1]=="integer"){
+        ex.nodes <- c(ex.nodes,i.df)
+      }else{
+        ex.nodes <- c(ex.nodes,i.df$node)
+      }
+    }
+    ex.nodes <- unique(ex.nodes)
+    clade.nodes <- setdiff(clade.nodes,ex.nodes)
+  }
+  if( class(treedata) == "treedata"){
+    clade.df <- as_tibble(treedata)%>%filter(node%in%clade.nodes)
+  }else{
+    clade.df <- treedata%>%filter(node%in%clade.nodes)
+  }
   clade.tips <- setdiff(clade.df$node,clade.df$parent)
   clade.df <- clade.df%>%filter(node%in%clade.tips)
-
+  clade.df$phylum <- ifelse(is.na(clade.df$phylum),"Unknown",clade.df$phylum)
   clade.table <- table(clade.df$phylum)
   clade.pie <- pie(clade.table)
   return(list(df=clade.df,tb=clade.table,pie=clade.pie))
 }
 
-area1.obj <- getCladeDf(tree_tb,c(4481))
-area2.obj <- getCladeDf(tree_tb,c(4000))
-area3.obj <- getCladeDf(tree_tb,c(3872))
-area4.obj <- getCladeDf(tree_tb,c(4200,3867,4233,4257,3851))
-area5.obj <- getCladeDf(tree_tb,c(4258))
-area6.obj <- getCladeDf(tree_tb,c(3713))
-area7.obj <- getCladeDf(tree_tb,c(3788))
-area8.obj <- getCladeDf(tree_tb,c(3602,3604,3606,3822,3819,3815))
-area9.obj <- getCladeDf(tree_tb,c(6023,553,6031,3581,544,6053,3517,3263,
-                                   3244,3225,3036,6059))
+area1.obj <- getCladeDf(rooted.tree.df,c(4481))
+area2.obj <- getCladeDf(rooted.tree.df,3870)
+area3.obj <- getCladeDf(rooted.tree.df,c(3850),3870)
+area4.obj <- getCladeDf(rooted.tree.df,c(4304))
+area5.obj <- getCladeDf(rooted.tree.df,c(4258,3599),c(4304,3712))
+area6.obj <- getCladeDf(rooted.tree.df,c(3788))
+area7.obj <- getCladeDf(rooted.tree.df,c(3716))
+area8.obj <- getCladeDf(rooted.tree.df,c(3578),3596)
+area9.obj <- getCladeDf(rooted.tree.df,3422,3578)
 
 
 SFR.summary.clades.df <- rbind(
@@ -407,6 +442,42 @@ SFR.summary.df[,c(1,2,6)]
 ```
 
 
+```{r}
+SFR.summary.clades.df$is.phylum <- ifelse(is.na(SFR.summary.clades.df$phylum)|SFR.summary.clades.df$phylum=="",
+                                          "Unknown","Known") 
+SFR.summary.clades.df$is.class <- ifelse(is.na(SFR.summary.clades.df$class)|SFR.summary.clades.df$class=="",
+                                         "Unknown","Known") 
+SFR.summary.clades.df$is.order <- ifelse(is.na(SFR.summary.clades.df$order)|SFR.summary.clades.df$order=="",
+                                         "Unknown","Known") 
+SFR.summary.clades.df$is.family <- ifelse(is.na(SFR.summary.clades.df$family)|SFR.summary.clades.df$family=="",
+                                          "Unknown","Known") 
+SFR.summary.clades.df$is.genus <- ifelse(is.na(SFR.summary.clades.df$genus)|SFR.summary.clades.df$genus=="",
+                                         "Unknown","Known") 
+SFR.summary.clades.df$is.species <- ifelse(is.na(SFR.summary.clades.df$species)|SFR.summary.clades.df$species=="",
+                                           "Unknown","Known") 
+
+
+SFR.unkown.stat <- melt(
+  SFR.summary.clades.df, id.vars = c("SID.x","node","area"),
+  measure.vars = c("is.phylum","is.class","is.order","is.family","is.genus","is.species"),
+  variable.name = "Rank",value.name = "Annotation")
+
+SFR.unkown.stat$Annotation <- factor(SFR.unkown.stat$Annotation,levels=c("Unknown","Known"))
+SFR.unkown.stat$Rank <- as.factor(SFR.unkown.stat$Rank)
+levels(SFR.unkown.stat$Rank) <- c("P","C","O","F","G","S")
+
+ggplot(SFR.unkown.stat,aes(x=Rank)) + 
+  geom_bar(stat="count",position="fill",aes(fill=Annotation),color="black") +
+  facet_grid(area~.) + theme_bw() + 
+  scale_fill_manual(values = c("grey90","deepskyblue3")) +
+  scale_y_continuous(breaks=seq(0,1,1))
+
+if(do.write){
+  ggsave(width=4,height=4,limitsize = FALSE,
+       filename = "../../Results/DEC20/SAM/SFR/PREDICT/SFR.knownAnno.stat.barplot.pdf")
+
+}
+```
 
 
 
