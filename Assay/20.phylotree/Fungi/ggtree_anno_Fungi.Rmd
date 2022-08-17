@@ -194,6 +194,17 @@ for (i in unique(fug.dat$phylum)){
 
 ```
 
-
+```{r}
+allTips <- nhx_reduced%>%filter(label!="NA;NA;NA;NA;NA")
+allCount <- nrow(allTips)
+unknownKingdom <- length(which(allTips$kingdom=="Unknown__CLADE"|is.na(allTips$kingdom)))
+unknownPhylum <- length(which(allTips$phylum=="Unknown__CLADE"|is.na(allTips$phylum)))
+unknownGenus <- length(which(allTips$genus=="Unknown__CLADE"|is.na(allTips$genus)))
+unknownSp <- length(which(allTips$species=="Unknown__CLADE"|is.na(allTips$species)))
+rbind(
+  cbind(unknownKingdom,unknownPhylum,unknownGenus,unknownSp),
+  cbind(unknownKingdom/allCount,unknownPhylum/allCount,unknownGenus/allCount,unknownSp/allCount)
+)
+```
 
 

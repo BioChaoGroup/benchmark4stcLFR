@@ -97,6 +97,10 @@ p <- p %<+% nhx_reduced +
 
 ```
 
+# Export
+```{r, export}
+ggsave("../../../Results/AUG20/FIG/phylotree.bac.pdf",p,width=12,height=6)
+```
 
 细菌：species注释率为100%
       species中unknown_clade注释率为95.4%
@@ -253,3 +257,16 @@ for (i in unique(nhx_reduced$phylum)){
 }
 unk_sp
 ```
+
+```{r}
+allTips <- nhx_reduced%>%filter(label!="NA;NA;NA")
+allCount <- nrow(allTips)
+unknownPhylum <- length(which(allTips$phylum=="Unknown__CLADE"|is.na(allTips$phylum)))
+unknownGenus <- length(which(allTips$genus=="Unknown__CLADE"|is.na(allTips$genus)))
+unknownSp <- length(which(allTips$species=="Unknown__CLADE"|is.na(allTips$species)))
+rbind(
+  cbind(unknownPhylum,unknownGenus,unknownSp),
+  cbind(unknownPhylum/allCount,unknownGenus/allCount,unknownSp/allCount)
+)
+```
+
