@@ -39,6 +39,11 @@ ln -s $MDB/silva/release_138.1/taxmap_slv_lsu_ref_138.1.txt $LFR/Source/REF/SILV
 awk -F "\t" 'FNR>1{b=$5;gsub(" \\(.+\\)","",b); if(b == "unidentified"){split($4,a,";");b=a[length(a)-1]};print $1"."$2"."$3"\t"b}' $MDB/silva/release_138.1/taxmap_slv_lsu_ref_138.1.txt| taxonkit name2taxid -i 2 \
 | taxonkit lineage -r -i 3 | taxonkit reformat -i 4 -f "{k};{p};{c};{o};{f};{g};{s};{S}" \
 | awk -F "\t" '{print $1"\t"$2"\t"$3"\t"$5"\t"$4"\t"$6}' > $LFR/Source/REF/SILVA/138.1/taxmap_slv_lsu_ref_138.1.tax
+
+#check board by ITSx
+cd $LFR/Source/REF/SILVA/138.1
+ITSx -i $MDB/silva/release_138.1/SILVA_138.1_LSURef_tax_silva_trunc.fasta \
+-o ITSx/SILVA_138.1_LSURef_tax_silva_trunc -t F --cpu 8
 ```
 
 ### cluster with trust reference
@@ -285,19 +290,18 @@ ggplot(ssu.allpair.df,aes(x=q99,color=rank)) + geom_density() +
 ```{r}
 ggplot(ssu.allpair.df%>%filter(rank!="subspecies"),aes(x=q50,color=rank)) + geom_density() +
       scale_x_continuous(breaks=seq(0,100,2)) + ylim(c(0,0.2))
-ssu.allpair.mdf <- merge(ssu.allpair.df,domain.lst,by="tax")
+ssu.allpair.mdf <- merge(ssu.allpair.df,ssu.domain.lst,by="tax")
 ggplot(ssu.allpair.mdf%>%filter(!rank%in%c("subclass","suborder","subphylum","superphylum")),
        aes(x=rank,y=q05,fill=domain)) + geom_boxplot() +
       scale_y_continuous(breaks=seq(0,100,2)) + coord_flip()
 
-lsu.allpair.mdf <- merge(lsu.allpair.df,domain.lst,by="tax")
+lsu.allpair.mdf <- merge(lsu.allpair.df,lsu.domain.lst,by="tax")
 ggplot(lsu.allpair.mdf%>%filter(!rank%in%c("subclass","suborder","subphylum","superphylum")),
        aes(x=rank,y=q05,fill=domain)) + geom_boxplot() +
       scale_y_continuous(breaks=seq(0,100,2)) + coord_flip()
 
-its.allpair.mdf <- merge(its.allpair.df,domain.lst,by="tax")
-ggplot(lsu.allpair.mdf%>%filter(!rank%in%c("subclass","suborder","subphylum","superphylum")),
-       aes(x=rank,y=q05,fill=domain)) + geom_boxplot() +
+ggplot(its.allpair.df%>%filter(!rank%in%c("subclass","suborder","subphylum","superphylum")),
+       aes(x=rank,y=q05)) + geom_boxplot() +
       scale_y_continuous(breaks=seq(0,100,2)) + coord_flip()
 ```
 
@@ -321,10 +325,11 @@ comb.allpair.melt <- rbind(
   cbind(unit="lsu",lsu.allpair.melt),
   cbind(unit="its",its.allpair.melt)
 )
-ggplot(comb.allpair.melt%>%filter(rank%in%c("domain","kingdom","phylum","class","order","family","genus","species")),
+comb.allpair.melt$rank <- factor(comb.allpair.melt$rank,levels=rev(levels(comb.allpair.melt$rank)))
+ggplot(comb.allpair.melt%>%filter(rank%in%c("domain","kingdom","phylum","class","order","family","genus","species","subspecies")),
        aes(x=identity,color=quant)) + geom_density() +
   scale_x_continuous(breaks=seq(0,100,2)) +
-  facet_grid(rank~unit,scale="free")
+  facet_wrap(~rank+unit,ncol=3,scale="free_y")
 
 ggplot(comb.allpair.melt%>%filter(rank%in%c("domain","kingdom","phylum","class","order","family","genus","species")&quant=="q05"),
        aes(x=identity,color=rank)) + geom_density() +
@@ -341,6 +346,17 @@ ggplot(comb.allpair.melt%>%filter(rank%in%c("domain","kingdom","phylum","class",
 #ggplot(comb.allpair.melt.mean,aes(x=mident,color=quant)) + geom_density() +
 #        scale_x_continuous(breaks=seq(0,100,2),limits = c(70,100)) +
 #  facet_wrap(~rank,ncol=2,scale="free")
+```
+```{r}
+comb.allpair.melt$unit <- factor(comb.allpair.melt$unit,levels=c("ssu","lsu","its"))
+p.PUB.seqs.identityMedian.line <- 
+  ggplot(comb.allpair.melt%>%filter(rank%in%c("domain","kingdom","phylum","class","order","family","genus","species")&quant=="q50"),
+       aes(x=identity,color=rank)) + geom_vline(xintercept = c(95,97,99),linetype=2) +
+  geom_density() + scale_x_continuous(breaks=seq(0,100,2)) + #ylim(c(0,0.15)) +
+  facet_wrap(~unit,ncol=1,scale="free_y")  +
+  theme_bw()
+
+p.PUB.seqs.identityMedian.line
 ```
 
 ```{r}
@@ -491,5 +507,10 @@ compare.ssu.ddf$delta <- compare.ssu.ddf$CLIP/compare.ssu.ddf$SILVA
 ggplot(compare.ssu.ddf%>%filter(rank!="subspecies"),aes(x=delta,color=rank)) +geom_density()
 ```
 
+# EXPORT
+```{r,eval=FALSE}
+ggsave(p.PUB.seqs.identityMedian.line,width=8,height=8,
+       file="../../Results/AUG20/FIG/PUB.seqs.identityMedian.line.pdf")
+```
 
 #FIN.

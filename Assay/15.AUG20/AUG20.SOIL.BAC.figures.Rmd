@@ -3,8 +3,9 @@ title: "AUG20 DATA ASSESSMENT: annotation part"
 author: "Chao"
 date: "3/22/2020"
 output: 
-  html_notebook:
+  html_notebook: 
     code_fold: hide
+    toc: yes
 ---
 
 ```{r setup, include=FALSE}
@@ -115,7 +116,17 @@ for i in {S,O}{1,2,3};do
  awk -v n=$i '{print n"\t"$0}' SAM/$i/summary.BI.megahit.clip.metadata.tsv;
 done > STAT/CLIP/SBR.clip.metadata.tsv
 md5sum STAT/CLIP/SBR.bead.metadata.tsv
-awk '!/#skip/{if($2!=pB){if(FNR>1){print $1"\t"pB"\t"blen"\t"ctg"\t"clips};blen=$10;ctg=1;clips=1}else{blen=blen+$10;clips=clips+1;if($4!=pc){ctg=ctg+1}};pc=$4;pB=$2}END{print $1"\t"pB"\t"blen"\t"ctg"\t"clips}' STAT/CLIP/SBR.clip.metadata.tsv > STAT/CLIP/SBR.bead.metadata.tsv
+awk '!/#skip/{
+  if($1$2!=pS""pB){
+    if(FNR>1){
+      print pS"\t"pB"\t"blen"\t"ctg"\t"clips
+    };
+    blen=$10;ctg=1;clips=1;pB=$2;pS=$1;
+  }else{
+    blen=blen+$10;clips=clips+1;
+    if($4!=pc){ctg=ctg+1}};
+    pc=$4;pB=$2;pS=$1;
+}END{print pS"\t"pB"\t"blen"\t"ctg"\t"clips}' STAT/CLIP/SBR.clip.metadata.tsv > STAT/CLIP/SBR.bead.metadata.tsv
 md5sum STAT/CLIP/SBR.bead.metadata.tsv
 ```
 
@@ -151,14 +162,13 @@ Load data:
 ```{r}
 metadata <- read.csv("../../Results/JAN20/metadata.csv")
 SBR.bead.metadata.df <- read.table(
-  md5("../../Results/AUG20/STAT/CLIP/SBR.bead.metadata.tsv","9c812b3bfe88ea3c5b0c9244a4388355"),
+  md5("../../Results/AUG20/STAT/CLIP/SBR.bead.metadata.tsv","972b51be10d3a778cd1a5534b7ac914b"),
   sep="\t",col.names = c("SID","BID","BLen","contigs","clips")
 )
-#levels(SBR.bead.metadata.df$SID)[which(levels(SBR.bead.metadata.df$SID)%in%c("O2","S2"))] <- c("S2","O2")
 
 SBR.barrnap.gff3.tsv <- read.table(
   md5("../../Results/AUG20/STAT/CLIP/SBR.all.barrnap.sum.tsv","29bbb927d453d8caa1cd51838d3ab26b"),
-  col.names = c("SID","BID","len16S","pct16S","len5.8S","pct5.8S","len23S","pct23S","unit")
+  col.names = c("SID","BID","len16S","pct16S","len23S","pct23S","len5.8S","pct5.8S","unit")
 )
 #levels(SBR.barrnap.gff3.tsv$SID)[which(levels(SBR.barrnap.gff3.tsv$SID)%in%c("O2","S2"))] <- c("S2","O2")
 
@@ -180,6 +190,7 @@ SBR.clip2REF.bcf <- read.table(md5("../../Results/AUG20/STAT/CLIP/SBR.clips2REF.
 #                       col.names = c("SID","rand","count0","count","LOTU"))
 # #
 ```
+
 
 
 # bead info
@@ -224,23 +235,6 @@ ggplot(pct.unit,aes(x="X",y=pct,fill=unit)) +geom_bar(stat="identity") + coord_p
 pct.unitS <- ddply(SBR.subunits.df,c("SID","unit"),summarise,count=length(BID))
 pct.unitS <- ddply(pct.unitS,c("SID"),transform,pct=count/sum(count))
 pct.unitS$lab <- sprintf("%.2f%%",100*pct.unitS$pct)
-ggplot(pct.unitS,aes(x="X",y=pct,fill=unit)) +geom_bar(stat="identity") + coord_polar(theta = 'y')+ 
-  #geom_text(aes(y=cumsum(rev(pct)) - rev(pct)/2, x = sum(pct)*.3, label = rev(lab))) +
-  scale_fill_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,2,3,8,9,10,7,11)])) +
-  labs(x = '', y = '', title = '') + facet_wrap(~SID,ncol=3) +
-  theme_bw() + theme(axis.text = element_blank())
-
-ggplot(SBR.subunits.df%>%filter(len16S>0),aes(x=BLen,y=pct16S)) +
-  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
-  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) + 
-  geom_abline(intercept = 0, slope = 1,linetype=2) +
-  facet_wrap(~SAM,ncol=2) + ggtitle("Polygon between 16S coverage and bead len")
-
-ggplot(SBR.subunits.df%>%filter(len23S>0),aes(x=BLen,y=pct23S)) +
-  stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
-  scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) + 
-  geom_abline(intercept = 0, slope = 1,linetype=2) +
-  facet_wrap(~SAM,ncol=2) + ggtitle("Polygon between 23S coverage and bead len")
 ```
 
 # silva mapping annotation
@@ -271,6 +265,7 @@ SBR.slv.bead.df <- merge(SBR.bdmeta.df,cbind(sbinfodf[,-2],SBR.silva.bead.anno[,
 SBR.slv.bead.df$unit <- factor(ifelse(SBR.slv.bead.df$SSU>0,1,0) + ifelse(SBR.slv.bead.df$LSU>0,2,0), levels=c(0,2,1,3))
 SBR.slv.bead.df$unit[which(is.na(SBR.slv.bead.df$unit))] <- 0
 levels(SBR.slv.bead.df$unit) <- c("Missing","LSU","SSU","BOTH")
+
 ```
 
 ```{r}
@@ -335,25 +330,25 @@ levels(combine.unit.df$foundUNIT) <- c("Unknown","SSU","SSU","SSU",
                                        "LSU","Both","Both","Both",
                                        "LSU","Both","Both","Both","LSU",
                                        "Both","Both","Both")
-ggplot(combine.unit.df,aes(x=BLen)) +geom_histogram(aes(fill=foundUNIT),position="stack",binwidth=100) +
+combine.unit.hist.p <- ggplot(combine.unit.df,aes(x=BLen)) +geom_histogram(aes(fill=foundUNIT),position="stack",binwidth=100) +
   geom_density(aes(x=BLen,y=..density..*(-6e6),color=SID),size=1) +
   scale_fill_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,3,5,7,9,11,1,3,5,7,9,11,1)])) +
   scale_color_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,3,5,7,9,11,1,3,5,7,9,11,1)])) + theme_bw() +
   #theme(legend.position = c(0.99,.9),legend.justification = c(1,1)) +
-  scale_x_continuous(breaks=seq(0,10000,1000),limits=c(0,5000))
+  scale_x_continuous(breaks=seq(0,10000,1000),limits=c(0,5000)) + xlab("pre-binning assemblies length")
 
-
+combine.unit.hist.p
 ```
 
 ```{r}
 combine.unit.df$foundSSU <- as.factor(combine.unit.df$foundSSU)
-levels(combine.unit.df$foundSSU) <- c("Unknown","predicted by barrnap","predicted by ITSx","cross validated","aligned to reference","cross validated","cross validated","cross validated")
+levels(combine.unit.df$foundSSU) <- c("Unknown","predicted by barrnap","aligned to reference","cross validated")
 source.SSU <- ddply(combine.unit.df%>%filter(foundSSU!="Unknown"),"foundSSU",summarise,count=length(BID))
 source.SSU$pct <- source.SSU$count/sum(source.SSU$count)
 source.SSU$lab <- sprintf("%.2f%%",100*source.SSU$pct)
 
 combine.unit.df$foundLSU <- as.factor(combine.unit.df$foundLSU)
-levels(combine.unit.df$foundLSU) <- c("Unknown","predicted by barrnap","predicted by ITSx","cross validated","aligned to reference","cross validated","cross validated","cross validated")
+levels(combine.unit.df$foundLSU) <- c("Unknown","predicted by barrnap","aligned to reference","cross validated")
 source.LSU <- ddply(combine.unit.df%>%filter(foundLSU!="Unknown"),"foundLSU",summarise,count=length(BID))
 source.LSU$pct <- source.LSU$count/sum(source.LSU$count)
 source.LSU$lab <- sprintf("%.2f%%",100*source.LSU$pct)
@@ -371,20 +366,45 @@ ggplot(source.LSU,aes(x="X",y=pct,fill=foundLSU)) +geom_bar(stat="identity") + c
   theme_classic() + theme(axis.text = element_blank())
 ```
 ```{r}
+found.UNIT <- ddply(combine.unit.df,c("SID","foundUNIT"),summarise,count=length(BID))
+found.UNIT <- ddply(found.UNIT,c("SID"),transform,pct=count/sum(count))
+found.UNIT$lab <- sprintf("%.2f%%",100*found.UNIT$pct)
+
+ggplot(found.UNIT,aes(x="X",y=pct,fill=foundUNIT)) +geom_bar(stat="identity") + coord_polar(theta = 'y')+ 
+  scale_fill_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,5,9)])) +
+  labs(x = '', y = '', title = '') + facet_wrap(~SID,ncol=3) +
+  theme_classic() + theme(axis.text = element_blank())
+
+```
+
+```{r}
 
 source.UNIT <- ddply(combine.unit.df,"foundUNIT",summarise,count=length(BID))
 source.UNIT$pct <- source.UNIT$count/sum(source.UNIT$count)
 source.UNIT$lab <- sprintf("%.2f%%",100*source.UNIT$pct)
 
-ggplot(source.UNIT,aes(x="X",y=pct,fill=foundUNIT)) +geom_bar(stat="identity") + coord_polar(theta = 'y')+ 
+source.UNIT.pie.p <- ggplot(source.UNIT,aes(x="X",y=pct,fill=foundUNIT)) +geom_bar(stat="identity") + coord_polar(theta = 'y')+ 
   geom_text(aes(y=cumsum(rev(pct)) - rev(pct)/2, x = sum(pct)*1.55, label = rev(lab))) +
   scale_fill_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,5,9)])) +
   labs(x = '', y = '', title = '') +
   theme_classic() + theme(axis.text = element_blank())
 
-
+source.UNIT.pie.p
 ```
-
+# Basic information (table)
+```{r}
+summary(SBR.subunits.df[,c("BID","BLen","contigs","clips")])
+paste0("N50: ",n50(SBR.subunits.df$BLen))
+source.UNIT
+```
+```{r}
+if(do.write){
+  ggsave(combine.unit.hist.p,width = 8, height = 4,
+         filename = "../../Results/AUG20/FIG/sbr.rca.units.hist.pdf")
+  ggsave(source.UNIT.pie.p,width = 6, height = 4,
+         filename = "../../Results/AUG20/FIG/sbr.rca.units.pie.pdf")
+}
+```
 # Assess TopAnno
 ```{r}
 tmp.bead.df <- SBR.slv.bead.df%>%filter(!is.na(TopAnno))

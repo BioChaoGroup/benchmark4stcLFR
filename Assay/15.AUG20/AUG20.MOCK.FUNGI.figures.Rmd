@@ -177,7 +177,7 @@ makeblastdb -dbtype nucl -in UNITE_ITS_ONLY.fasta
 ## map clips and OTUs to zymo ref
 ```{bash,eval=FALSE}
 #closed mock ref mapping
-metabbq smk --configfile config.F.yaml -j -npk SAM/M{4,5,6}/ANNO/clip2MockRef.clip.anno
+metabbq smk --configfile config.F.yaml --force -j -npk SAM/M{4,5,6}/ANNO/clip2MockRef.clip.anno
 for i in M{4,5,6};do awk -v n=$i '{print n"\t"$0}' SAM/$i/ANNO/clip2MockRef.clip.anno;done > STAT/ANNO/MFR.clip2MockRef.clip.anno
 awk '{if(p!=$2){print $0};p=$2}' STAT/ANNO/clip2MockRef.clip.anno > STAT/ANNO/clip2MockRef.top1.anno
 for i in M{4,5,6};do awk -v n=$i '{print n"\t"$0}' SAM/$i/ANNO/clip2MockRef.bead.anno;done > STAT/ANNO/MFR.clip2MockRef.bead.anno
@@ -205,17 +205,17 @@ MFR.bead.metadata.df <- read.table(
 )
 
 MFR.mock.bead.anno <- read.table(
-  md5("../../Results/AUG20/STAT/ANNO/MFR.clip2MockRef.bead.anno","5f59962bdd3a579077d1efd547139171"),
+  md5("../../Results/AUG20/STAT/ANNO/MFR.clip2MockRef.bead.anno","c0496bf3fdee8360a4b135e2873f9f0f"),
     sep="\t", col.names = c("SID","BID","BLen","hits","hits.2","tax.clips","tax.pieces","tax",
                  "ident","qMapLen","mismatch","gap","bitScore","bitScore2nd",
                  "sMapPieces","sMapLen","MAPDESC","strands","qMaps","sMaps",
-                 "TopAnno","TANum","score1st","score2nd","ident1st","ident2nd","TANames"
+                 "TopAnno","TANum","score1st","score2nd","ident1st","ident2nd","TANames",
+                 "hybCt","hybLen","hybPct"
 ))
 
-
 MFR.silva.bead.anno <- read.table(
-  md5("../../Results/AUG20/STAT/ANNO/MFR.CLIP.map.merge.bead.anno","bdb11ffb94ee81a69cb755d3fc16fd3f"),
-  comment.char = "",quote = "",sep="\t", col.names = c("SID","BINFO","tax","ident","mapLen","mismatch","gap","qs","qe","ss","se","eval","bitscore","qlen","slen","strands","qDesc","sDesc","covs","taxonID","TopAnno","TANum","TALv","score1st","score2nd","ident1st","ident2nd","TANames","hybCt","hybLen","hybPct")
+  md5("../../Results/AUG20/STAT/ANNO/MFR.CLIP.map.merge.bead.anno","37e97aeb3bb70fac73ef853e4ce2a1cb"),
+  comment.char = "",sep="\t", quote = "", fill = NA,col.names = c("SID","BINFO","tax","ident","mapLen","mismatch","gap","qs","qe","ss","se","eval","bitscore","qlen","slen","strands","qDesc","sDesc","covs","taxonID","TopAnno","TANum","TALv","score1st","score2nd","ident1st","ident2nd","TANames","hybCt","hybLen","hybPct")
 )
 
 
@@ -272,11 +272,21 @@ p.mfr.rca.units.pie <- ggplot(pct.unit,aes(x="X",y=pct,fill=unit)) +geom_bar(sta
   scale_fill_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,2,3,8,9,10,7,11)])) +
   labs(x = '', y = '', title = '') +
   theme_classic() + theme(axis.text = element_blank())
-
-p.mfr.rca.qual.pie
-p.mfr.rca.units.hist
-p.mfr.rca.units.pie
 ```
+# Basic information (table)
+```{r}
+summary(MFR.bead.df[,c("BID","BLen","contigs","clips")])
+paste0("N50: ",n50(MFR.bead.df$BLen))
+pct.identG
+pct.unit
+```
+
+# Basic information (Figure)
+```{r}
+plot_grid(p.mfr.rca.units.hist,plot_grid(p.mfr.rca.qual.pie,p.mfr.rca.units.pie,labels=c("b","c")),
+          ncol=1,labels=c("a",""))
+```
+
 ```{r}
 if(do.write){
   ggsave(p.mfr.rca.qual.pie,width = 6, height = 4,
@@ -356,10 +366,10 @@ getMapPropFun2 <- function(d){
 sbinfo <- matrix(unlist(strsplit(as.character(MFR.silva.bead.anno$BINFO),"|",fixed = T)),ncol=4,byrow = T)
 sbinfodf <- data.frame(BID=sbinfo[,1],clips=as.numeric(sbinfo[,3]),hits=as.numeric(sbinfo[,4]))
 covdf <- getMapPropFun2(as.character(MFR.silva.bead.anno$covs))
-
-MFR.slv.bead.df <- cbind(sbinfodf,MFR.silva.bead.anno[,-c(2,16:19)],covdf[,c(2,6)])
-MFR.slv.bead.df$unit <- factor(ifelse(MFR.slv.bead.df$SSU>0,1,0) + ifelse(MFR.slv.bead.df$LSU>0,2,0),levels = seq(0,3))
-levels(MFR.slv.bead.df$unit) <- c("NONE","SSU","LSU","BOTH")
+covdf <- cbind(covdf,ITS=covdf[,3]+covdf[,5])
+MFR.slv.bead.df <- cbind(sbinfodf,MFR.silva.bead.anno[,-c(2,16:19)],covdf[,c(2,6,7)])
+MFR.slv.bead.df$unit <- factor(ifelse(MFR.slv.bead.df$SSU>0,1,0) + ifelse(MFR.slv.bead.df$ITS>0,2,0) + ifelse(MFR.slv.bead.df$LSU>0,4,0),levels = seq(0,7))
+levels(MFR.slv.bead.df$unit) <- c("NONE","SSU","ITS","SSU+ITS","LSU","SSU+LSU","ITS+LSU","ALL")
 ```
 
 ```{r}
@@ -398,6 +408,10 @@ ggplot(MFR.slv.bead.df,aes(x=qlen,y=ident)) +
 ggplot(MFR.slv.bead.df,aes(x=qlen,fill=TopAnno)) + geom_histogram(position="stack") + xlim(c(0,4000))
 ggplot(MFR.slv.bead.df,aes(x=qlen,fill=TopAnno)) + geom_histogram(position="fill") + xlim(c(0,4000))
 
+MFR.tmp.bead.df <- ddply(MFR.slv.bead.df,c("SID","TopAnno"),transform,ATCt=length(BID))
+
+ggplot(MFR.tmp.bead.df,aes(x=qlen,color=TopAnno)) + geom_density(aes(y=..density..)) + xlim(c(0,4000))
+
 ggplot(MFR.slv.bead.df,aes(x=qlen,y=ident)) + 
   stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
   scale_fill_gradientn(colours=rev(brewer.pal(11,"Spectral"))) +
@@ -409,6 +423,7 @@ ggplot(MFR.slv.bead.df,aes(x=qlen,y=ident)) +
 # compare annotation : mock ref vs. silva (bead scale)
 ```{r}
 levels(MFR.bead.df$tax) <- sub("_"," ",levels(MFR.bead.df$tax))
+MFR.bead.df$ITS <- (MFR.bead.df$ITS1 + MFR.bead.df$ITS2)/2
 MFR.compare.anno <- merge(MFR.bead.df,MFR.slv.bead.df,by=c("SID","BID"),all.x=T)
 #MFR.compare.anno <- merge(MFR.bead.df%>%filter(COR>999&flag!=0&D9P/COR<0.01),MFR.silva.anno,by=c("SID","LOTU"),all.x=T)
 checkTaxConsitRank <- function(d){
@@ -435,7 +450,151 @@ MFR.compare.anno$validAnno <- ifelse(grepl("metagenome|uncultured ",MFR.compare.
 
 
 ```
+# Assess hybdized beads
+```{r}
+MFR.compare.anno$hybG.close <- ifelse(MFR.compare.anno$hybCt.x>0&MFR.compare.anno$hybLen.x > 400,T,F)
+MFR.compare.anno$hybG.open  <- ifelse(MFR.compare.anno$hybCt.y>0&MFR.compare.anno$hybLen.y > 400,T,F)
 
+p.hyb.c <- ggplot(MFR.compare.anno,aes(x=BLen,fill=hybG.close)) + geom_histogram()
+p.hyb.cf <- ggplot(MFR.compare.anno,aes(x=BLen,fill=hybG.close)) + 
+  geom_histogram(position="fill") + xlim(c(0,5000))
+p.hyb.o <- ggplot(MFR.compare.anno,aes(x=BLen,fill=hybG.open)) + geom_histogram()
+p.hyb.of <- ggplot(MFR.compare.anno,aes(x=BLen,fill=hybG.open)) + 
+  geom_histogram(position="fill") + xlim(c(0,5000))
+plot_grid(p.hyb.c,p.hyb.cf,p.hyb.o,p.hyb.of,labels=c("a","b","c","d"),ncol=2)
+
+MFR.compare.anno$BLenK <- round(MFR.compare.anno$BLen/100-0.5,0) * 100
+MFR.compare.anno.cut <- MFR.compare.anno%>%filter(BLenK>=100)
+MFR.compare.anno.cut$BLenK[which(MFR.compare.anno.cut$BLenK>4000)] <- 4000
+
+MFR.compare.win <- MFR.compare.anno.cut %>% 
+  group_by(SID,BLenK) %>% summarise( count=length(BID),
+    hybT.c=length(which(hybG.close==T)),TAM.c=length(which(TopAnno.x=="multi")),
+    pct.hyb.c=hybT.c/count,pct.multi.c=TAM.c/count,
+    hybT.o=length(which(hybG.open==T)),TAM.o=length(which(TopAnno.y=="multi")),
+    pct.hyb.o=hybT.o/count,pct.multi.o=TAM.o/count,
+    pct.normal.c=length(which(hybG.close==F&TopAnno.x!="multi"))/count,
+    pct.normal.o=length(which(hybG.open==F&TopAnno.y!="multi"))/count
+  ) %>% melt(
+    id.vars = c("SID","BLenK"),measure.vars = c("pct.hyb.c","pct.multi.c","pct.normal.c","pct.hyb.o","pct.multi.o","pct.normal.o"),
+    variable.name = "type", value.name = "ratio"
+  )
+
+MFR.compare.win$group <- ifelse(grepl(".c",MFR.compare.win$type,fixed = T),"cloesRefs","openRefs")
+levels(MFR.compare.win$type) <- rep(c("hybridized","multi-best annotation","perfect"),2)
+
+ggplot(MFR.compare.win,aes(x=BLenK,linetype=SID)) + 
+  geom_line(aes(y=ratio,color=type)) + facet_grid(group~.) + xlim(c(0,4000)) + ylim(c(0,1))
+
+MFR.compare.win.mean <- MFR.compare.win %>% 
+  group_by(BLenK,type,group) %>% 
+  summarise( sd=sd(ratio),ratio=mean(ratio) )
+
+ggplot(MFR.compare.win.mean,aes(x=BLenK)) + 
+  geom_line(aes(y=ratio,color=type,linetype=group)) + 
+  geom_ribbon(aes(ymax=ratio+sd,ymin=ratio-sd,fill=type,linetype=group),alpha=.3) +
+  xlim(c(0,4000)) + ylim(c(0,1)) + theme_bw() + 
+  xlab("BRA length")
+
+```
+
+
+```{r}
+MFR.compare.anno.cut2 <- MFR.compare.anno
+MFR.compare.anno.cut2$BLenK[which(MFR.compare.anno.cut2$BLenK>3000)] <- 3000
+#levels(MFR.compare.anno.cut2$unit.x) <- c(NA,NA,"LSU","LSU","SSU","SSU","SSU+LSU","ALL")
+
+MFR.compare.unit <- MFR.compare.anno.cut2 %>% 
+  group_by(SID,BLenK,unit.x) %>% summarise( count=length(BID),
+    hybT.c=length(which(hybG.close==T)),TAM.c=length(which(TopAnno.x=="multi")),
+    pct.hyb.c=hybT.c/count,pct.multi.c=TAM.c/count,
+    hybT.o=length(which(hybG.open==T)),TAM.o=length(which(TopAnno.y=="multi")),
+    pct.hyb.o=hybT.o/count,pct.multi.o=TAM.o/count,
+    pct.normal.c=length(which(hybG.close==F&TopAnno.x!="multi"))/count,
+    pct.normal.o=length(which(hybG.open==F&TopAnno.y!="multi"))/count
+  ) %>% melt(
+    id.vars = c("SID","BLenK","unit.x","count"),measure.vars = c("pct.hyb.c","pct.multi.c","pct.normal.c","pct.hyb.o","pct.multi.o","pct.normal.o"),
+    variable.name = "type", value.name = "ratio"
+  )
+
+MFR.compare.unit$group <- ifelse(grepl(".c",MFR.compare.unit$type,fixed = T),"cloesRefs","openRefs")
+levels(MFR.compare.unit$type) <- rep(c("hybridized","multi-best annotation","perfect"),2)
+
+MFR.compare.unit.mean <- MFR.compare.unit %>% 
+  group_by(BLenK,type,unit.x,group) %>% 
+  summarise(count=sum(count), sd=sd(ratio),ratio=mean(ratio) )
+
+ggplot(MFR.compare.unit.mean%>%filter(unit.x%in%c("SSU","LSU","SSU+LSU","ALL")&count>9),aes(x=BLenK)) + 
+  geom_line(aes(y=ratio,color=type,linetype=group)) + #geom_point(aes(y=ratio,shape=group)) +
+  geom_ribbon(aes(ymax=ratio+sd,ymin=ratio-sd,fill=type,linetype=group),alpha=.3) +
+  facet_grid(unit.x~.) + xlim(c(100,3000)) + scale_y_continuous(breaks=seq(0,1,.2)) + theme_bw() +
+  xlab("BRA length")
+
+```
+
+
+```{r}
+MFR.compare.anno.cut3 <- MFR.compare.anno.cut2
+MFR.compare.anno.cut3$unit.z <- MFR.compare.anno.cut3$unit.y
+levels(MFR.compare.anno.cut3$unit.z) <- c(NA,"Only SSU/LSU","Only ITS","Subunits with ITS","Only Subunits","SSU+LSU","Subunits with ITS","Complete")
+MFR.compare.anno.cut3$unit.z<-factor(MFR.compare.anno.cut3$unit.z,levels=c(
+  "Complete", "Subunits with ITS","Only ITS", "SSU+LSU","Only Subunits"
+))
+MFR.compare.unit.y <- MFR.compare.anno.cut3 %>% 
+  group_by(SID,BLenK,unit.z) %>% summarise( count=length(BID),
+    hybT.c=length(which(hybG.close==T)),TAM.c=length(which(TopAnno.x=="multi")),
+    pct.hyb.c=hybT.c/count,pct.multi.c=TAM.c/count,
+    hybT.o=length(which(hybG.open==T)),TAM.o=length(which(TopAnno.y=="multi")),
+    pct.hyb.o=hybT.o/count,pct.multi.o=TAM.o/count,
+    pct.normal.c=length(which(hybG.close==F&TopAnno.x!="multi"))/count,
+    pct.normal.o=length(which(hybG.open==F&TopAnno.y!="multi"))/count
+  ) %>% melt(
+    id.vars = c("SID","BLenK","unit.z","count"),measure.vars = c("pct.hyb.c","pct.multi.c","pct.normal.c","pct.hyb.o","pct.multi.o","pct.normal.o"),
+    variable.name = "type", value.name = "ratio"
+  )
+
+MFR.compare.unit.y$group <- ifelse(grepl(".c",MFR.compare.unit.y$type,fixed = T),"cloesRefs","openRefs")
+levels(MFR.compare.unit.y$type) <- rep(c("hybridized","multi-best annotation","perfect"),2)
+
+MFR.compare.unit.y.mean <- MFR.compare.unit.y %>% 
+  group_by(BLenK,type,unit.z,group) %>% 
+  summarise(count=sum(count), sd=sd(ratio),ratio=mean(ratio) )
+
+ggplot(MFR.compare.unit.y.mean%>%filter(!is.na(unit.z)&&count>9),aes(x=BLenK)) + 
+  geom_line(aes(y=ratio,color=type,linetype=group)) + #geom_point(aes(y=ratio,shape=group)) +
+  geom_ribbon(aes(ymax=ratio+sd,ymin=ratio-sd,fill=type,linetype=group),alpha=.3) +
+  facet_grid(unit.z~.) + xlim(c(100,3000)) + scale_y_continuous(breaks=seq(0,1,.2)) + theme_bw() +
+  xlab("BRA length") + scale_color_brewer(palette="Set1") +  scale_fill_brewer(palette="Set1")
+
+```
+#export
+```{r}
+MFR.compare.win.mean$group <- ifelse(MFR.compare.win.mean$group=="cloesRefs","full-length rRNA genes","public partial SSU/LSU genes")
+levels(MFR.compare.win.mean$type) <- c("Chimera","Multiple best taxonomies","Perfect assigned")
+p.ambiguous.fun <- ggplot(MFR.compare.win.mean,aes(x=BLenK)) + 
+  geom_line(aes(y=ratio,color=type,linetype=group)) + 
+  geom_ribbon(aes(ymax=ratio+sd,ymin=ratio-sd,fill=type,linetype=group),alpha=.3) +
+  xlim(c(0,4000)) + ylim(c(0,1)) + theme_bw() + 
+  xlab("BRA length") + scale_color_brewer(palette="Set1") +  scale_fill_brewer(palette="Set1")
+
+p.ambiguous.fun
+
+MFR.compare.unit.y.mean$group <- ifelse(MFR.compare.unit.y.mean$group=="cloesRefs","full-length rRNA genes","public partial SSU/LSU genes")
+levels(MFR.compare.unit.y.mean$type) <- c("Chimera","Multiple best taxonomies","Perfect assigned")
+p.ambiguous.both <- ggplot(MFR.compare.unit.y.mean%>%filter(!is.na(unit.z)&&count>9),aes(x=BLenK)) + 
+  geom_line(aes(y=ratio,color=type,linetype=group)) + #geom_point(aes(y=ratio,shape=group)) +
+  geom_ribbon(aes(ymax=ratio+sd,ymin=ratio-sd,fill=type,linetype=group),alpha=.3) +
+  facet_grid(unit.z~.) + xlim(c(100,3000)) + scale_y_continuous(breaks=seq(0,1,.2)) + theme_bw() +
+  xlab("BRA length") + scale_color_brewer(palette="Set1") +  scale_fill_brewer(palette="Set1")
+
+
+p.ambiguous.both
+
+if(do.write){
+  ggsave(p.ambiguous.fun,width=8,heigh=3, file="../../Results/AUG20/FIG/p.ambiguous.fun.line.pdf")
+  ggsave(p.ambiguous.both,width=5,heigh=6, file="../../Results/AUG20/FIG/p.ambiguous.both.line.pdf")
+}
+```
 
 ### FDR
 ```{r}
@@ -456,6 +615,7 @@ ggplot(MFR.compare.anno%>%filter(!is.na(TopAnno.y)&!is.na(FDR)),aes(x=BLen,y=ide
   facet_grid(FDR~TopAnno.y+hitDB)
 
 ```
+
 
 ```{r}
 MFR.badfm$ident5 <- round(MFR.badfm$ident+0.49,)-0.5

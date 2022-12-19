@@ -140,7 +140,7 @@ SFR.bead.metadata.df <- read.table(
 
 SFR.barrnap.gff3.tsv <- read.table(
   md5("../../Results/AUG20/STAT/CLIP/SFR.all.barrnap.sum.tsv","73b061a4db0d4c0272bf9d02e28fe7a7"),
-  col.names = c("SID","BID","len18S","pct18S","len5.8S","pct5.8S","len28S","pct28S","unit")
+  col.names = c("SID","BID","len18S","pct18S","len28S","pct28S","len5.8S","pct5.8S","unit")
 )
 
 SFR.itsx.pos.tsv <- read.table(
@@ -149,7 +149,12 @@ SFR.itsx.pos.tsv <- read.table(
 )
 
 SFR.silva.bead.anno <- read.table(
-  md5("../../Results/AUG20/STAT/ANNO/SFR.CLIP.map.merge.bead.anno","3ed4e2810b59a9fdddd3c815e05ba5ef"),comment.char = "",sep="\t", quote = "", 
+  md5("../../Results/AUG20/STAT/ANNO/SFR.CLIP.map.merge.bead.anno","25ed927dfdb9a8d9c5eee24655dfb1da"),comment.char = "",sep="\t", quote = "", 
+  fill = NA,col.names = c("SID","BINFO","tax","ident","mapLen","mismatch","gap","qs","qe","ss","se","eval","bitscore","qlen","slen","strands","qDesc","sDesc","covs","taxID","TopAnno","TANum","TALv","score1st","score2nd","ident1st","ident2nd","TANames","hybCt","hybLen","hybPct")
+)
+
+SFR.silva.bead.anno.sep <- read.table(
+  md5("../../Results/AUG20/STAT/ANNO/sep.SFR.CLIP.map.merge.bead.anno","c5fd3bd58d44da170a1b3b9ffeaa2640"),comment.char = "",sep="\t", quote = "", 
   fill = NA,col.names = c("SID","BINFO","tax","ident","mapLen","mismatch","gap","qs","qe","ss","se","eval","bitscore","qlen","slen","strands","qDesc","sDesc","covs","taxID","TopAnno","TANum","TALv","score1st","score2nd","ident1st","ident2nd","TANames","hybCt","hybLen","hybPct")
 )
 
@@ -175,7 +180,6 @@ ggplot(SFR.bdmeta.df,aes(x=BLen,y=clips)) +
   facet_wrap(~SID,ncol=3)
 ```
 
-
 # subunits detection (ITSx)
 ```{r}
 SFR.itsx.df <- merge(SFR.bdmeta.df,SFR.itsx.pos.tsv,by=c("SID","BID"),all.x=T)
@@ -186,6 +190,11 @@ SFR.itsx.df$scoreB[which(is.na(SFR.itsx.df$scoreB))] <- 0
 SFR.itsx.df$unitB <- as.factor(SFR.itsx.df$scoreB)
 levels(SFR.itsx.df$unitB) <- c("None","ITS1","5.8S","ITS1+5.8S","ITS2","ITS1+ITS2","5.8S+ITS2","ALL")
 SFR.itsx.df$SAM <- substr(SFR.itsx.df$SID,1,1)
+SFR.itsx.df$unitC <- paste0(SFR.itsx.df$unitA,":",SFR.itsx.df$unitB)
+pick.low.freq.type <- as.character((as.data.frame(table(SFR.itsx.df$unitC)) %>% filter(Freq<1000))$Var1)
+SFR.itsx.df$unitC[which(SFR.itsx.df$unitC%in%pick.low.freq.type)] <- "Others"
+SFR.itsx.df$unitC <- factor(SFR.itsx.df$unitC,levels=rev(sort(unique(SFR.itsx.df$unitC)))[c(7,6,1:5,8:18)])
+
 ggplot(SFR.itsx.df,aes(x=BLen)) +geom_histogram(aes(fill=unitA),position="stack",binwidth=100) +
   geom_density(aes(x=BLen,y=..density..*(-2e6),color=unitA,linetype=SAM),size=1,alpha=.7) +
   scale_fill_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,2,3,5,9,10,11)])) +
@@ -200,6 +209,19 @@ ggplot(SFR.itsx.df,aes(x=BLen)) +geom_histogram(aes(fill=unitB),position="stack"
   #theme(legend.position = c(0.99,.9),legend.justification = c(1,1)) +
   scale_x_continuous(breaks=seq(0,10000,1000),limits=c(0,6000))
 
+ggplot(SFR.itsx.df,aes(x=BLen)) +geom_histogram(aes(fill=unitC),position="stack",binwidth=100) +
+  geom_density(aes(x=BLen,y=..density..*(-2e6),color=unitC,linetype=SAM),size=1,alpha=.7) +
+  scale_fill_manual(values=c("grey50","grey10",brewer.pal(5,"Set3"),brewer.pal(11,"Spectral"))) +
+  scale_color_manual(values=c("grey50","grey10",brewer.pal(5,"Set3"),brewer.pal(11,"Spectral"))) + theme_bw() +
+  #theme(legend.position = c(0.99,.9),legend.justification = c(1,1)) +
+  scale_x_continuous(breaks=seq(0,10000,1000),limits=c(0,6000))
+```
+```{r}
+ggplot(SFR.itsx.df,aes(x=BLen)) + geom_histogram(aes(fill=unitC),position="stack",binwidth=100) +
+  #geom_density(aes(x=BLen,y=..density..*(2e6),linetype=SAM),size=1,alpha=.3) +
+  scale_fill_manual(values=c(brewer.pal(11,"Spectral"),"grey50",brewer.pal(11,"Set3"))) +
+  theme_bw() + facet_wrap(~unitC,ncol=5,scale="free") +
+  scale_x_continuous(breaks=seq(0,10000,1000),limits=c(0,5000))
 ```
 
 # subunits detection (barrnap)
@@ -216,8 +238,6 @@ ggplot(SFR.subunits.df,aes(x=BLen)) +geom_histogram(aes(fill=unit),position="sta
   scale_color_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,2,3,5,9,10,11)])) + theme_bw() +
   #theme(legend.position = c(0.99,.9),legend.justification = c(1,1)) +
   scale_x_continuous(breaks=seq(0,10000,1000),limits=c(0,6000))
-
-
 ```
 
 
@@ -267,16 +287,15 @@ levels(SFR.slv.bead.all.df$hitDB) <- c("None","SILVA.SSU","UNITE","SILVA.SSU&UNI
 SFR.slv.bead.all.df$identG <- ifelse(
   is.na(SFR.slv.bead.all.df$ident),0,
   ifelse(SFR.slv.bead.all.df$ident == 100,100,
-         ifelse(SFR.slv.bead.all.df$ident >=99.5,99.5,
-       ifelse(SFR.slv.bead.all.df$ident <97,96,round(SFR.slv.bead.all.df$ident-0.5,0)))))
+       ifelse(SFR.slv.bead.all.df$ident <95,round((SFR.slv.bead.all.df$ident-0.5)/5,0)*5,round(SFR.slv.bead.all.df$ident-0.5,0))))
 pct.identG <- ddply(SFR.slv.bead.all.df,"identG",summarise,count=length(BID))
 pct.identG$pct <- pct.identG$count/sum(pct.identG$count)
 pct.identG$lab <- sprintf("%.2f%%",100*pct.identG$pct)
-pct.identG$identG <- factor(pct.identG$identG,levels=c(0,96,97,98,99,99.5,100))
-levels(pct.identG$identG) <- c("Missing",96,97,98,99,99.5,100)
+pct.identG$identG <- as.factor(pct.identG$identG)
+levels(pct.identG$identG)[1] <- "Missing"
 ggplot(pct.identG,aes(x="X",y=pct,fill=identG)) + geom_bar(stat="identity") +
   geom_text(aes(y=cumsum(rev(pct)) - rev(pct)/2, x = sum(pct)*1.55, label = rev(lab))) +
-  scale_fill_brewer(palette="Blues") +labs(x = '', y = '', title = '') +
+ scale_colour_hue() +labs(x = '', y = '', title = '') +
   coord_polar(theta = 'y') + theme_classic() + theme(axis.text = element_blank())
 
 ggplot(SFR.slv.bead.all.df,aes(x=BLen)) +geom_histogram(aes(fill=hitDB),position="stack",binwidth=100) +
@@ -301,7 +320,7 @@ ggplot(pct.unit,aes(x="X",y=pct,fill=unit)) +geom_bar(stat="identity") + coord_p
 
 
 ```{r}
-combine.unit.df <- merge(merge(SFR.itsx.df,SFR.F.subunit.df,by=c("SID","BID"),all.x=T),SFR.slv.bead.df[,c(1,2,28:30)],by=c("SID","BID"),all.x=T)
+combine.unit.df <- merge(merge(SFR.itsx.df,SFR.F.subunit.df,by=c("SID","BID"),all.x=T),SFR.slv.bead.df,by=c("SID","BID"),all.x=T)
 
 #barrnap
 combine.unit.df$len18S[which(is.na(combine.unit.df$len18S))] <- 0
@@ -328,12 +347,14 @@ combine.unit.df$foundUNIT <- as.factor(
   ifelse(combine.unit.df$foundLSU>0,4,0)
 )
 levels(combine.unit.df$foundUNIT) <- c("Unknown","SSU","ITS","SSU+ITS","LSU","SSU+LSU","ITS+LSU","All")
-ggplot(combine.unit.df,aes(x=BLen)) +geom_histogram(aes(fill=foundUNIT),position="stack",binwidth=100) +
+combine.unit.hist.p <- ggplot(combine.unit.df,aes(x=BLen)) +geom_histogram(aes(fill=foundUNIT),position="stack",binwidth=100) +
   geom_density(aes(x=BLen,y=..density..*(-2e7),color=SID),size=1) +
   scale_fill_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,2,3,5,7,9,11)])) +
   scale_color_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,2,3,5,7,9,11)])) + theme_bw() +
   #theme(legend.position = c(0.99,.9),legend.justification = c(1,1)) +
-  scale_x_continuous(breaks=seq(0,10000,1000),limits=c(0,6000))
+  scale_x_continuous(breaks=seq(0,10000,1000),limits=c(0,6000)) + xlab("pre-binning assemblies length")
+
+combine.unit.hist.p
 ```
 
 ```{r}
@@ -375,15 +396,43 @@ ggplot(source.ITS,aes(x="X",y=pct,fill=foundITS)) +geom_bar(stat="identity") + c
   theme_classic() + theme(axis.text = element_blank())
 ```
 
+```{r}
+source.UNIT <- ddply(combine.unit.df,"foundUNIT",summarise,count=length(BID))
+source.UNIT$pct <- source.UNIT$count/sum(source.UNIT$count)
+source.UNIT$lab <- sprintf("%.2f%%",100*source.UNIT$pct)
+
+source.UNIT.pie.p <- ggplot(source.UNIT,aes(x="X",y=pct,fill=foundUNIT)) +geom_bar(stat="identity") + coord_polar(theta = 'y')+ 
+  geom_text(aes(y=cumsum(rev(pct)) - rev(pct)/2, x = sum(pct)*1.55, label = rev(lab))) +
+  scale_fill_manual(values=c("grey50",brewer.pal(11,"Spectral")[c(1,2,3,5,7,9,11)])) +
+  labs(x = '', y = '', title = '') +
+  theme_classic() + theme(axis.text = element_blank())
+
+source.UNIT.pie.p
+```
+```{r}
+if(do.write){
+  ggsave(combine.unit.hist.p,width = 8, height = 4,
+         filename = "../../Results/AUG20/FIG/sfr.rca.units.hist.pdf")
+  ggsave(source.UNIT.pie.p,width = 6, height = 4,
+         filename = "../../Results/AUG20/FIG/sfr.rca.units.pie.pdf")
+}
+```
+
+# Basic information (table)
+```{r}
+summary(SFR.subunits.df[,c("BID","BLen","contigs","clips")])
+paste0("N50: ",n50(SFR.subunits.df$BLen))
+source.UNIT
+```
+
 # Assess TopAnno
 ```{r}
-tmp.bead.df <- SFR.slv.bead.df
-tmp.bead.df <- ddply(tmp.bead.df,c("SID","TopAnno"),transform,ATCt=length(BID))
-tmp.bead.df <- ddply(tmp.bead.df,c("SID"),transform,ATWeigth=ATCt/length(BID))
 ggplot(SFR.slv.bead.df,aes(x=qlen,fill=TopAnno)) + geom_histogram(position="stack") + xlim(c(0,4000))
 ggplot(SFR.slv.bead.df,aes(x=qlen,fill=TopAnno)) + geom_histogram(position="fill") + xlim(c(0,4000))
 
-ggplot(tmp.bead.df,aes(x=qlen,color=TopAnno)) + geom_density(aes(y=..density..*clips)) + xlim(c(0,4000))
+SFR.tmp.bead.df <- ddply(SFR.slv.bead.df,c("SID","TopAnno"),transform,ATCt=length(BID))
+
+ggplot(SFR.tmp.bead.df,aes(x=qlen,color=TopAnno)) + geom_density(aes(y=..density..)) + xlim(c(0,4000))
 
 ggplot(SFR.slv.bead.df,aes(x=qlen,y=ident)) + 
   stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
@@ -808,7 +857,38 @@ ddply(SFR.stat.sp.df2r,c("SAM","rep"),summarise,rdR=sum(RCA[which(NoRCA>0)]),rdN
 ```
 
 
+```{r}
+t.anno <- read.table(gzfile("../../Results/AUG20/etc/t.anno.gz"),sep="\t",quote="",
+                     col.names = c("taxonID","treeID","path"))
+SFR.slv.bead.anno <- merge(combine.unit.df,t.anno,by.x="taxID",by.y="taxonID",all.x=T)
+SFR.slv.bead.anno$domain <- sapply(regmatches(SFR.slv.bead.anno$path, gregexpr("domain__\\w+", SFR.slv.bead.anno$path)),"[",1)
+SFR.slv.bead.anno$kingdom <- sapply(regmatches(SFR.slv.bead.anno$path, gregexpr("kingdom__\\w+", SFR.slv.bead.anno$path)),"[",1)
+SFR.slv.bead.anno$phylum <- sapply(regmatches(SFR.slv.bead.anno$path, gregexpr("phylum__\\w+", SFR.slv.bead.anno$path)),"[",1)
+dim(table(SFR.slv.bead.anno$phylum))
+pick.phy <- names(which(table(SFR.slv.bead.anno$phylum)<5))
 
+SFR.slv.bead.anno$abg <- ifelse(!is.na(SFR.slv.bead.anno$TANum)&SFR.slv.bead.anno$TANum>0&SFR.slv.bead.anno$TALv=="diffGe.","ambiguous","safe")
+SFR.slv.bead.anno$hyb <- ifelse(is.na(SFR.slv.bead.anno$hybCt)|SFR.slv.bead.anno$hybLen<200,"safe","hyb")
+SFR.slv.bead.anno$phylum <- factor(SFR.slv.bead.anno$phylum,levels=names(sort(table(SFR.slv.bead.anno$phylum))))
+SFR.slv.bead.anno$foundUNIT2 <- ifelse(SFR.slv.bead.anno$foundUNIT=="Unknown","Unknown","found")
+ggplot(SFR.slv.bead.anno,aes(x=phylum,fill=interaction(abg,hyb))) + geom_bar(position="fill",na.rm = F) + coord_flip()
+ggplot(SFR.slv.bead.anno,aes(x=round(BLen/100,0)*100,fill=interaction(abg,hyb,foundUNIT2))) + geom_bar(position="fill",na.rm = F) + xlim(c(0,6000))
+ggplot(SFR.slv.bead.anno,aes(x=round(BLen/100,0)*100,fill=interaction(abg,hyb))) + geom_bar(position="stack",na.rm = F) + xlim(c(0,6000))
+```
+
+```{r}
+dim(table(SFR.slv.bead.anno$phylum))
+dim(table(SFR.slv.bead.anno$kingdom))
+
+```
+
+
+```{r}
+SFR.slv.bead.anno.filter2 <- SFR.slv.bead.anno%>%filter((hybLen==0|is.na(hybLen))&(TALv!="diffGe."|is.na(TALv))&foundUNIT!="Unknown"&BLen>=1200&BLen<2500)
+dim(table(SFR.slv.bead.anno.filter2$phylum))
+dim(table(SFR.slv.bead.anno.filter2$kingdom))
+
+```
 
 
 
