@@ -96,14 +96,21 @@ Escherichia_coli_23S 16 Escherichia_coli_chromosome 3114568 0 2904M * 0 0  * NM:
 [main] Real time: 1.283 sec; CPU: 0.960 sec
 ```
 
-Escherichia_coli_chromosome 3114568 0 2904M * 0 0  * XA:Z:
-Escherichia_coli_chromosome,-3339319,2904M,4;
-Escherichia_coli_chromosome,+3885106,2904M,4;
-Escherichia_coli_chromosome,-2425233,2904M,4;
-Escherichia_coli_chromosome,-3245601,2904M,4;
-Escherichia_coli_chromosome,+4593440,2904M,4;
-Escherichia_coli_chromosome,-3073164,2904M,4;
-Salmonella_enterica_complete_genome,-2002972,1170M4I3M4D216M6I4M8D959M2D542M,79;Salmonella_enterica_complete_genome,+2775089,542M2D959M8D4M6I213M4D6M4I1170M,82;Salmonella_enterica_complete_genome,-1336705,1170M4I3M4D216M6I4M8D959M2D542M,82;Salmonella_enterica_complete_genome,+2524769,542M2D959M8D4M6I213M4D6M4I1170M,83;Salmonella_enterica_complete_genome,+2817845,542M2D959M8D4M6I213M4D6M4I1170M,83;Salmonella_enterica_complete_genome,+2619699,542M2D959M8D4M6I213M4D6M4I697M2D9M1I463M,86;
+##gff-version 3
+Escherichia_coli_chromosome     manually        rRNA_16S        2428583 2430125 0       -       .       Name=16S_rRNA;product=16S ribosomal RNA
+Escherichia_coli_chromosome     manually        rRNA_23S        2425233 2428137 0       -       .       Name=23S_rRNA;product=23S ribosomal RNA
+Escherichia_coli_chromosome     manually        rRNA_16S        3076422 3077964 0       -       .       Name=16S_rRNA;product=16S ribosomal RNA
+Escherichia_coli_chromosome     manually        rRNA_23S        3073164 3076068 0       -       .       Name=23S_rRNA;product=23S ribosomal RNA
+Escherichia_coli_chromosome     manually        rRNA_16S        3117826 3119368 0       -       .       Name=16S_rRNA;product=16S ribosomal RNA
+Escherichia_coli_chromosome     manually        rRNA_23S        3114568 3117472 0       -       .       Name=23S_rRNA;product=23S ribosomal RNA
+Escherichia_coli_chromosome     manually        rRNA_16S        3248951 3250493 0       -       .       Name=16S_rRNA;product=16S ribosomal RNA
+Escherichia_coli_chromosome     manually        rRNA_23S        3245601 3248505 0       -       .       Name=23S_rRNA;product=23S ribosomal RNA
+Escherichia_coli_chromosome     manually        rRNA_16S        3342577 3344119 0       -       .       Name=16S_rRNA;product=16S ribosomal RNA
+Escherichia_coli_chromosome     manually        rRNA_23S        3339319 3342223 0       -       .       Name=23S_rRNA;product=23S ribosomal RNA
+Escherichia_coli_chromosome     manually        rRNA_16S        3883127 3884669 0       +       .       Name=16S_rRNA;product=16S ribosomal RNA
+Escherichia_coli_chromosome     manually        rRNA_23S        3885106 3888010 0       +       .       Name=23S_rRNA;product=23S ribosomal RNA
+Escherichia_coli_chromosome     manually        rRNA_16S        4591467 4593009 0       +       .       Name=16S_rRNA;product=16S ribosomal RNA
+Escherichia_coli_chromosome     manually        rRNA_23S        4593440 4596344 0       +       .       Name=23S_rRNA;product=23S ribosomal RNA
 
 ```{bash}
 for i in Z{1,2,3};do
@@ -207,5 +214,122 @@ chromoqc(EC.chrom.p, xlim=c(4591067, 4596844))
 # bedtools
 ```{bash,eval=FALSE}
 bedtools genomecov -bga -ibam SAM/Z3/bwa/map2D6305.genome.sort.bam -scale 0.009941 | sort -k1,1 -k2,2n > Z3.bedGraph
+```
+
+# Public dataset
+
+SRR10013610 16S pacbio
+
+SRR7415647    Hiseq4000 data for E. coli
+SRR7498044    PacBio RSII data for E. coli
+SRR8137545    WGBS of E. coli
+SRR8154667    PacBio RSII sequencing of E. coli K12
+SRR8154668    PacBio RSII sequencing of E. coli K12
+SRR8154669    PacBio RSII sequencing of E. coli K12
+SRR8154670    R9 MinION sequencing of E. coli K12, lambda phage, and mouse: Mason Lab
+SRR8154671    R9 MinION sequencing of E. coli K12, lambda phage, and mouse: Mason Lab
+SRR8154672    WGBS of E. coli K12
+
+```{bash}
+module load bwa/0.7.17-gcc-11.2.0
+
+salloc -N 1 -n 16 -p 64c512g
+ssh xxx
+
+# bwa index ../../Source/REF/zymo/D6305.genomes.fasta.gz
+bwa bwasw -t 8 -b5 -q2 -r1 -z10 ../../Source/REF/zymo/D6305.genomes.fasta.gz SEQDATA/SRR10013610.fastq > bwa/pacbio2genome.sam
+
+
+perl -ane 'BEGIN{$pre=""};if($_=~/^@/){print $_}else{$F[11]=~/AS:i:(\d+)/;
+  $AS=$1; if($AS>999 && $pre ne $F[0]){print $_};$pre=$F[0]}' \
+  bwa/pacbio2genome.sam | samtools view -b |\
+  samtools sort -o bwa/pacbio2genome.bam
+
+samtools index bwa/pacbio2genome.bam
+
+bcftools mpileup -d 10000 -Ou -f ../../Source/REF/zymo/D6305.genomes.fasta.gz \
+  bwa/pacbio2genome.bam | bcftools call -m --ploidy 1 -Oz -o bwa/pacbio2genome.call.m.vcf
+
+bcftools mpileup -d 10000 -a AD -f ../../Source/REF/zymo/D6305.genomes.fasta.gz 
+
+for i in `awk '/16S/{print $4"-"$4+50}' ../../Source/REF/zymo/D6305.Ecoli.rRNA.gff`;do samtools faidx  ../../Source/REF/zymo/D6305.genomes.fasta.gz Escherichia_coli_chromosome:$i;done
+```
+
+```{bash}
+mkdir tmp
+a=1
+for i in SEQDATA/*.fastq;do
+  b=$(basename -s .fastq $i); echo bwa bwasw -t 8 \
+  ../../Source/REF/zymo/D6305.genomes.fasta.gz \
+  SEQDATA/$b.fastq \> bwa/$b\ToGenome.sam > tmp/$a.sh; a=$((a+1));
+ done
+ 
+sbatch scripts/bwa.slurm
+
+for i in SEQDATA/*.fastq;do
+  echo $i;
+  b=$(basename -s .fastq $i); sh tmp/sam2vcf.sh $b;
+done > sam2vcf.log &
+
+# bcftools
+
+```
+
+`tmp/sam2vcf.sh`:
+```{bash}
+basename=$1
+
+perl -ane 'BEGIN{$pre=""};if($_=~/^@/){print $_}else{$F[11]=~/AS:i:(\d+)/;
+  $AS=$1; if($AS>999 && $pre ne $F[0]){print $_};$pre=$F[0]}' \
+  bwa/$basename\ToGenome.sam | samtools view -b |\
+  samtools sort -o bwa/$basename\ToGenome.bam
+
+samtools index bwa/$basename\ToGenome.bam
+
+bcftools mpileup -d 10000 -f ../../Source/REF/zymo/D6305.genomes.fasta.gz \
+  --threads 8 -a AD bwa/$basename\ToGenome.bam -Ov -o vcf/$basename.mpileup.vcf
+```
+
+or:
+```{bash}
+bcftools mpileup  -d 10000 -f ../../Source/REF/zymo/D6305.genomes.fasta.gz \
+  --threads 24 -a DP,AD -Ov -o vcf/pub.mpileup.vcf bwa/*.bam &> sam2vcf.log
+
+perl script.vcf2tsv.pl ../../Source/REF/zymo/D6305.Ecoli.rRNA.gff vcf/pub.mpileup.vcf > vcf/pub.vcfStat.tsv
+```
+
+```{r}
+CS <- function(x){
+  sapply(x,FUN=function(y){
+    z <- ifelse(y=="A","T",ifelse(y=="T","A",ifelse(y=="C","G",ifelse(y=="G","C",""))))
+    return(z)
+  })
+}
+```
+
+```{r}
+rRNA.stat.df <- read.table("vcf/pub.vcfStat.tsv",
+                            col.names = c("sample","region","POS","rPOS","REF","ALT","DP","AD"))
+
+rRNA.stat.df$UNIT <- substr(rRNA.stat.df$region,6,8)
+rRNA.stat.df$UID <- substr(rRNA.stat.df$region,10,10)
+
+rRNA.ref.seq <- unique(rRNA.stat.df[,c("region","rPOS","REF","UNIT","UID")])
+rRNA.ref.seq$CS <- ifelse(rRNA.ref.seq$UID<6,CS(rRNA.ref.seq$REF),rRNA.ref.seq$REF)
+rRNA.ref.seq$rPOS2 <- ifelse(rRNA.ref.seq$UID>5,rRNA.ref.seq$rPOS+1,rRNA.ref.seq$rPOS)
+```
+
+```{r}
+ggplot(rRNA.ref.seq,aes(x=rPOS2,y=UID)) + geom_tile(aes(fill=CS)) +
+  facet_grid(UNIT~.,scale="free") + xlim(50,100)
+```
+```{r}
+ggplot(rRNA.stat.df,aes(x=rPOS)) + geom_line(aes(y=DP,color=sample)) +
+  facet_grid(UID~UNIT,scale="free")
+```
+
+```{r}
+ggplot(rRNA.stat.df%>%filter(UNIT=="16S"),aes(x=rPOS)) + geom_point(aes(y=AD/DP,color=sample)) +
+  facet_grid(UID~sample,scale="free")
 ```
 
