@@ -57,6 +57,7 @@ close VCF;
 #OUTPUT
 foreach my $p (sort {$a<=>$b} keys %HASH){
   for(my $i = $iFMT[0] + 1;$i<@HEAD;$i++){
+    next unless defined $HASH{$p}{REF};
     print "$HEAD[$i]\t$HASH{$p}{ID}\t$p\t$HASH{$p}{RI}\t$HASH{$p}{REF}\t$HASH{$p}{ALT}";
     print "\t$HASH{$p}{$HEAD[$i]}{DP}\t$HASH{$p}{$HEAD[$i]}{AD}\n";
   }

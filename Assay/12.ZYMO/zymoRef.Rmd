@@ -134,7 +134,7 @@ done
 
 #
 bcftools mpileup -d 10000 -f ../../Source/REF/zymo/D6305.genomes.fasta \
-  -Ov -o Z.map2D6305.genome.vcf SAM/Z{1,2,3}/bwa/map2D6305.genome.sort.bam 
+  -a DP,AD -Ov -o Z.map2D6305.genome.vcf SAM/Z{1,2,3}/bwa/map2D6305.genome.sort.bam 
 
 bcftools call -c --ploidy 1 -Oz -o Z.map2D6305.genome.call.vcf Z.map2D6305.genome.vcf
 
@@ -284,10 +284,20 @@ perl -ane 'BEGIN{$pre=""};if($_=~/^@/){print $_}else{$F[11]=~/AS:i:(\d+)/;
   bwa/$basename\ToGenome.sam | samtools view -b |\
   samtools sort -o bwa/$basename\ToGenome.bam
 
+samtools view -b bwa/$basename\ToGenome.sam|\
+  samtools sort -o bwa/$basename\ToGenome.bam
+  
 samtools index bwa/$basename\ToGenome.bam
 
-bcftools mpileup -d 10000 -f ../../Source/REF/zymo/D6305.genomes.fasta.gz \
-  --threads 8 -a AD bwa/$basename\ToGenome.bam -Ov -o vcf/$basename.mpileup.vcf
+k=1
+for i in {SRR10013610,SRR7415647,SRR7498044,SRR8137545,SRR8154667,SRR8154668,SRR8154669,SRR8154670,SRR8154671,SRR8154672};do
+echo sh tmp/sam2vcf.sh $i > tmp/sort.$k.sh; k=$((k+1)); done
+
+for i in {SRR10013610,SRR7415647,SRR7498044,SRR8137545,SRR8154667,SRR8154668,SRR8154669,SRR8154670,SRR8154671,SRR8154672};do
+  perl script.vcf2tsv.pl ../../Source/REF/zymo/D6305.Ecoli.rRNA.gff vcf/$i.mpileup.vcf > vcf/$i.vcfStat.tsv &
+done
+
+
 ```
 
 or:
@@ -296,6 +306,7 @@ bcftools mpileup  -d 10000 -f ../../Source/REF/zymo/D6305.genomes.fasta.gz \
   --threads 24 -a DP,AD -Ov -o vcf/pub.mpileup.vcf bwa/*.bam &> sam2vcf.log
 
 perl script.vcf2tsv.pl ../../Source/REF/zymo/D6305.Ecoli.rRNA.gff vcf/pub.mpileup.vcf > vcf/pub.vcfStat.tsv
+perl script.vcf2tsv.pl ../../Source/REF/zymo/D6305.Ecoli.rRNA.gff Z.map2D6305.genome.vcf > vcf/zymo.vcfStat.tsv
 ```
 
 ```{r}
@@ -308,28 +319,65 @@ CS <- function(x){
 ```
 
 ```{r}
-rRNA.stat.df <- read.table("vcf/pub.vcfStat.tsv",
+pub.stat.df <- read.table("vcf/pub.vcfStat.tsv",fill = NA,
                             col.names = c("sample","region","POS","rPOS","REF","ALT","DP","AD"))
+zymo.stat.df <- read.table("vcf/zymo.vcfStat.tsv",fill = NA,
+                            col.names = c("sample","region","POS","rPOS","REF","ALT","DP","AD"))
+
+rRNA.stat.df <- rbind(zymo.stat.df,pub.stat.df)
 
 rRNA.stat.df$UNIT <- substr(rRNA.stat.df$region,6,8)
 rRNA.stat.df$UID <- substr(rRNA.stat.df$region,10,10)
 
-rRNA.ref.seq <- unique(rRNA.stat.df[,c("region","rPOS","REF","UNIT","UID")])
+rRNA.ref.seq <- unique(rRNA.stat.df[which(!is.na(rRNA.stat.df$REF)&rRNA.stat.df$REF!=""),c("region","rPOS","REF","UNIT","UID")])
 rRNA.ref.seq$CS <- ifelse(rRNA.ref.seq$UID<6,CS(rRNA.ref.seq$REF),rRNA.ref.seq$REF)
 rRNA.ref.seq$rPOS2 <- ifelse(rRNA.ref.seq$UID>5,rRNA.ref.seq$rPOS+1,rRNA.ref.seq$rPOS)
+
+rRNA.stat.df$rPOS2 <- ifelse(rRNA.stat.df$UID>5,rRNA.stat.df$rPOS+1,rRNA.stat.df$rPOS)
+
+#rRNA.stat.df <- rRNA.stat.df%>%filter(sample!="pacbio2genome.bam")
+rRNA.stat.df$sample <- as.factor(rRNA.stat.df$sample)
+
+
+levels(rRNA.stat.df$sample) <- c("PacBio(610)","HiSeq4000(647)","PacBio RSII(044)","WGBS(545)",
+                                 "PacBio RSII(667)","PacBio RSII(668)","PacBio RSII(669)","R9 MinION(670)","R9 MinION(671)","WGBS(672)",
+                                 "Z1","Z2","Z3")
+
+levels(rRNA.stat.df$sample) <- c("Z1","Z2","Z3","PacBio(610)","HiSeq4000(647)","PacBio RSII(044)","WGBS(545)",
+                                 "PacBio RSII(668)","R9 MinION(670)","R9 MinION(671)","WGBS(672)"
+                                 )
 ```
 
 ```{r}
 ggplot(rRNA.ref.seq,aes(x=rPOS2,y=UID)) + geom_tile(aes(fill=CS)) +
   facet_grid(UNIT~.,scale="free") + xlim(50,100)
 ```
+
 ```{r}
-ggplot(rRNA.stat.df,aes(x=rPOS)) + geom_line(aes(y=DP,color=sample)) +
-  facet_grid(UID~UNIT,scale="free")
+ggplot(rRNA.stat.df%>%filter(UNIT=="16S"),aes(x=rPOS2)) + geom_line(aes(y=DP,color=sample)) +
+  facet_grid(sample~UID,scale="free")
 ```
 
 ```{r}
-ggplot(rRNA.stat.df%>%filter(UNIT=="16S"),aes(x=rPOS)) + geom_point(aes(y=AD/DP,color=sample)) +
-  facet_grid(UID~sample,scale="free")
+ggplot(rRNA.stat.df%>%filter(UNIT=="16S"),aes(x=rPOS2)) + geom_line(aes(y=AD/DP,color=sample)) +
+  facet_grid(sample~UID,scale="free")
+```
+
+
+```{r}
+library(plyr)
+rRNA.stat.df2 <- ddply(rRNA.stat.df,c("sample","UNIT","rPOS2"),summarize,
+                       DP=sum(DP),AD=sum(AD))
+
+```
+```{r}
+ggplot(rRNA.stat.df2%>%filter(UNIT=="16S"),aes(x=rPOS2)) + geom_line(aes(y=DP,color=sample)) +
+  facet_wrap(.~sample,scale="free")
+```
+```{r}
+ggplot(rRNA.stat.df2%>%filter(UNIT=="16S")) +
+  geom_segment(aes(yend=AD/DP,y=0,x=rPOS2,xend=rPOS2,color=sample)) +
+  facet_grid(.~sample,scale="free") +
+  geom_hline(yintercept = seq(1,7)/7,linetype=2) + theme_bw()
 ```
 
