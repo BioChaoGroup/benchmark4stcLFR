@@ -482,9 +482,11 @@ SXR.r2m.bracken.more <- merge(SXR.reads2multi.bracken,ref.topRank.map,by=c("taxI
 SXR.r2m.bracken.more$obs <- as.numeric(SXR.r2m.bracken.more$kraken_assigned_reads>0)
 SXR.r2m.bracken.more <- ddply(SXR.r2m.bracken.more,c("DOM","DB","profRank","taxID"),transform,sumObs=sum(obs))
 
-
-save(SXR.r2m.bracken.more, file="../../Results/DEC20/STAT/KRAKEN/SXR.RCA.r2multi.load.RData")
+if(do.write){
+  save(SXR.r2m.bracken.more, file="../../Results/DEC20/STAT/KRAKEN/SXR.RCA.r2multi.load.RData")
 tools::md5sum("../../Results/DEC20/STAT/KRAKEN/SXR.RCA.r2multi.load.RData")
+
+}
 
 ```
 

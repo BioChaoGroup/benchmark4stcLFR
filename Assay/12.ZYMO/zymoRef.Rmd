@@ -112,6 +112,10 @@ Escherichia_coli_chromosome     manually        rRNA_23S        3885106 3888010 
 Escherichia_coli_chromosome     manually        rRNA_16S        4591467 4593009 0       +       .       Name=16S_rRNA;product=16S ribosomal RNA
 Escherichia_coli_chromosome     manually        rRNA_23S        4593440 4596344 0       +       .       Name=23S_rRNA;product=23S ribosomal RNA
 
+```{bash,eval=FALSE}
+samtools view ../../Results/ZYMO/D6305.16S_23S.2genome.bam|perl script.bam2gff.pl > ../../Source/REF/zymo/D6305.rRNA.gff
+```
+
 ```{bash}
 for i in Z{1,2,3};do
   bwa mem -t 16 ../../Source/REF/zymo/D6305.genomes.bwa SAM/$i/clean/fastp.sort.{1,2}.fq.gz | samtools view -b -o SAM/$i/bwa/map2D6305.genome.bam
@@ -136,12 +140,52 @@ done
 bcftools mpileup -d 10000 -f ../../Source/REF/zymo/D6305.genomes.fasta \
   -a DP,AD -Ov -o Z.map2D6305.genome.vcf SAM/Z{1,2,3}/bwa/map2D6305.genome.sort.bam 
 
+#
 bcftools call -c --ploidy 1 -Oz -o Z.map2D6305.genome.call.vcf Z.map2D6305.genome.vcf
 
 bcftools mpileup --threads 8 -d 10000 -Ou -f ../../Source/REF/zymo/D6305.genomes.fasta \
   SAM/Z{1,2,3}/bwa/map2D6305.genome.sort.bam |bcftools call --threads 8 -c --ploidy 1 -Oz \
   -o Z.map2D6305.genome.call.vcf
+  
+
+bcftools mpileup  -d 10000 -f ../../Source/REF/zymo/D6305.genomes.fasta.gz \
+  --threads 36 -a DP,AD -Ov -o vcf/zymo.mpileup.vcf \
+  SAM/Z{1,2,3}/bwa/map2D6305.genome.sort.bam &> sam2vcf.log
+
 ```
+
+## if filter
+```{r}
+# if filter
+for i in Z{1,2,3};do
+  samtools view -@ 8 -e '[NM]<=15' SAM/$i/bwa/map2D6305.genome.sort.bam -o SAM/$i/bwa/map2D6305.genome.sort.filter.bam &
+done
+bcftools mpileup --threads 4 -d 10000 -Ou -f ../../Source/REF/zymo/D6305.genomes.fasta \
+  SAM/Z{1,2,3}/bwa/map2D6305.genome.sort.filter.bam |bcftools call --threads 4 -c --ploidy 1 -Oz \
+  -o Z.map2D6305.genome.call.vcf
+
+bcftools mpileup  -d 10000 -f ../../Source/REF/zymo/D6305.genomes.fasta.gz \
+  --threads 8 -a DP,AD -Ov -o vcf/zymo.mpileup2.vcf SAM/Z{1,2,3}/bwa/map2D6305.genome.sort.filter.bam &> sam2vcf2.log &
+```
+
+## for PBA alignment
+```{r}
+for i in Z{1,2};do
+  bwa bwasw -t 8 -b5 -q2 -r1 -z10 ../../Source/REF/zymo/D6305.genomes.bwa SAM/$i/summary.BI.megahit.clip.all.fasta > SAM/$i/bwa/PBA2genome.sam & 
+done
+  
+for i in Z{1,2};do
+  samtools sort SAM/$i/bwa/PBA2genome.sam -o SAM/$i/bwa/PBA2genome.sort.bam 
+  samtools view -@ 8 -e '[NM]<=15' -o SAM/$i/bwa/PBA2genome.filter.bam SAM/$i/bwa/PBA2genome.sort.bam &
+done
+
+bcftools mpileup -d 10000 -f ../../Source/REF/zymo/D6305.genomes.fasta -a DP,AD \
+  -Ov -o vcf/PBA2D6305.genome.mpileup.vcf SAM/Z{1,2}/bwa/PBA2genome.sort.bam 
+
+bcftools mpileup -d 10000 -f ../../Source/REF/zymo/D6305.genomes.fasta \
+  -a DP,AD -Ov -o vcf/PBA2D6305.genome.mpileup2.vcf SAM/Z{1,2}/bwa/PBA2genome.filter.bam 
+```
+
 
 More about [`vcfR`](https://cran.r-project.org/web/packages/vcfR/vignettes/intro_to_vcfR.html)
 ```{r}
@@ -262,7 +306,7 @@ for i in SEQDATA/*.fastq;do
   b=$(basename -s .fastq $i); echo bwa bwasw -t 8 \
   ../../Source/REF/zymo/D6305.genomes.fasta.gz \
   SEQDATA/$b.fastq \> bwa/$b\ToGenome.sam > tmp/$a.sh; a=$((a+1));
- done
+done
  
 sbatch scripts/bwa.slurm
 
@@ -289,6 +333,9 @@ samtools view -b bwa/$basename\ToGenome.sam|\
   
 samtools index bwa/$basename\ToGenome.bam
 
+bcftools mpileup -d 10000 -f ../../Source/REF/zymo/D6305.genomes.fasta.gz \
+  --threads 8 -a DP,AD -Ov -o vcf/$basename.mpileup.vcf bwa/$basename\ToGenome.bam 
+
 k=1
 for i in {SRR10013610,SRR7415647,SRR7498044,SRR8137545,SRR8154667,SRR8154668,SRR8154669,SRR8154670,SRR8154671,SRR8154672};do
 echo sh tmp/sam2vcf.sh $i > tmp/sort.$k.sh; k=$((k+1)); done
@@ -303,10 +350,28 @@ done
 or:
 ```{bash}
 bcftools mpileup  -d 10000 -f ../../Source/REF/zymo/D6305.genomes.fasta.gz \
-  --threads 24 -a DP,AD -Ov -o vcf/pub.mpileup.vcf bwa/*.bam &> sam2vcf.log
+  --threads 36 -a DP,AD -Ov -o vcf/pub.mpileup.vcf bwa/*.bam &> sam2vcf.log
 
-perl script.vcf2tsv.pl ../../Source/REF/zymo/D6305.Ecoli.rRNA.gff vcf/pub.mpileup.vcf > vcf/pub.vcfStat.tsv
-perl script.vcf2tsv.pl ../../Source/REF/zymo/D6305.Ecoli.rRNA.gff Z.map2D6305.genome.vcf > vcf/zymo.vcfStat.tsv
+perl script.vcf2tsv.pl ../../Source/REF/zymo/D6305.rRNA.gff vcf/pub.mpileup.vcf > vcf/pub.vcfStat.tsv
+
+perl script.vcf2tsv.pl ../../Source/REF/zymo/D6305.rRNA.gff vcf/zymo.mpileup.vcf > vcf/zymo.vcfStat.tsv
+
+perl script.vcf2tsv.pl ../../Source/REF/zymo/D6305.rRNA.gff vcf/PBA2D6305.genome.mpileup.vcf > vcf/PBA2D6305.genome.vcfStat.vcf
+
+# if filter 
+for i in {SRR10013610,SRR7415647,SRR7498044,SRR8137545,SRR8154667,SRR8154668,SRR8154669,SRR8154670,SRR8154671,SRR8154672};do
+  samtools view -e '[NM]<=15' bwa/$i\ToGenome.bam -o bwa/$i\ToGenome.filter.bam &
+done
+
+bcftools mpileup  -d 10000 -f ../../Source/REF/zymo/D6305.genomes.fasta.gz \
+  --threads 36 -a DP,AD -Ov -o vcf/pub.mpileup2.vcf bwa/*.filter.bam &> sam2vcf2.log
+
+
+perl script.vcf2tsv.pl ../../Source/REF/zymo/D6305.rRNA.gff vcf/pub.mpileup2.vcf > vcf/pub.vcfStat2.tsv
+
+perl script.vcf2tsv.pl ../../Source/REF/zymo/D6305.rRNA.gff vcf/zymo.mpileup2.vcf > vcf/zymo.vcfStat2.tsv
+
+perl script.vcf2tsv.pl ../../Source/REF/zymo/D6305.rRNA.gff vcf/PBA2D6305.genome.mpileup.vcf > vcf/PBA2D6305.genome.vcfStat2.vcf
 ```
 
 ```{r}
@@ -318,43 +383,124 @@ CS <- function(x){
 }
 ```
 
+# Load & Visualization
+
+## No filter
 ```{r}
 pub.stat.df <- read.table("vcf/pub.vcfStat.tsv",fill = NA,
-                            col.names = c("sample","region","POS","rPOS","REF","ALT","DP","AD"))
+                            col.names = c("sample","region","POS","rPOS","REF","ALT","TYPE","DP","AD"))
 zymo.stat.df <- read.table("vcf/zymo.vcfStat.tsv",fill = NA,
-                            col.names = c("sample","region","POS","rPOS","REF","ALT","DP","AD"))
+                            col.names = c("sample","region","POS","rPOS","REF","ALT","TYPE","DP","AD"))
 
-rRNA.stat.df <- rbind(zymo.stat.df,pub.stat.df)
+zymo.PBA.stat.df <- read.table("vcf/PBA2D6305.genome.vcfStat.vcf",fill = NA,
+                            col.names = c("sample","region","POS","rPOS","REF","ALT","TYPE","DP","AD"))
 
-rRNA.stat.df$UNIT <- substr(rRNA.stat.df$region,6,8)
-rRNA.stat.df$UID <- substr(rRNA.stat.df$region,10,10)
+rRNA.stat.df <- rbind(zymo.stat.df,pub.stat.df,zymo.PBA.stat.df)
 
-rRNA.ref.seq <- unique(rRNA.stat.df[which(!is.na(rRNA.stat.df$REF)&rRNA.stat.df$REF!=""),c("region","rPOS","REF","UNIT","UID")])
+sp1 <- strsplit(rRNA.stat.df$region,"|",fixed = T)
+sp2 <- strsplit(sapply(sp1,"[",2),"_")
+
+rRNA.stat.df$CHR <- sapply(sp1,"[",1)
+rRNA.stat.df$UNIT <- sapply(sp2,"[",1)
+rRNA.stat.df$UID <- sapply(sp2,"[",2)
+
+rRNA.stat.df$sam <- as.factor(rRNA.stat.df$sample)
+rRNA.stat.df$sample <- as.factor(rRNA.stat.df$sample)
+
+levels(rRNA.stat.df$sample) <- c(
+  "Z1(Reads)","Z1(PBA)","Z2(Reads)","Z2(PBA)","Z3(Reads)",
+  "PacBio RSII(610)","HiSeq4000(647)","PacBio RSII(044)","WGBS(545)",
+  "PacBio RSII(667)","PacBio RSII(668)","PacBio RSII(669)",
+  "R9 MinION(670)","R9 MinION(671)", "WGBS(672)")
+
+levels(rRNA.stat.df$sam) <- c(
+  "stcLFR(Reads)","stcLFR(PBA)","stcLFR(Reads)","stcLFR(PBA)","stcLFR(Reads)",
+  "PacBio RSII","HiSeq4000","PacBio RSII","HiSeq2500",
+  "PacBio RSII","PacBio RSII","PacBio RSII",
+  "R9 MinION","R9 MinION", "HiSeq2500"
+)
+
+rRNA.stat.df$sam <- factor(as.character(rRNA.stat.df$sam),levels = c(
+  "stcLFR(Reads)","HiSeq2500","HiSeq4000",
+  "stcLFR(PBA)","PacBio RSII","R9 MinION"
+))
+```
+
+```{r}
+rRNA.stat.df$win <- round(rRNA.stat.df$rPOS/50,0)*50
+rRNA.stat.df3 <- ddply(rRNA.stat.df,c("sam","UNIT","win","TYPE"),summarize,
+                       DP=sum(DP),AD=sum(AD))
+
+ggplot(rRNA.stat.df3%>%filter(UNIT%in%c("16S","23S"))) +
+  geom_hline(yintercept = -2.5, linetype=2) +
+  geom_point(aes(y=log10(AD/DP),x=win,color=TYPE,shape=TYPE)) +
+  facet_grid(UNIT~sam) + ylab("sequence error rate(log10 scale)") + 
+  scale_y_continuous(breaks=c(-3,-2.5,-2,-1,0),
+                     labels=round(10^c(-3,-2.5,-2,-1,0),3)) +
+  theme_bw() 
+```
+
+## if filter
+```{r}
+pub.stat.df <- read.table("vcf/pub.vcfStat2.tsv",fill = NA,
+                            col.names = c("sample","region","POS","rPOS","REF","ALT","TYPE","DP","AD"))
+zymo.stat.df <- read.table("vcf/zymo.vcfStat2.tsv",fill = NA,
+                            col.names = c("sample","region","POS","rPOS","REF","ALT","TYPE","DP","AD"))
+
+zymo.PBA.stat.df <- read.table("vcf/PBA2D6305.genome.vcfStat2.vcf",fill = NA,
+                            col.names = c("sample","region","POS","rPOS","REF","ALT","TYPE","DP","AD"))
+
+rRNA.stat.df <- rbind(zymo.stat.df,pub.stat.df,zymo.PBA.stat.df)
+
+rRNA.stat.df$UNIT <- sapply(strsplit(rRNA.stat.df$region,"_"),"[",1)
+rRNA.stat.df$UID <- sapply(strsplit(rRNA.stat.df$region,"_"),"[",2)
+
+rRNA.ref.seq <- unique(rRNA.stat.df[which(!is.na(rRNA.stat.df$REF)&rRNA.stat.df$REF!=""&rRNA.stat.df$TYPE=="SUB"),c("region","rPOS","REF","UNIT","UID")])
 rRNA.ref.seq$CS <- ifelse(rRNA.ref.seq$UID<6,CS(rRNA.ref.seq$REF),rRNA.ref.seq$REF)
 rRNA.ref.seq$rPOS2 <- ifelse(rRNA.ref.seq$UID>5,rRNA.ref.seq$rPOS+1,rRNA.ref.seq$rPOS)
 
 rRNA.stat.df$rPOS2 <- ifelse(rRNA.stat.df$UID>5,rRNA.stat.df$rPOS+1,rRNA.stat.df$rPOS)
 
-#rRNA.stat.df <- rRNA.stat.df%>%filter(sample!="pacbio2genome.bam")
+rRNA.stat.df$sam <- rRNA.stat.df$sample
 rRNA.stat.df$sample <- as.factor(rRNA.stat.df$sample)
 
 
-levels(rRNA.stat.df$sample) <- c("PacBio(610)","HiSeq4000(647)","PacBio RSII(044)","WGBS(545)",
-                                 "PacBio RSII(667)","PacBio RSII(668)","PacBio RSII(669)","R9 MinION(670)","R9 MinION(671)","WGBS(672)",
-                                 "Z1","Z2","Z3")
+#levels(rRNA.stat.df$sample) <- c("PacBio(610)","HiSeq4000(647)","PacBio RSII(044)","WGBS(545)",
+#                                 "PacBio RSII(667)","PacBio RSII(668)","PacBio RSII(669)",
+#                                 "R9 MinION(670)","R9 MinION(671)","WGBS(672)",
+#                                 "Z1","Z2","Z3")
 
-levels(rRNA.stat.df$sample) <- c("Z1","Z2","Z3","PacBio(610)","HiSeq4000(647)","PacBio RSII(044)","WGBS(545)",
-                                 "PacBio RSII(668)","R9 MinION(670)","R9 MinION(671)","WGBS(672)"
-                                 )
+
+levels(rRNA.stat.df$sample) <- c(
+  "Z1(Reads)","Z1(PBA)","Z2(Reads)","Z2(PBA)","Z3(Reads)",
+  "PacBio(610)","HiSeq4000(647)","WGBS(545)",
+  "PacBio RSII(667)","PacBio RSII(668)","PacBio RSII(669)",
+  "R9 MinION(670)","R9 MinION(671)", "WGBS(672)")
+
+levels(rRNA.stat.df$sample) <- c(
+  "Z1(Reads)","Z1(PBA)","Z2(Reads)","Z2(PBA)","Z3(Reads)",
+  "PacBio(610)","HiSeq4000(647)","PacBio RSII(044)","WGBS(545)",
+  "PacBio RSII(667)","PacBio RSII(668)","PacBio RSII(669)",
+  "R9 MinION(670)","R9 MinION(671)", "WGBS(672)")
+
+levels(rRNA.stat.df$sam) <- c(
+  "stcLFR(Reads)","stcLFR(PBA)","stcLFR(Reads)","stcLFR(PBA)",
+  "stcLFR(Reads)","PacBio","HiSeq4000",
+  "PacBio RSII","WGBS",
+  "PacBio RSII","PacBio RSII","PacBio RSII",
+  "R9 MinION","R9 MinION", "WGBS")
+#rRNA.stat.df <- rRNA.stat.df%>%filter(sample %in% c("Z1(Reads)","Z1(PBA)","HiSeq4000(647)","PacBio(610)","PacBio RSII(044)","R9 MinION(670)"))
 ```
 
 ```{r}
+library(ggplot2)
 ggplot(rRNA.ref.seq,aes(x=rPOS2,y=UID)) + geom_tile(aes(fill=CS)) +
-  facet_grid(UNIT~.,scale="free") + xlim(50,100)
+  facet_grid(UNIT~.,scale="free") + xlim(50,200)
 ```
 
 ```{r}
-ggplot(rRNA.stat.df%>%filter(UNIT=="16S"),aes(x=rPOS2)) + geom_line(aes(y=DP,color=sample)) +
+library(dplyr)
+ggplot(rRNA.stat.df%>%filter(UNIT=="16S"),aes(x=rPOS2)) + geom_path(aes(y=DP,color=sample)) +
   facet_grid(sample~UID,scale="free")
 ```
 
@@ -366,18 +512,34 @@ ggplot(rRNA.stat.df%>%filter(UNIT=="16S"),aes(x=rPOS2)) + geom_line(aes(y=AD/DP,
 
 ```{r}
 library(plyr)
-rRNA.stat.df2 <- ddply(rRNA.stat.df,c("sample","UNIT","rPOS2"),summarize,
+rRNA.stat.df2 <- ddply(rRNA.stat.df,c("sam","UNIT","rPOS2","TYPE"),summarize,
                        DP=sum(DP),AD=sum(AD))
 
+
+ggplot(rRNA.stat.df2%>%filter(UNIT=="16S"),aes(x=rPOS2)) + geom_point(aes(y=DP,color=TYPE)) +
+  facet_wrap(.~sam,scale="free")
 ```
 ```{r}
-ggplot(rRNA.stat.df2%>%filter(UNIT=="16S"),aes(x=rPOS2)) + geom_line(aes(y=DP,color=sample)) +
-  facet_wrap(.~sample,scale="free")
-```
-```{r}
-ggplot(rRNA.stat.df2%>%filter(UNIT=="16S")) +
-  geom_segment(aes(yend=AD/DP,y=0,x=rPOS2,xend=rPOS2,color=sample)) +
-  facet_grid(.~sample,scale="free") +
+ggplot(rRNA.stat.df2%>%filter(DP>9)) +
+  geom_segment(aes(yend=AD/DP,y=0,x=rPOS2,xend=rPOS2,color=TYPE)) +
+  facet_grid(UNIT~sam,scale="free") +
   geom_hline(yintercept = seq(1,7)/7,linetype=2) + theme_bw()
 ```
 
+```{r}
+ggplot(rRNA.stat.df2%>%filter(DP>9)) +
+  geom_segment(aes(yend=AD/DP,y=0,x=rPOS2,xend=rPOS2,color=sample)) +
+  facet_grid(UNIT~sample,scale="free") + 
+  scale_y_log10() + theme_bw()
+```
+
+```{r}
+rRNA.stat.df$win <- round(rRNA.stat.df$rPOS/50,0)*50
+rRNA.stat.df3 <- ddply(rRNA.stat.df,c("sam","UNIT","win","TYPE"),summarize,
+                       DP=sum(DP),AD=sum(AD))
+
+ggplot(rRNA.stat.df3%>%filter(DP>5)) +
+  geom_point(aes(y=log2(AD/DP),x=win,color=TYPE,shape=TYPE)) +
+  facet_grid(UNIT~sam) + 
+  scale_y_continuous(breaks=seq(-10,0,2),labels = 2^(seq(-10,0,2))) + theme_bw()
+```
