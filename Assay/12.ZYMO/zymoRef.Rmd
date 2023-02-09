@@ -5,6 +5,13 @@ output:
     code_fold: hide
 ---
 
+```{r setup, include=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(plyr) 
+library(ggplot2) 
+```
+
 zymo infomation : `stLFR4META - 文档\Experiments\ZymoBIOMICS Microbial Community DNA Standard D6305`
 
 Zymo mock strains:
@@ -24,7 +31,7 @@ Zymo mock strains:
 
 
 set global vars (bash):
-```{bash}
+```{bash, eval=FALSE}
 SAM=RCA197B01_2
 
 threads=16
@@ -57,7 +64,7 @@ mafft --thread 32 --auto --inputorder $RES/D6305.16S_1.fasta > $RES/D6305.16S_1.
 # Benchmark of zymo variances:
 
 Find rDNA rigions from ref:
-```{bash}
+```{bash, eval=FALSE}
 bwa bwasw ../../Source/REF/zymo/D6305.genomes.bwa ../../Source/REF/zymo/D6305.rRNA.fa \
  > ../../Source/REF/zymo/D6305.rRNA2genomes.bwa
 ```
@@ -116,7 +123,7 @@ Escherichia_coli_chromosome     manually        rRNA_23S        4593440 4596344 
 samtools view ../../Results/ZYMO/D6305.16S_23S.2genome.bam|perl script.bam2gff.pl > ../../Source/REF/zymo/D6305.rRNA.gff
 ```
 
-```{bash}
+```{bash, eval=FALSE}
 for i in Z{1,2,3};do
   bwa mem -t 16 ../../Source/REF/zymo/D6305.genomes.bwa SAM/$i/clean/fastp.sort.{1,2}.fq.gz | samtools view -b -o SAM/$i/bwa/map2D6305.genome.bam
 done
@@ -155,7 +162,7 @@ bcftools mpileup  -d 10000 -f ../../Source/REF/zymo/D6305.genomes.fasta.gz \
 ```
 
 ## if filter
-```{r}
+```{bash, eval=FALSE}
 # if filter
 for i in Z{1,2,3};do
   samtools view -@ 8 -e '[NM]<=15' SAM/$i/bwa/map2D6305.genome.sort.bam -o SAM/$i/bwa/map2D6305.genome.sort.filter.bam &
@@ -169,7 +176,7 @@ bcftools mpileup  -d 10000 -f ../../Source/REF/zymo/D6305.genomes.fasta.gz \
 ```
 
 ## for PBA alignment
-```{r}
+```{bash, eval=FALSE}
 for i in Z{1,2};do
   bwa bwasw -t 8 -b5 -q2 -r1 -z10 ../../Source/REF/zymo/D6305.genomes.bwa SAM/$i/summary.BI.megahit.clip.all.fasta > SAM/$i/bwa/PBA2genome.sam & 
 done
@@ -191,18 +198,18 @@ More about [`vcfR`](https://cran.r-project.org/web/packages/vcfR/vignettes/intro
 ```{r}
 library(vcfR)
 
-vcf <- read.vcfR("Z.map2D6305.genome.call.vcf", verbose = FALSE )
-gff <- read.table("../../Source/REF/zymo/D6305.Ecoli.rRNA.gff", sep="\t", quote="")
-dna <- ape::read.dna("../../Source/REF/zymo/D6305.genomes.fasta", format = "fasta")
+vcf <- read.vcfR("vcf/Z.map2D6305.genome.call.vcf", verbose = FALSE )
+gff <- read.table("../../Source/REF/zymo/D6305.Ecoli.rRNA.gff", skip=1,quote="",header=F)
+dna <- ape::read.dna(gzfile("../../Source/REF/zymo/D6305.genomes.fasta.gz"), format = "fasta")
 ```
 
 # Escherichia_coli
 ```{r}
-myChroms[grep("Escherichia",myChroms)]
+#myChroms[grep("Escherichia",myChroms)]
 EC.vcf <- vcf[getCHROM(vcf) == "Escherichia_coli_chromosome", ]
 EC.gff <- gff[gff$V1=="Escherichia_coli_chromosome",]
 
-mySeqs[grep("Escherichia",mySeqs)]
+#mySeqs[grep("Escherichia",mySeqs)]
 EC.seq <- dna["Escherichia_coli_chromosome"]
 EC.chrom <- create.chromR(name='Escherichia_coli', vcf=EC.vcf, seq=EC.seq,ann=EC.gff)
 ```
@@ -274,7 +281,7 @@ SRR8154670    R9 MinION sequencing of E. coli K12, lambda phage, and mouse: Maso
 SRR8154671    R9 MinION sequencing of E. coli K12, lambda phage, and mouse: Mason Lab
 SRR8154672    WGBS of E. coli K12
 
-```{bash}
+```{bash,eval=FALSE}
 module load bwa/0.7.17-gcc-11.2.0
 
 salloc -N 1 -n 16 -p 64c512g
@@ -299,7 +306,7 @@ bcftools mpileup -d 10000 -a AD -f ../../Source/REF/zymo/D6305.genomes.fasta.gz
 for i in `awk '/16S/{print $4"-"$4+50}' ../../Source/REF/zymo/D6305.Ecoli.rRNA.gff`;do samtools faidx  ../../Source/REF/zymo/D6305.genomes.fasta.gz Escherichia_coli_chromosome:$i;done
 ```
 
-```{bash}
+```{bash,eval=FALSE}
 mkdir tmp
 a=1
 for i in SEQDATA/*.fastq;do
@@ -320,7 +327,7 @@ done > sam2vcf.log &
 ```
 
 `tmp/sam2vcf.sh`:
-```{bash}
+```{bash,eval=FALSE}
 basename=$1
 
 perl -ane 'BEGIN{$pre=""};if($_=~/^@/){print $_}else{$F[11]=~/AS:i:(\d+)/;
@@ -348,7 +355,7 @@ done
 ```
 
 or:
-```{bash}
+```{bash,eval=FALSE}
 bcftools mpileup  -d 10000 -f ../../Source/REF/zymo/D6305.genomes.fasta.gz \
   --threads 36 -a DP,AD -Ov -o vcf/pub.mpileup.vcf bwa/*.bam &> sam2vcf.log
 
@@ -374,7 +381,7 @@ perl script.vcf2tsv.pl ../../Source/REF/zymo/D6305.rRNA.gff vcf/zymo.mpileup2.vc
 perl script.vcf2tsv.pl ../../Source/REF/zymo/D6305.rRNA.gff vcf/PBA2D6305.genome.mpileup.vcf > vcf/PBA2D6305.genome.vcfStat2.vcf
 ```
 
-```{r}
+```{bash,eval=FALSE}
 CS <- function(x){
   sapply(x,FUN=function(y){
     z <- ifelse(y=="A","T",ifelse(y=="T","A",ifelse(y=="C","G",ifelse(y=="G","C",""))))
@@ -434,10 +441,16 @@ rRNA.stat.df3 <- ddply(rRNA.stat.df,c("sam","UNIT","win","TYPE"),summarize,
 ggplot(rRNA.stat.df3%>%filter(UNIT%in%c("16S","23S"))) +
   geom_hline(yintercept = -2.5, linetype=2) +
   geom_point(aes(y=log10(AD/DP),x=win,color=TYPE,shape=TYPE)) +
-  facet_grid(UNIT~sam) + ylab("sequence error rate(log10 scale)") + 
+  facet_grid(UNIT~sam) + ylab("Sequence error rate(log10 scale)") + 
+  xlab("Position") + 
+  scale_shape_discrete(labels=c("Deletion","Insertions","substitutions")) +
   scale_y_continuous(breaks=c(-3,-2.5,-2,-1,0),
                      labels=round(10^c(-3,-2.5,-2,-1,0),3)) +
   theme_bw() 
+
+if(do.write){
+  ggsave("./error_rates_compared_with_pubdata.pdf",width=8.7,height=5)
+}
 ```
 
 ## if filter
@@ -493,13 +506,11 @@ levels(rRNA.stat.df$sam) <- c(
 ```
 
 ```{r}
-library(ggplot2)
 ggplot(rRNA.ref.seq,aes(x=rPOS2,y=UID)) + geom_tile(aes(fill=CS)) +
   facet_grid(UNIT~.,scale="free") + xlim(50,200)
 ```
 
 ```{r}
-library(dplyr)
 ggplot(rRNA.stat.df%>%filter(UNIT=="16S"),aes(x=rPOS2)) + geom_path(aes(y=DP,color=sample)) +
   facet_grid(sample~UID,scale="free")
 ```
