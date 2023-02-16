@@ -269,7 +269,7 @@ bedtools genomecov -bga -ibam SAM/Z3/bwa/map2D6305.genome.sort.bam -scale 0.0099
 
 # Public dataset
 
-SRR10013610 16S pacbio
+
 
 SRR7415647    Hiseq4000 data for E. coli
 SRR7498044    PacBio RSII data for E. coli
