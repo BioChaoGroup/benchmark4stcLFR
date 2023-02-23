@@ -7,6 +7,5 @@ DATA
 DB
 .snakemake
 nohup.out
-Source
 *.png
 .Rproj.user

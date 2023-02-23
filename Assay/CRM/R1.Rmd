@@ -1,0 +1,180 @@
+---
+title: "CRM R1 testing content"
+output:
+  html_notebook:
+    code_fold: hide
+---
+
+```{r setup, include=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(plyr)
+library(ggplot2)
+```
+
+# The first reviewr:
+
+7)  Line 500, Please provide the number for the multiple taxonomies with the same score "BLASTN scores" which were eliminated. I would recommend that species/taxa with the same score get not get eliminated by should be also reported. Because in most cases I think they might be different species with the same score which still belong to the same genus/family.
+
+
+```{r}
+SBR.df <- read.table("../../Results/AUG20/STAT/ANNO/SBR.CLIP.map.merge.bead.anno",
+                     sep = "\t",quote = "",comment.char = "")
+SFR.df <- read.table("../../Results/AUG20/STAT/ANNO/SFR.CLIP.map.merge.bead.anno",
+                     sep = "\t",quote = "",comment.char = "")
+
+anno.df <- rbind(
+  cbind(group="SBR",SBR.df),
+  cbind(group="SFR",SFR.df)
+)
+```
+
+```{r}
+stat.multi <- as.data.frame(table(anno.df$group,anno.df$V21))
+ddply(stat.multi,"Var1",transform,toal=sum(Freq),pect=Freq/sum(Freq)) 
+```
+
+```{r}
+table(anno.df$V21,anno.df$V23,anno.df$group)
+```
+
+```{r}
+ggplot(anno.df,aes(x=V5,linetype=group,color=V21)) + geom_density() +
+  scale_x_continuous(limits=c(0,2500),breaks=seq(0,2500,200)) + 
+  xlab("Aligned length") + labs(color="Alignment condition") +
+  scale_linetype_discrete(labels=c("Bacterial raw PBAs","Fungal raw PBAs")) +
+  theme_bw()
+  
+```
+
+```{r}
+ddply(anno.df,c("group","V1"),summarise,
+      unique=length(which(V21=="unique")),
+      multi=length(which(V21=="multi")),
+      diffGe.=length(which(V21=="multi"&V23=="diffGe.")),
+      diffSp.=length(which(V21=="multi"&V23=="diffSp.")),
+      diffSt.=length(which(V21=="multi"&V23=="sameSp."))
+      )
+```
+
+# The second reviewr:
+```{r}
+id.map <- read.table("./id.map.tsv",
+                     col.names = c("SAMID",".ID"))
+ori.basic.df <- read.table("../../Results/AUG20/STAT/ORI.basic.log",header=T)
+
+ori.basic.df <- merge(id.map,ori.basic.df,by=".ID")
+
+sam.basic.df <- ddply(ori.basic.df,"SAMID",summarise,
+                      raw.read.pairs=sum(fastp.before_filtering.total_reads)/2,
+                      raw.base.Q30p=sum(fastp.before_filtering.q30_bases)/sum(fastp.before_filtering.total_bases),
+                      clean.read.pairs=sum(fastp.after_filtering.total_reads)/2,
+                      clean.base.Q30p=sum(fastp.after_filtering.q30_bases)/sum(fastp.after_filtering.total_bases)
+                      )
+```
+
+```{r}
+BB.stat.df <- read.table("../../Results/AUG20/STAT/ORI.BB.stat",
+                         col.names = c(".ID","B_count","ReadsPerBead","cumsum"))
+BB.stat.df <- merge(id.map,BB.stat.df,by=".ID")
+
+SAM.rpb.BB.stat.df <- ddply(BB.stat.df,c("SAMID","ReadsPerBead"),summarise,
+                        R_count=sum(B_count*ReadsPerBead),
+                        B_count=sum(B_count)
+                        )
+
+SAM.BB.stat.df <- ddply(SAM.rpb.BB.stat.df,"SAMID",summarise,
+                        beads=sum(B_count),
+                        readsDetectedBeads=sum(R_count)
+                        )
+```
+
+```{r}
+PBA.SBR.stat.df <- read.table("../../Results/AUG20/STAT/CLIP/SBR.bead.metadata.tsv",
+                          col.names = c("SAMID","BID","length","clips","segs"))
+PBA.ZBR.stat.df <- read.table("../../Results/AUG20/STAT/CLIP/ZBR.bead.metadata.tsv",
+                          col.names = c("SAMID","BID","length","clips","segs"))
+PBA.SFR.stat.df <- read.table("../../Results/AUG20/STAT/CLIP/SFR.bead.metadata.tsv",
+                          col.names = c("SAMID","BID","length","clips","segs"))
+PBA.MFR.stat.df <- read.table("../../Results/AUG20/STAT/CLIP/MFR.bead.metadata.tsv",
+                          col.names = c("SAMID","BID","length","clips","segs"))
+
+PBA.ZBR.clip.stat.df <-
+  read.table("../../Results/AUG20/STAT/CLIP/ZBR.clip.metadata.tsv",sep="\t")
+
+```
+
+Beads number for assmebly can be retrived by:
+```{bash}
+cd Assay/15.AUG20
+wc -l SAM/Z{1,2,3}/batch.assemble.BI.sh
+   43466 SAM/Z1/batch.assemble.BI.sh
+   36186 SAM/Z2/batch.assemble.BI.sh
+   69162 SAM/Z3/batch.assemble.BI.sh
+  148814 total
+
+wc -l SAM/M{4,5,6}/batch.assemble.BI.sh
+  155775 SAM/M4/batch.assemble.BI.sh
+   27019 SAM/M5/batch.assemble.BI.sh
+   88000 SAM/M6/batch.assemble.BI.sh
+  270794 total
+
+wc -l SAM/{S,O}{1,2,3}/batch.assemble.BI.sh
+   99801 SAM/S1/batch.assemble.BI.sh
+   83224 SAM/S2/batch.assemble.BI.sh
+  431468 SAM/S3/batch.assemble.BI.sh
+   42868 SAM/O1/batch.assemble.BI.sh
+   20391 SAM/O2/batch.assemble.BI.sh
+   46286 SAM/O3/batch.assemble.BI.sh
+  724038 total
+  
+wc -l SAM/{S,O}{4,5,6}/batch.assemble.BI.sh
+   263928 SAM/S4/batch.assemble.BI.sh
+   341947 SAM/S5/batch.assemble.BI.sh
+   326699 SAM/S6/batch.assemble.BI.sh
+   313605 SAM/O4/batch.assemble.BI.sh
+   316073 SAM/O5/batch.assemble.BI.sh
+   283177 SAM/O6/batch.assemble.BI.sh
+  1845429 total
+```
+
+Successfully assembled PBAs
+```{r}
+as.data.frame(table(PBA.SBR.stat.df$SAMID))
+as.data.frame(table(PBA.ZBR.stat.df$SAMID))
+as.data.frame(table(PBA.SFR.stat.df$SAMID))
+as.data.frame(table(PBA.MFR.stat.df$SAMID))
+```
+
+## Observed OTUs
+```{r}
+# load SXR.r2m.bracken.more
+if(file.exists("../../Results/DEC20/STAT/KRAKEN/SXR.RCA.r2multi.load.RData")){
+  load(md5("../../Results/DEC20/STAT/KRAKEN/SXR.RCA.r2multi.load.RData",
+           "698b0f441cbce873dcc4bbe59a2d4ea8"))
+  
+}else{
+  warning("Can not load RData!")
+}
+```
+```{r}
+SXR.r2m.bracken.more$profRank <- factor(SXR.r2m.bracken.more$profRank,levels=c("Species","Genus","Phylum"))
+SXR.r2m.bracken.more$PBA_support <- ifelse(SXR.r2m.bracken.more$members>0,T,F)
+SXR.r2m.bracken.more$findAnno <- ifelse(grepl("CLADE",SXR.r2m.bracken.more$name),"miss","found")
+SXR.r2m.bracken.more$PBA_support[which(is.na(SXR.r2m.bracken.more$PBA_support))] <- F
+SXR.r2m.bracken.more$taxonSet <- factor(paste0(SXR.r2m.bracken.more$findAnno,SXR.r2m.bracken.more$PBA_support),
+                                levels=c("foundTRUE","missTRUE", "foundFALSE"))
+
+levels(SXR.r2m.bracken.more$taxonSet) <- c("PBAs found annotation","PBAs without annotaion","taxons that PBA not covered")
+
+SXR.r2m.bracken.taxID <- unique(SXR.r2m.bracken.more[,c("DOM","SAM","DB","profRank","taxonSet","taxID")])
+
+count.stat0 <- SXR.r2m.bracken.more%>%group_by(DOM,DB,SID,profRank,taxonSet)%>%
+  summarise(observe=length(unique(taxID)),beads=sum(new_est_reads),abun=sum(pct.k)/3)%>%
+  group_by(DOM,SID,DB,profRank,taxonSet)%>%
+  summarise(sd=sd(observe),observe=mean(observe),abun=mean(abun))
+
+library(reshape2)
+dcast(count.stat0,SID~profRank+taxonSet,value.var = "observe")
+```
+
+
