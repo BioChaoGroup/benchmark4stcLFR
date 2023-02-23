@@ -18,6 +18,4 @@ ln -s ../../../DATA
 ln -s ../../../DB
 ```
 
-#### Technical Note
-
-[REAMDME.md](./Assay/README.md)
+For technical detail codenotes please find correlated directories under `/Assay`.
