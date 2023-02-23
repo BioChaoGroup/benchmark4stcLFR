@@ -12,17 +12,9 @@ Figure 1 shows a pipeline of how we detecting barcodes and used it to improve th
 
 #### Sampling
 
-For Fungus, we prepared a mock sample, which is evenly mixtured by 
+For Fungus, we prepared a mock sample purched from ZYMO.
 
-- *Saccharomyces cerevisiae* - Sc (Baker's yeast), 
-- *Pleurotus eryngii* - Pe (Xing Bao Gu), 
-- *Lentinula edodes* - Le (Xiang Gu, Shiitake), 
-- *Flammulina velutipes* - Fv (Jin Zhen Gu), 
-- *Hypsizygus marmoreus* - Hm (Xie Wei Gu, this fungus has very low PCR efficiency).  
-
-For Bacteria, a soil sample collected from XXX were tested.
-
-**Sequencing** was performed by BGISEQ500(?), PE100 mode.
+**Sequencing** was performed by DIPSEQ T1 (from MGI), PE100 mode.
 
 **Quality control** was implented in a modified **[fastp](https://github.com/Scelta/fastp)**, along with the function to detect bead barcodes.
 
@@ -40,14 +32,14 @@ Generally, more than 85% of reads are successfully idtentiable with a barely off
 
 ![fig.2](./01.stLFR_barcode_split/BBdetectionPct.png)
 
-> **Fig.2 Reads distribution of bead barcodes detection**. 
+> **Fig.2 Reads distribution of bead barcodes detection**.
 > Data tested from 1 millon randomly picked reads.
 
-We totally identified Among the identified **68645** unique BBs. However, about **40%** of them are only attached by one pair-read (fig3. black). 
+We totally identified Among the identified **68645** unique BBs. However, about **40%** of them are only attached by one pair-read (fig3. black).
 
 ![fig.3](./04.test_vsearch/BBwithReadsin.png)
 
->**Fig.3 Distribution of bead barcodes with different number of reads attached to it**. 
+>**Fig.3 Distribution of bead barcodes with different number of reads attached to it**.
 >Black, all reads included; red, only dereplicated reads included
 
 Since amplicon also induce duplicates, we also attempted to remove them. Among **1.94 m** merged paired-reads, **242k** duplicate centroids with identified by VSEARCH, **1.46 m** are removed as duplicates.
@@ -90,7 +82,7 @@ level 3: 1889 nodes
 level 4: 1867 nodes
 ```
 
-Finally, we tested **4805** Beads Barcode Cluters (BBCs or BCs) identified by level 1 and processed assembly with reads belonging to each cluster. 
+Finally, we tested **4805** Beads Barcode Cluters (BBCs or BCs) identified by level 1 and processed assembly with reads belonging to each cluster.
 
 #### Annotation summary
 
@@ -102,13 +94,13 @@ Assemble were processed by Spades with `--careful` and `--cov-cutoff` to avoid t
 
 #### BC annotation consistency
 
-Among **4805** BCs, **2432** of them can be assemble to at least one scaffolds. Those scaffolds were then aligned to UNITE database. **1564** BCs with belonging scaffolds got alignment of  **length >= 50bp and identity >= 97%** were kept as their identification. 
+Among **4805** BCs, **2432** of them can be assemble to at least one scaffolds. Those scaffolds were then aligned to UNITE database. **1564** BCs with belonging scaffolds got alignment of  **length >= 50bp and identity >= 97%** were kept as their identification.
 
 ![fig.7](04.test_vsearch/AllAnnoStat.png)
 
 > fig. 6 Annotation stat
 
-Most of the BCs obtained unified indentification with same taxonomy. 
+Most of the BCs obtained unified indentification with same taxonomy.
 
 | Diverse | species | genus | family | order | class | phylum | kindom |
 | ------- | ------- | ----- | ------ | ----- | ----- | ------ | ------ |
@@ -144,7 +136,7 @@ The mapping relationship from reads to genmoe reference shows below:
 
 ![BC00005.all](circos/BC00005.circos.i97.x10.png)
 
-> **Fig.S1.a  The alignment relationshiop between reads to scafflods and scaffolds to genome references**. 
+> **Fig.S1.a  The alignment relationshiop between reads to scafflods and scaffolds to genome references**.
 > Black segments in the outerside are assembled scaffolds in the BC. Colored segments are genome reference ( x0.1 scaleed).
 
 A simple BC inludes fewer BBs and reads, they can be easliy determined, though the longet  caffolds are  only 345.
@@ -155,7 +147,7 @@ The mapping relationship from reads to genmoe reference shows below:
 
 ![BC00935.all](circos/BC00935.circos.i97.x10.png)
 
-> **Fig.S1.a  The alignment relationshiop between reads to scafflods and scaffolds to genome references**. 
+> **Fig.S1.a  The alignment relationshiop between reads to scafflods and scaffolds to genome references**.
 > Black segments in the outerside are assembled scaffolds in the BC. Colored segments are genome reference ( x0.1 scaleed). Black links are paried reads with each read aligned to different scaffolds. While colored links are alignemnt region between scaffolds to genome references. reads alignments are tile inside the scaffolds. The same BC are aligned at the same height and colored by BC IDs.
 
 We can see 16 scaffolds are mainly come from Pe and Le.  2 of them are uniquly come from Sc. Though #14 can also aligned to Fv, this segement is too concerved to comfrim. The black linkes could help connect scalffods with gaps. Without those gaps, the target alignement position is posible to extended to as long as 2.5kb.
@@ -174,7 +166,7 @@ The mapping relationship from reads to genmoe reference shows below:
 
 ![BC00491.all](circos/BC00491.circos.i97.x10.png)
 
-> **Fig.S1.a  The alignment relationshiop between reads to scafflods and scaffolds to genome references**. 
+> **Fig.S1.a  The alignment relationshiop between reads to scafflods and scaffolds to genome references**.
 > Black segments in the outerside are assembled scaffolds in the BC. Colored segments are genome reference ( x0.1 scaleed). Black links are paried reads with each read aligned to different scaffolds. While colored links are alignemnt region between scaffolds to genome references. reads alignments are tile inside the scaffolds. The same BC are aligned at the same height and colored by BC IDs.
 
 With the identification >= 97, assembled  scafffolds are mainly mapped to all of Pe, Hm, Le, Le, Fv, and Sc at least one chromosome (Fig.S1.a).  This indcated that the BC with too much BBs are likely combiend by different species sources.
