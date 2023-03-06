@@ -4,7 +4,7 @@
 
 **Environment**: `python 3.6` `perl 5.5`
 
-**Developing tools**：:octocat: [metaSeq](https://github.com/ZeweiSong/metaSeq) ([biogit](https://biogit.cn/Fangchao/metaSeq))
+**Developing tools**：:octocat: [metabbq](https://github.com/BioChaoGroup/metabbq)   
 
 ### File structure
 
